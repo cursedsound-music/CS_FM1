@@ -1407,6 +1407,10 @@ sect:
         return;
     v = param_turn(d, *vp, accel(EN_K1 + slot, steps, d->fmt == F_ENUM ? 0 : d->max - d->min));
     *vp = (int16_t)v;
+    if (vp >= ac_v && vp < ac_v + AK_N) {               /* (cursedsound) ACID: the setting, the line again */
+        ac_put((uint32_t)(vp - ac_v), v);
+        return;
+    }
     if (vp >= eu_v && vp < eu_v + EK_N) {               /* (V10.6) EUCLID / MODES: the setting, the pattern again */
         eu_put((uint32_t)(vp - eu_v), v);
         return;
@@ -2166,7 +2170,8 @@ static void ui_input_frame(void);
 static void ui_input(void)
 {
     ui_input_frame();
-    eu_tick();                                          /* (V10.16) EUCLID's MUTATE, on the bar */
+    eu_tick();
+    ac_tick();                                          /* (cursedsound) ACID's mutations, on the bar */                                          /* (V10.16) EUCLID's MUTATE, on the bar */
     scale_link();                                       /* (JIANT 0.4) one scale for every melodic track (after the
                                                          * frame's edits) */
 }
@@ -2599,6 +2604,11 @@ static void ui_input_frame(void)
                 break;
             if (live_page())                            /* (p2) LIVE: OCT- RETURN / held BYPASS, OCT+ COMMIT */
                 break;                                  /* (ui_live.c live_frame) */
+            if (!ui.home && !ui.menu && !ui.confirm && cur_page()->graph == GR_ACID) {   /* (cursedsound) ACID: OCT+ a
+                                                         * new line, OCT- the one before; ACID 3: a mutation, the anchor */
+                ac_oct(b == B_OCTUP, cur_page()->id[0] == ID_AC1);
+                break;
+            }
             if (!ui.home && !ui.menu && !ui.confirm && cur_page()->graph == GR_EUCLID) {   /* (V10.6) EUCLID / MODES: */
                 eu_oct(b == B_OCTUP, cur_page()->id[0] == ID_MU0);   /* OCT+ a new variation, OCT- the one before;
                                                          * (V10.16) MUTATE: a mutation now, back to the anchor */

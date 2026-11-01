@@ -65,11 +65,12 @@ enum { LV_PAT, LV_BAR, LV_STEP, LV_N };                 /* SEQ's pictures: the b
  * (code puts them) but out of the chain, until the step held opens its own (the mock-up's slice 5) */
 static const nv_t CE_SEQ[] = {NV("STEP", 0, 0, LV_BAR), NV("PATTERN", "LENGTH", 1, LV_PAT), NV("TRACK", 0, 1, LV_PAT),
                               NV("EUCLID", 0, 2, LV_PAT), NV("MODES", 0, 2, LV_PAT), NV("MUTATE", 0, 2, LV_PAT),
-                              NV("PLAYHEADS", 0, 3, LV_PAT), NV("STRETCH", 0, 4, LV_PAT),
-                              NV("COMP", 0, 5, LV_STEP), NV("COMP 2", 0, 5, LV_STEP), NV("AUTOMATION", 0, 6, LV_BAR),
-                              NV("AUTO LIST", 0, 6, LV_BAR)};
-static const ng_t CG_SEQ[] = {{"STEP", 0}, {"LENGTH", "LEN"}, {"EUCLID", "EUCL"}, {"PLAYHEADS", "HEAD"}, {"STRETCH", "STR"},
-                              {"COMP", 0}, {"AUTO", 0}};   /* (seven tabs: a short form of 4 letters at most fits one) */
+                              NV("ACID", 0, 3, LV_PAT), NV("ACID 2", 0, 3, LV_PAT), NV("ACID 3", 0, 3, LV_PAT),
+                              NV("PLAYHEADS", 0, 4, LV_PAT), NV("STRETCH", 0, 5, LV_PAT),
+                              NV("COMP", 0, 6, LV_STEP), NV("COMP 2", 0, 6, LV_STEP), NV("AUTOMATION", 0, 7, LV_BAR),
+                              NV("AUTO LIST", 0, 7, LV_BAR)};
+static const ng_t CG_SEQ[] = {{"STEP", 0}, {"LENGTH", "LEN"}, {"EUCLID", "EUCL"}, {"ACID", 0}, {"PLAYHEADS", "HEAD"},
+                              {"STRETCH", "STR"}, {"COMP", 0}, {"AUTO", 0}};   /* (cursedsound: ACID, eight tabs) */   /* (seven tabs: a short form of 4 letters at most fits one) */
 enum { FXL_TRACK, FXL_BUSES, FXL_EFFECT };
 static const nv_t CE_FX[] = {NV("FX", "SENDS", 0, FXL_TRACK), NV("DIST", 0, 0, FXL_TRACK), NV("AUTO PAN", 0, 0, FXL_TRACK),
                              NV("BUSES", 0, 1, FXL_BUSES), NV("DLY", 0, 2, FXL_EFFECT), NV("DLY 2", 0, 2, FXL_EFFECT),

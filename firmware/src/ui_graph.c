@@ -63,6 +63,7 @@ static void lz_uline(int32_t x, int32_t y, const aafont_t *f, const char *s, uin
 static int32_t graph_ht = 100;
 #include "ui_organic.c"                              /* JIANT FM's organic line art (drawn by code) */
 #include "ui_euclid.c"                               /* (V10.6) SEQ > EUCLID / MODES: the generator, its graph */
+#include "ui_acid.c"                                 /* (cursedsound) SEQ > ACID: the 303 line generator, its graph */
 #include "ui_fm6op.c"                                /* (0.6.10, from Felucca 1.5) EDIT > OPERATOR, OP ENV, OPERATOR 2 */
 static uint16_t heat_col(int32_t v);
 /* (0.9.5, as the 0.6.36) JIANT (thermal): a card's colour its value as heat (ratio 0..1000, -1 none); bipolar (its range
@@ -1096,7 +1097,8 @@ static void graph_title(void)
  * a step, once motion.c keeps one; till then its records as marks at the roll's foot */
 static int seq_roll_view(const page_t *pg)
 {
-    return pg == &PAGES[ui.page] && lens_on() && pg->graph != GR_PATS && pg->graph != GR_SONG && pg->graph != GR_EUCLID;
+    return pg == &PAGES[ui.page] && lens_on() && pg->graph != GR_PATS && pg->graph != GR_SONG && pg->graph != GR_EUCLID &&
+           pg->graph != GR_ACID;
 }
 static int roll_view(const page_t *pg)
 {
@@ -1417,6 +1419,9 @@ static uint32_t graph_signature(void)
         h = (h ^ eu[song.sel % NTRK].lane ^ (uint32_t)eu[song.sel % NTRK].src << 4 ^ (uint32_t)eu[song.sel % NTRK].root << 8 ^
              (song.playing ? t->seq_idx + 1u : 0u) << 16) * 16777619u;
     }
+    if (pg->graph == GR_ACID)                        /* (cursedsound) the line, LOCK, the mutation, the step playing */
+        h = (h ^ steps_sig(t) ^ (uint32_t)t->p[P_SLEN] << 24 ^ ac[song.sel % NTRK].lock * 7919u ^
+             ac[song.sel % NTRK].ms * 31u ^ (song.playing ? t->seq_idx + 1u : 0u) << 16) * 16777619u;
     if (pg->graph == GR_GCOMP) {                     /* (0.9.9-seq2f) the global lane, its cursor, MONO, the step playing */
         h = (h ^ (gl_cur * 7919u + gl_trk * 31u + gl_mono * 977u + (song.playing ? gl_step_at(0) % GL_N + 1u : 0u))) *
             16777619u;
@@ -2032,6 +2037,9 @@ static void draw_graph(void)
     } else if (pg->graph == GR_EUCLID) {             /* (V10.6) SEQ > EUCLID / MODES: the ring, the lanes or the notes */
         cv_oy = 0;
         graph_euclid(t);
+    } else if (pg->graph == GR_ACID) {               /* (cursedsound) SEQ > ACID: the line */
+        cv_oy = 0;
+        graph_acid(t);
     } else if (seq_roll_view(pg)) {                  /* (0.9.9-seq2b) every SEQ page: the roll (a kit: the grid), its marks */
         cv_oy = 0;
         if (drum_track(t))
