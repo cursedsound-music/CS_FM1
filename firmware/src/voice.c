@@ -12,6 +12,9 @@
  * declicks it); one of the part's own is restarted in place, as before. Extra UNISON
  * voices only start when there is room. */
 static uint32_t vage;                                   /* voice ages: one clock for every part */
+#ifndef FM1_OPAQUE
+#define FM1_OPAQUE(v) ((void)(v))                    /* (the host: no reach to mind; fx.c's the same) */
+#endif
 /* an LFO's shape w at phase ph, Q15; rnd / prev: its S&H value now and the one before (SMOOTH glides between them).
  * (cursed-os) after JIANT's five: RAMP (down), PULSE (a quarter high), SMOOTH (S&H glided), STEPS (four), EXP (a
  * plucked decay each cycle), BOUNCE (a ball's hops) */
@@ -463,7 +466,11 @@ static void track_lfo_tick(track_t *t)
         t->lfo_rnd = lfo_rand(t);
     }
     t->lfo_val = lfo_wave(t, t->lfo_ph);
-    lfo2_tick(t);
+    {
+        void (*f)(track_t *) = lfo2_tick;               /* (cursed-os: as track_f2, out of the RAM code's reach) */
+        FM1_OPAQUE(f);
+        f(t);
+    }
     if (t->lfo_fade < 32767) {
         int32_t step = (int32_t)(ENV_LIN[t->p[P_LFADE] & 127] >> 9);
         t->lfo_fade = t->p[P_LFADE] ? clamp(t->lfo_fade + (step ? step : 1), 0, 32767) : 32767;
@@ -1724,8 +1731,11 @@ static uint32_t track_render(track_t *t, int32_t *out, uint32_t n)
                tf_xb[(uint32_t)(t - trk) % NTRK] || tf_cmb[(uint32_t)(t - trk) % NTRK]))
         /* (JIANT 0.5) the FILTER (track_post); 0.6.8: and a block more to leave the chain (track_filter's fade) */
         track_post(t, e, out, n);
-    if (nr && (trk_x2[(uint32_t)(t - trk) % NTRK][X2_F2T] || f2_on[(uint32_t)(t - trk) % NTRK]))
-        track_f2(t, out, n);                            /* (cursed-os) FILTER 2 */
+    if (nr && (trk_x2[(uint32_t)(t - trk) % NTRK][X2_F2T] || f2_on[(uint32_t)(t - trk) % NTRK])) {
+        void (*f)(track_t *, int32_t *, uint32_t) = track_f2;   /* (cursed-os) FILTER 2; through a register, as fx.c's */
+        FM1_OPAQUE(f);                                  /* tape_block: the RAM code's direct calls have a reach */
+        f(t, out, n);
+    }
     if (snap)
         memcpy(t->p, p_new, sizeof p_new);
     else if (fade)
