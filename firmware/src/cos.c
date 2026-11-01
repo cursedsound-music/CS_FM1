@@ -14,11 +14,12 @@
  *         interval, on the next bar while playing (the kits stay); SCL held + a key does it from any page
  *   SELECT the page   ALGORITHM the track   KNOB 1-4 the page's four   PLAY start / stop
  * Outside HOME, SEQ and GEN's kit pages the keys play the track. */
-/* (cursedsound) cursed-os's and ACID's RAM: zeroed, in a section of its own after all of JIANT's .bss (app.ld .bss: *(.bss*)
- * then *(.sbss*)), so none of the sound's variables moves (the first links on GitHub: a variable placed among them took
- * ten of the sound's functions 34 bytes past their pinned run). The host builds (hostsim.c) drop attributes */
+/* (cursedsound) cursed-os's and ACID's RAM: in the pool (app.ld POOL: zeroed at boot, ~9 KB spare), in a section of its
+ * own after JIANT's .pool, so none of the sound's variables in .data / .bss / .sbss moves (the first links on GitHub: a
+ * variable placed among them took ten of the sound's functions 34 bytes past their pinned run; in .sbss, the small data,
+ * 220). The host builds (hostsim.c) drop attributes */
 #ifndef COS_RAM
-#define COS_RAM __attribute__((section(".sbss.zcos")))
+#define COS_RAM __attribute__((section(".pool.zcos")))
 #endif
 #include "cos_font.h"                           /* COS_FONT: Press Start 2P, 8 x 8, 1 bit (tools/gen_cos_font.py) */
 

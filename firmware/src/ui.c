@@ -17,7 +17,7 @@ static int project_save(uint32_t slot);
 #define COS_DEFAULT 1
 #endif
 #ifndef COS_RAM                                         /* (cos.c) cursed-os's and ACID's RAM: a section after JIANT's */
-#define COS_RAM __attribute__((section(".sbss.zcos")))
+#define COS_RAM __attribute__((section(".pool.zcos")))
 #endif
 static int cos_active(void);
 static int cos_switch(void);
