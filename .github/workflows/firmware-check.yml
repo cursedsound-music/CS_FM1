@@ -14,6 +14,10 @@ on:
         description: "FELUCCA_REPIN: '' (the recorded layout), keep (the recorded order, the addresses anew) or 1"
         default: ""
         required: false
+      compare:
+        description: "Also compile this commit and print every recorded sound function whose size differs from it"
+        default: ""
+        required: false
 permissions:
   contents: read
 jobs:
@@ -61,6 +65,37 @@ jobs:
             echo "----- base64 of the recorded file -----"
             gzip -9c tools/audio_layout.txt | base64 -w0; echo
           fi
+      - name: compare the sound's code with another commit
+        if: always() && inputs.compare != ''
+        env:
+          AC79_SDK: /home/runner/fw-AC79_AIoT_SDK
+          JIELI_TOOLCHAIN: /home/runner/.jieli/toolchain
+        run: |
+          OD="$JIELI_TOOLCHAIN/common/bin/objdump"
+          "$OD" -h build/felucca.o > /tmp/ours.h || true
+          cp tools/audio_layout.txt /tmp/layout.txt
+          git checkout -q --detach "${{ inputs.compare }}"
+          FELUCCA_REPIN= python3 tools/build.py > /tmp/theirs.log 2>&1 || true
+          "$OD" -h build/felucca.o > /tmp/theirs.h || true
+          python3 - <<'PY'
+          import re
+          def secs(p):
+              d = {}
+              for ln in open(p):
+                  m = re.match(r"\s*\d+\s+(\.\S+)\s+([0-9a-f]{8})\s", ln)
+                  if m: d[m[1]] = int(m[2], 16)
+              return d
+          a, b = secs("/tmp/ours.h"), secs("/tmp/theirs.h")
+          rows = [l.split() for l in open("/tmp/layout.txt") if l.strip() and not l.startswith("#")]
+          tot = 0
+          for off, flag, name in rows:
+              if flag not in "@a-": continue
+              x, y = a.get(".text." + name), b.get(".text." + name)
+              if x != y:
+                  print(f"{off} {flag} {name}: theirs {y} ours {x}")
+                  if x is not None and y is not None: tot += x - y
+          print("sum of the recorded functions' growth:", tot)
+          PY
       - if: always()
         uses: actions/upload-artifact@v4
         with:
