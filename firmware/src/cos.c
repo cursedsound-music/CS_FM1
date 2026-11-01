@@ -4,7 +4,7 @@
  * the parts, one row of four knobs per page, the steps along the foot) in Elektron's manner: one button a mode, its
  * pages as tabs, the white keys the sixteen trigs. Black and white; red is the one live thing (the playhead, the knob
  * turned, REC, an accent). Included by felucca.c / felucca_web.c after ui_input.c; ui_input / ui_draw / ui_leds hand
- * over to cos_input / cos_draw / cos_leds while cz.on. HOME + GLO switches to JIANT's own interface and back.
+ * over to cos_input / cos_draw / cos_leds while cos_active(). HOME + GLO switches to JIANT's own interface and back.
  *
  *   HOME  the six tracks' steps          white keys 1-6: pick a track   black keys 1-6: mute
  *   SEQ   TRIG: the track's steps        white keys: trigs   OCT-/+: the bank of 16   (a kit: black keys pick the lane)
@@ -14,6 +14,12 @@
  *         interval, on the next bar while playing (the kits stay); SCL held + a key does it from any page
  *   SELECT the page   ALGORITHM the track   KNOB 1-4 the page's four   PLAY start / stop
  * Outside HOME, SEQ and GEN's kit pages the keys play the track. */
+/* (cursedsound) cursed-os's and ACID's RAM: zeroed, in a section of its own after all of JIANT's .bss (app.ld .bss: *(.bss*)
+ * then *(.sbss*)), so none of the sound's variables moves (the first links on GitHub: a variable placed among them took
+ * ten of the sound's functions 34 bytes past their pinned run). The host builds (hostsim.c) drop attributes */
+#ifndef COS_RAM
+#define COS_RAM __attribute__((section(".sbss.zcos")))
+#endif
 #include "cos_font.h"                           /* COS_FONT: Press Start 2P, 8 x 8, 1 bit (tools/gen_cos_font.py) */
 
 #define C_BG 0x0000u
@@ -47,13 +53,13 @@ static const uint8_t BK[11] = {1, 3, 5, 8, 10, 13, 15, 17, 20, 22, 25};         
 static const char *const COS_LN[NLANE] = {"BD", "SD", "CP", "CH", "OH", "TM", "RS", "CB"};
 
 static struct {
-    uint8_t on, mode, tab[CM_N], bank, lane, hot, combo, ready;
+    uint8_t flip, mode, tab[CM_N], bank, lane, hot, combo, ready;   /* flip: HOME + GLO turned it from COS_DEFAULT */
     uint32_t hot_ms, msg_ms, sig[6];
     char msg[24];
     uint8_t key_next, scl_down, scl_used;              /* key_next: 1 + the key asked for (0 C .. 11 B) */
     uint32_t key_bar;                                   /* (bar_n when it was asked for) */
-} cz = {COS_DEFAULT};
-static int cos_active(void) { return cz.on != 0u; }
+} cz COS_RAM;
+static int cos_active(void) { return (COS_DEFAULT ^ cz.flip) != 0; }
 
 static int cos_kit(void) { return drum_track(TSEL) != 0; }
 static void cos_pages(uint32_t m, const cpg_t **p, uint32_t *n)
@@ -579,7 +585,7 @@ static void cos_leds(void)
     uint8_t nl[FM1_NCOL] = {0}, nd[FM1_NCOL] = {0};
     const track_t *t = TSEL;
     uint32_t k, len = (uint32_t)clamp(t->p[P_SLEN], 1, NSTEP), now = song.playing ? t->seq_idx % len : ~0u;
-    static uint8_t ready;
+    static uint8_t ready COS_RAM;
     if (fm1_led_anim_on()) return;
     if (!ready) { led_pos_init(); ready = 1; }
     led_put(nl, panel.btn[CM_BTN[cz.mode]], 1);
@@ -613,7 +619,7 @@ static int cos_switch(void)
     uint32_t both = (1u << panel.btn[B_HOME]) | (1u << panel.btn[B_GLO]), held = (fm1_in.buttons & both) == both;
     if (held && !cz.combo) {
         cz.combo = 1;
-        cz.on ^= 1u;
+        cz.flip ^= 1u;
         cz.ready = 0;
         song.grid = 0;
         ui.force = 1;

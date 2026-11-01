@@ -23,8 +23,8 @@ typedef struct {
     acs_t s, hist[AC_HIST];
     uint8_t nh;                                         /* throws in hist */
 } ac_t;
-static ac_t ac[NTRK];
-static uint32_t ac_ms;                                  /* (the last hand gesture: an UNDO point after 2 s) */
+static ac_t ac[NTRK] COS_RAM;
+static uint32_t ac_ms COS_RAM;                                  /* (the last hand gesture: an UNDO point after 2 s) */
 enum { AK_DENS, AK_SLIDE, AK_ACC, AK_OCT, AK_STEPS, AK_NOTES, AK_TIE, AK_LOCK, AK_EVERY, AK_AMT, AK_ROOT, AK_SCALE, AK_N };
 enum { AL_OFF, AL_RHY, AL_NOT, AL_RN };
 static const uint8_t AC_SCL[7] = {0, 2, 8, 3, 7, 1, 6};   /* SCALE's choices: AUTO, then N_SCALE / SCALE_MASK indices */
@@ -148,8 +148,8 @@ static void ac_gen(uint32_t k, uint32_t hand)
 }
 
 /* the knob views (params.c page_desc: ids ID_AC0 + AK_*, ID_AC1 + AK_* - 8) */
-static int16_t ac_v[AK_N];
-static param_desc_t ac_d;
+static int16_t ac_v[AK_N] COS_RAM;
+static param_desc_t ac_d COS_RAM;
 static const param_desc_t *ac_desc(uint32_t k, int16_t **valp)
 {
     static const char *const LB[AK_N] = {"DENSITY", "SLIDE", "ACCENT", "OCTAVE", "STEPS", "NOTES", "TIE", "LOCK", "EVERY",

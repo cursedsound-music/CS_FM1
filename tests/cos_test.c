@@ -15,7 +15,7 @@ int main(void)
     uint32_t i, k;
     uint8_t before[NTRK][NSTEP];
     ui_power_on();
-    cz.on = 1;
+    cz.flip = 1;                                                     /* (COS_DEFAULT 0 in the UI tests: on) */
     song.sel = 4; set_engine_of(TSEL, ENGI_ANALOG);
     song.sel = 0; set_engine_of(TSEL, ENGI_DRUM);
     for (k = 0; k < NTRK; k++) trk[k].p[P_ROOT] = 9;                 /* A */
