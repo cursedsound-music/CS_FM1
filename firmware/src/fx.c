@@ -300,7 +300,7 @@ static __attribute__((noinline)) void comp_block(uint32_t n)
             pk = l > pk ? l : pk;
             pk = r > pk ? r : pk;
         }
-        pk = pk > (1 << 22) ? 1 << 22 : pk;
+        pk = pk > (1 << 21) ? 1 << 21 : pk;                     /* (2^21, not 2^22: -2^22 is 0xFFC00000, the ROM check reads it as an address) */
         comp_env += pk > comp_env ? (((pk - comp_env) >> 8) * ka) >> 8 : -((((comp_env - pk) >> 8) * kr) >> 8) - 1;
         comp_env = comp_env < 0 ? 0 : comp_env;
         over = comp_lg2((uint32_t)(comp_env > 0 ? comp_env : 1)) - thr;
@@ -310,7 +310,7 @@ static __attribute__((noinline)) void comp_block(uint32_t n)
         comp_g = g1;
         dg = (g1 - g0) / 16;
         for (i = j; i < j + 16u && i < n; i++) {        /* (the mix and the buses' return, folded: as CLIP) */
-            int32_t l = clamp(mix_l[i] + wet[i], -(1 << 22), 1 << 22), r = clamp(mix_r[i] + wet[i], -(1 << 22), 1 << 22);
+            int32_t l = clamp(mix_l[i] + wet[i], -(1 << 21), 1 << 21), r = clamp(mix_r[i] + wet[i], -(1 << 21), 1 << 21);
             mix_l[i] = ((l >> 4) * (g0 >> 4)) >> 7;
             mix_r[i] = ((r >> 4) * (g0 >> 4)) >> 7;
             wet[i] = 0;
