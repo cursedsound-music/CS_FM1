@@ -213,10 +213,10 @@ static const param_desc_t *cos_cdesc(uint32_t id, int16_t **vp)
     static const param_desc_t D[2] = {{"OUT CH", F_INT, 1, 16, 1, 0, 0}, {"SENDS", F_ENUM, 0, 3, 0, MO, 0}};
     static const param_desc_t DS = {"SLOT", F_INT, 1, 4, 1, 0, 0};
     uint32_t t = song.sel % NTRK, v = favorites.factory[15][8u + t];
-    static const char *const TR[] = {"4", "6", 0}, *const LD[] = {"ECO", "LITE", "FULL", 0};
-    static const param_desc_t DT = {"TRACKS", F_ENUM, 0, 1, 0, TR, 0}, DL = {"LOAD", F_ENUM, 0, 2, 2, LD, 0};
+    static const char *const LD[] = {"ECO", "LITE", "FULL", 0};
+    static const param_desc_t DT = {"TRACKS", F_INT, 4, NTRK, 5, 0, 0}, DL = {"LOAD", F_ENUM, 0, 2, 2, LD, 0};
     if (id == CC_SLOT) { cz.cc_v[3] = (int16_t)(cz.slot + 1u); *vp = &cz.cc_v[3]; return &DS; }
-    if (id == CC_TRKS) { cz.cc_v[4] = (int16_t)(trk_live == NTRK); *vp = &cz.cc_v[4]; return &DT; }
+    if (id == CC_TRKS) { cz.cc_v[4] = (int16_t)trk_live; *vp = &cz.cc_v[4]; return &DT; }
     if (id == CC_LOAD) { cz.cc_v[5] = (int16_t)load_get(); *vp = &cz.cc_v[5]; return &DL; }
     if (id >= CC_PF0 && id <= CC_PF3) {                  /* the FX pad's macros (perform.c perf_k): FILTER - LP + HP, CRUSH,
                                                          * THROW (into the delay and reverb), DEPTH (the repeats' level) */
@@ -256,7 +256,12 @@ static void cos_cput(uint32_t id, int32_t v)
     } else if (id == CC_SLOT) {
         cz.slot = (uint8_t)(clamp(v, 1, 4) - 1);
     } else if (id == CC_TRKS) {                          /* (MENU > TRACKS: 6 plays T5 and T6 too, more for the CPU) */
-        trks_put((uint32_t)clamp(v, 0, 1));
+#if COS_SLIM
+        favorites.factory[15][15] = (uint8_t)clamp(v, 4, NTRK);   /* (ui.c rp_apply reads it) */
+        rp_apply();
+#else
+        trks_put(v >= NTRK);
+#endif
         if (song.sel >= trk_live) track_select(trk_live - 1u);
         settings_save();
     } else if (id == CC_LOAD) {
@@ -783,6 +788,18 @@ static void cos_foot(void)
     }
 }
 
+/* HOME's name of a track: the role its sound plays (BASS, PAD, LEAD .. by the preset's type), DRUM ACID VOICE by their
+ * engine, else the engine's name; 6 letters */
+static void cos_trk_label(const track_t *tr, char *b)
+{
+    static const char *const TAGN[PT_N] = {"", "BASS", "LEAD", "PAD", "KEYS", "PLUCK", "BELL", "VOICE", "DRUM", "FX"};
+    const engine_t *e = ENGINES[trk_eng(tr)];
+    uint32_t tg = PT_NONE;
+    if (e != &ENG_DRUM && e != &ENG_ACID && e != &ENG_FORMANT && !tr->user && e->npresets && tr->preset < e->npresets)
+        tg = PR_TAG(&e->presets[tr->preset]);
+    str_cpy(b, tg && tg < PT_N ? TAGN[tg] : e->name, 7);
+    b[6] = 0;
+}
 static void cos_body_home(void)
 {
     uint32_t t, i;
@@ -796,7 +813,7 @@ static void cos_body_home(void)
         b[0] = (char)('1' + t); b[1] = 0;
         cos_tx(4, y + 1, b, t == song.sel ? C_RED : C_FG);
         if (cz.dr_n && cz.dr_trk == t) cv_rect(236, y + 1, 3, 7, C_FG);   /* (its drone holds) */
-        str_cpy(b, ENGINES[trk_eng(tr)]->name, 6);
+        cos_trk_label(tr, b);
         cos_up(b);
         cos_tx(14, y + 1, b, mute ? C_DIM : C_FG);
         for (i = 0; i < 16u; i++) {
@@ -1105,8 +1122,8 @@ static void cos_body_master(void)
 /* GLO > SYSTEM: what TRACKS and LOAD do */
 static void cos_body_sys(void)
 {
-    cos_tx(8, 40, "TRACKS: 4 OR 6 PLAYING", C_FG);
-    cos_tx(8, 54, "(T5, T6: MORE FOR THE CPU)", C_DIM);
+    cos_tx(8, 40, "TRACKS: 4, 5 OR 6 PLAYING", C_FG);
+    cos_tx(8, 54, "(EACH ONE MORE FOR THE CPU)", C_DIM);
     cos_tx(8, 78, "LOAD: HOW MUCH THE VOICES", C_FG);
     cos_tx(8, 92, "MAY TAKE. ECO: 4 A TRACK", C_DIM);
     cos_tx(8, 106, "FULL: 8 A TRACK", C_DIM);

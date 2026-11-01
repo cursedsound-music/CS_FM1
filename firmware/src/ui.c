@@ -177,6 +177,13 @@ static void rp_apply(void)                             /* the settings into clic
     click_lvl = (uint8_t)rp_get(RP_LEVEL);
     cin_bars = (uint8_t)rp_get(RP_COUNTIN);
     trk_live = (ui_rec_prefs & (PREF_SIX >> 8)) ? NTRK : 4u;
+#if COS_SLIM
+    {                                                   /* (cursed-os) its own TRACKS 4 .. 6: the settings' byte 15 of row 15
+                                                         * (0: the default, 5: drums, acid, bass, pad, voice) */
+        uint32_t c = favorites.factory[15][15];
+        trk_live = (uint8_t)(c >= 4u && c <= NTRK ? c : 5u);
+    }
+#endif
     sys_load = (uint8_t)(ui_load <= LOAD_ECO ? ui_load : LOAD_FULL);   /* (0.6.30) LOAD (voice.c) */
     trks_ui = trk_live == NTRK;                         /* (GLO > SYSTEM's TRACKS and LOAD show them) */
     load_ui = (int16_t)(LOAD_ECO - sys_load);

@@ -176,8 +176,11 @@ static const struct {
  * power_sound_of: no DIST CHOR DLY REV send, the effects are the player's to add) */
 #define TRK_PR_VOICE 9u          /* SINGER EN (eng_formant.c FORMANT_PRESETS) */
 #define TRK_PR_ANALOG 14u        /* FAT BASS (eng_analog.c) */
-static const uint8_t TRK_DEF[NPART][3] = {{ENGI_DRUM, 0, 0}, {ENGI_VOICE, TRK_PR_VOICE, 0}, {ENGI_ANIMAL, 0, 0},
-                                          {ENGI_ACID, 0, 0},   /* (cursed-os: T4 the 303, ACID's TB CLASSIC; was LOFI) */ {ENGI_ANALOG, TRK_PR_ANALOG, 0}, {ENGI_FM6, 0, 0}};
+#define TRK_PR_PAD 22u           /* (cursed-os) DARK PAD (eng_analog.c) */
+static const uint8_t TRK_DEF[NPART][3] = {{ENGI_DRUM, 0, 0}, {ENGI_ACID, 0, 0}, {ENGI_ANALOG, TRK_PR_ANALOG, 0},
+                                          {ENGI_ANALOG, TRK_PR_PAD, 0}, {ENGI_VOICE, TRK_PR_VOICE, 0}, {ENGI_FM6, 0, 0}};
+/* (cursed-os) DRUM-X, ACID's TB CLASSIC, FAT BASS, DARK PAD, SINGER EN (five tracks play: ui.c rp_apply), TINE EP.
+ * JIANT's: */
 /* DRUM-X (DRUM's first, the factory kit), SINGER EN, CMOS BIRD, BYTEBEAT, FAT BASS, TINE EP */
 /* the parts at power-on through 0.9.8 (the same columns): what an old project's tracks it had no room for load as
  * (project.c proj_new_tracks, PROJ_DEF_SOUND: format 1's tracks 2..4, a 4-track format's T5 / T6): never change it.
