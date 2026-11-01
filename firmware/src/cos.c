@@ -54,7 +54,9 @@ static const cpg_t CZP_AMP[] = {{"AMP", CK_TRK, {P_ATK, P_DEC, P_SUS, P_REL}}, {
                                {"ENV MOD", CK_TRK, {P_ED_FLT, P_ED_PIT, P_ED_SHP, X}},
                                {"LFO", CK_TRK, {P_LRATE, P_LWAVE, P_LD_PIT, P_LD_FLT}}, {"LFO 2", CK_TRK, {P_LFADE, P_LD_SHP, P_LD_AMP, P_LPHASE}}};
 static const cpg_t CZP_DRONE[] = {{"DRONE", CK_TRK, {P_LEVEL, P_FCUT, P_LRATE, P_LD_FLT}}, {"SPACE", CK_TRK, {P_ATK, P_REL, P_DLY, P_REV}}};
-static const cpg_t CZP_FX[] = {{"SEND", CK_TRK, {P_DIST, P_CHOR, P_DLY, P_REV}}, {"DIST", CK_TRK, {P_DTYPE, P_DTONE, X, X}}};
+static const cpg_t CZP_FX[] = {{"SEND", CK_TRK, {P_DIST, P_CHOR, P_DLY, P_REV}}, {"DIST", CK_TRK, {P_DTYPE, P_DTONE, X, X}},
+                              {"DELAY", CK_GLO, {G_DTIME, G_DFDBK, G_DCOLOR, G_DPING}},    /* (the buses: every track's) */
+                              {"REVERB", CK_GLO, {G_RSIZE, G_RDAMP, G_RPRE, G_RTYPE}}};
 static const cpg_t CZP_GENA[] = {{"ACID", CK_AC, {AK_DENS, AK_SLIDE, AK_ACC, AK_OCT}}, {"ACID 2", CK_AC, {AK_STEPS, AK_NOTES, AK_TIE, AK_LOCK}},
                                 {"ACID 3", CK_AC, {AK_EVERY, AK_AMT, AK_ROOT, AK_SCALE}}};
 static const cpg_t CZP_GENE[] = {{"EUCLID", CK_EU, {EK_HITS, EK_STEPS, EK_ROT, EK_K4}}, {"MODES", CK_EU, {EK_M0, EK_M0 + 1u, EK_M0 + 2u, EK_M0 + 3u}},
@@ -97,7 +99,7 @@ static int cos_kit(void) { return drum_track(TSEL) != 0; }
 static void cos_pages(uint32_t m, const cpg_t **p, uint32_t *n)
 {
     static const cpg_t *const P[CM_N] = {CZP_HOME, CZP_TRIG, CZP_SRC, CZP_AMP, CZP_DRONE, CZP_FX, CZP_GENA, CZP_MIX, CZP_KEY, CZP_PROJ};
-    static const uint8_t N[CM_N] = {1, 1, 7, 5, 2, 2, 3, 4, 1, 1};
+    static const uint8_t N[CM_N] = {1, 1, 7, 5, 2, 4, 3, 4, 1, 1};
     int vo = m == CM_SRC && trk_engp(TSEL) == &ENG_FORMANT;
     *p = m == CM_GEN && cos_kit() ? CZP_GENE : vo ? CZP_SRCV : P[m % CM_N];
     *n = N[m % CM_N] + (uint32_t)vo;                                      /* (VOICE: WORDS too) */
@@ -288,7 +290,13 @@ static const param_desc_t *cos_knob(const cpg_t *p, uint32_t k, int16_t **vp)
     if (id == 0xFFu) return 0;
     switch (p->kind) {
     case CK_TRK: *vp = &TSEL->p[id]; return track_desc(TSEL, id);
-    case CK_GLO: *vp = &song.g[id]; return &GP[id];
+    case CK_GLO:
+        *vp = &song.g[id];
+        if (song.g[G_RTYPE] == 3 && (id == G_RPRE || id == G_RDAMP))   /* (params.c: RESO's PITCH, FOLW in their slots; */
+            return id == G_RPRE ? &RESO_PITCH : &RESO_FOLW;           /* SHIMMER / CLOUD's AIR for PRE) */
+        if (id == G_RPRE)
+            return song.g[G_RTYPE] == 2 || song.g[G_RTYPE] == 4 ? &REV_AIR : &REV_PRE;
+        return &GP[id];
     case CK_AC: return ac_desc(id, vp);
     case CK_EU: return eu_desc(id, vp);
     case CK_COS: return cos_cdesc(id, vp);
@@ -931,6 +939,14 @@ static void cos_body_sound(void)
             param_format(track_desc(t, id + 2u), t->p[id + 2u], w, &u); cos_up(w); w[5] = 0;
             cos_txr(234, y, w, c);
         }
+        return;
+    }
+    if (cz.mode == CM_FX && cos_page()->kind == CK_GLO) {  /* DELAY, REVERB: the buses every track sends into */
+        str_cpy(b, cos_page()->tab, 12);
+        cos_txc(120, 52, CZ_TALL, b, C_FG);
+        cos_txc(120, 84, CZ_LBL, "ONE FOR ALL TRACKS", C_MID);
+        cos_txc(120, 100, CZ_LBL, "HOW MUCH GOES IN: SEND", C_DIM);
+        cos_txc(120, 114, CZ_LBL, "(EACH TRACK ITS OWN)", C_DIM);
         return;
     }
     if (trk_engp(t)->ownenv && cz.mode == CM_AMP && (cz.tab[CM_AMP] == 0u || cz.tab[CM_AMP] == 2u)) {
