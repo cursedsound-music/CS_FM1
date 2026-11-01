@@ -18,7 +18,8 @@ static uint32_t vage;                                   /* voice ages: one clock
 /* an LFO's shape w at phase ph, Q15; rnd / prev: its S&H value now and the one before (SMOOTH glides between them).
  * (cursed-os) after JIANT's five: RAMP (down), PULSE (a quarter high), SMOOTH (S&H glided), STEPS (four), EXP (a
  * plucked decay each cycle), BOUNCE (a ball's hops) */
-static int32_t lfo_shape(uint32_t w, uint32_t ph, uint32_t rnd, uint32_t prev)
+static inline __attribute__((always_inline)) int32_t lfo_shape(uint32_t w, uint32_t ph, uint32_t rnd, uint32_t prev)   /* (inline: no
+                                                         * call out of the RAM code that ticks the LFO) */
 {
     switch (w) {
     case 1:
