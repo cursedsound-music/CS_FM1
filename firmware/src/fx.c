@@ -564,6 +564,7 @@ static __attribute__((noinline)) void master_begin(void)
                                                          * limiter's headroom (0.5.1: was 16000, it limited 95 % of the time) */
 #define LEV_GATE 400                                    /* -38 dB */
 static int32_t lev_env, lev_g = 32768, lev_cur = 32768, lev_dg;   /* the gain now and its step a sample (master_out) */
+static void cfx_run(uint32_t n);                       /* (cursed-os) the FX pad's effects (cosfx.c) */
 static __attribute__((noinline)) void lev_block(uint32_t n)
 {
     uint32_t i, j;
@@ -600,6 +601,7 @@ static __attribute__((noinline)) void lev_block(uint32_t n)
     }
     lev_cur = g0;                                       /* (master_out ramps it across the block, after the DC block) */
     lev_dg = (lev_g - g0) / (int32_t)n;
+    cfx_run(n);                                         /* (cursed-os) after the leveler has read the mix */
 }
 /* DUCK (G_DUCK 0..100, G_DREL its release 40 .. 600 ms): a kick (eng_drum.c duck_hit) takes the parts that are not
  * DRUM down by up to 30 dB in ~2 ms, holds them there ~25 ms, and they come back with the release, shaped as a
@@ -739,9 +741,16 @@ static inline void master_out(int32_t *l, int32_t *r)
 /* length of one division (N_DIV order) in samples at the song tempo */
 static const uint8_t DIV_DEN[6] = {1, 2, 4, 8, 3, 6};    /* original IDs stay fixed; slow rates append */
 static uint32_t midi_beat_samples;                    /* zero until an external clock has a measured tempo */
-static uint32_t beat_samples(void)
+static volatile uint8_t bpm_frac;                     /* (cursed-os) the tempo's tenths (0..9; project.c 'TF') */
+static volatile int8_t bpm_nudge;                     /* (cursed-os) HOME + OCT- / OCT+ held: -1 / +1, 3 % slower / faster */
+/* (cursed-os: out of line, the RAM code's room) a quarter, samples: the external clock's, or BPM.tenths, nudged */
+static __attribute__((noinline)) uint32_t beat_samples(void)
 {
-    return song.g[G_CLOCK] && midi_beat_samples ? midi_beat_samples : (uint32_t)FS * 60u / (uint32_t)song.g[G_BPM];
+    uint32_t b;
+    if (song.g[G_CLOCK] && midi_beat_samples)
+        return midi_beat_samples;
+    b = (uint32_t)FS * 600u / ((uint32_t)song.g[G_BPM] * 10u + bpm_frac % 10u);
+    return bpm_nudge ? b * 1000u / (uint32_t)(1000 + 30 * bpm_nudge) : b;
 }
 static uint32_t div_samples(uint32_t div)
 {
@@ -750,6 +759,7 @@ static uint32_t div_samples(uint32_t div)
 }
 
 #include "perform.c"                                 /* the FX hold layer's effects (the master) */
+#include "cosfx.c"                                   /* (cursed-os) the FX pad's own, for techno */
 static void seq_note_on(track_t *t, uint32_t note, uint32_t vel);   /* (0.6.72: seq.c, a note MIDI OUT ALL sends) */
 static void seq_note_off(track_t *t, uint32_t note);
 #include "pfx.c"                                   /* .. its punch-in MIDI effects (on the notes) */

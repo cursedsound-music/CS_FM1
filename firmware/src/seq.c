@@ -1045,6 +1045,18 @@ static uint32_t perf_key(uint32_t k)
     return !key_black(k) ? (p < PF_M1 ? p : p == PF_M1 ? PF_CLR : PF_N) : p < NTRK ? PF_M1 + p : p - NTRK < 5u ? BK[p - NTRK] : PF_N;
 }
 
+#if COS_SLIM
+/* (cursed-os) key k on the FX pad: its effect's code (cosfx.c CFX_W, CFX_B) */
+static uint32_t cfx_key(uint32_t k)
+{
+    uint32_t p = key_place(k);
+    return key_black(k) ? (p < 11u ? CFX_B[p] : PF_N) : p < 16u ? CFX_W[p] : PF_N;
+}
+#define PERF_PRESS(k, d) cfx_press(cfx_key(k), (d))
+#else
+#define PERF_PRESS(k, d) perf_press(perf_key(k), (d))
+#endif
+
 /* (0.6.14) LATCH: ARP OFF and ARP 2's HOLD ON, the keys' notes keep sounding when let go; the first key of the next
  * chord (no key down) lets the latched ones go. In the arp's note list (held / nheld / arp_phys, unused with ARP OFF);
  * HOLD turned off lets them go (events_block) */
@@ -1209,7 +1221,7 @@ static void keyboard_block(void)
                 kb_note[k] = KB_SILENT;           /* (ui_layer.c), with FX an effect (perform.c) */
                 kb_layer |= 1u << k;
                 if (fx)
-                    perf_press(perf_key(k), 1);
+                    PERF_PRESS(k, 1);
                 continue;
             }
             if (song.grid >= 2u) {                /* NAME (ui_name.c): every key types, none sounds; (p2) 3: GLO > LIVE
@@ -1231,7 +1243,7 @@ static void keyboard_block(void)
         } else {
             if ((kb_layer >> k) & 1u) {
                 kb_layer &= ~(1u << k);
-                perf_press(perf_key(k), 0);
+                PERF_PRESS(k, 0);
                 continue;
             }
             if (kb_note[k] == KB_SILENT) {

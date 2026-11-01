@@ -39,12 +39,13 @@ enum { CM_HOME, CM_TRIG, CM_SRC, CM_AMP, CM_DRONE, CM_FX, CM_GEN, CM_MIX, CM_KEY
 enum { CK_NONE, CK_TRK, CK_GLO, CK_AC, CK_EU, CK_COS };
 enum { CC_OUTCH, CC_MOUT, CC_CLOCK, CC_SLOT, CC_TRKS, CC_LOAD, CC_COMP, CC_CATK, CC_CREL, CC_LIM, CC_PF0, CC_PF3 = CC_PF0 + 3,
        CC_X2, CC_X2E = CC_X2 + 15, CC_OCT, CC_KICK, CC_KICKE = CC_KICK + 4, CC_LN0, CC_LNE = CC_LN0 + 7, CC_KDRV, CC_BT,
-       CC_L1SYNC, CC_L1RATE, CC_L1WAVE, CC_L1MODE, CC_L1PH, CC_L1FADE, CC_L2SYNC, CC_L2RATE };
+       CC_L1SYNC, CC_L1RATE, CC_L1WAVE, CC_L1MODE, CC_L1PH, CC_L1FADE, CC_L2SYNC, CC_L2RATE, CC_BPM };
 _Static_assert(X2_N <= 16u, "CC_X2 .. CC_X2E: room for every trk_x2 field");
+#define ID_BPM 0xFDu                            /* (HOME's: BPM in tenths, cos_knob) */
 #define ID_OCT 0xFEu                            /* (any page's knob: the track's OCTAVE, cos_knob) */   /* (CC_X2 + X2_*: params.c trk_x2, LFO 2 and FILTER 2) */   /* (CK_COS: cursed-os's own knobs) */
 typedef struct { const char *tab; uint8_t kind, id[4]; } cpg_t;
 #define X 0xFFu
-static const cpg_t CZP_HOME[] = {{"PERFORM", CK_GLO, {G_BPM, G_SWING, G_DJF, ID_OCT}}};
+static const cpg_t CZP_HOME[] = {{"PERFORM", CK_GLO, {ID_BPM, G_SWING, G_DJF, ID_OCT}}};
 static const cpg_t CZP_TRIG[] = {{"TRIG", CK_TRK, {P_SLEN, P_SDIV, P_SSWING, P_SGATE}}};
 /* EDIT: the engine's eight (its own page names: cos_tabs), the voice, the matrix's four slots; a VOICE track WORDS
  * third. ENV: the amp, the filter, the envelope's modulation, the two LFO pages */
@@ -279,6 +280,12 @@ static const param_desc_t *cos_cdesc(uint32_t id, int16_t **vp)
         default: *vp = &TSEL->p[P_LFADE]; return track_desc(TSEL, P_LFADE);
         }
     }
+    if (id == CC_BPM) {                                  /* BPM in tenths: HOME held, a knob's step is a tenth */
+        static const param_desc_t DB = {"BPM", F_INT, 400, 2400, 1200, 0, 0};
+        cz.cc_v[14] = (int16_t)(song.g[G_BPM] * 10 + bpm_frac % 10u);
+        *vp = &cz.cc_v[14];
+        return &DB;
+    }
     if (id == CC_OCT) {                                  /* OCTAVE: TRANS in octaves (-2 .. +2), its semitones kept; a kit none */
         static const param_desc_t DO = {"OCTAVE", F_INT, -2, 2, 0, 0, 0};
         int32_t tr = TSEL->p[P_TRANS];
@@ -418,6 +425,7 @@ static const param_desc_t *cos_knob(const cpg_t *p, uint32_t k, int16_t **vp)
     *vp = 0;
     if (id == 0xFFu) return 0;
     if (id == ID_OCT) return cos_cdesc(CC_OCT, vp);     /* (any page's: the track's OCTAVE) */
+    if (id == ID_BPM) return cos_cdesc(CC_BPM, vp);
     switch (p->kind) {
     case CK_TRK: *vp = &TSEL->p[id]; return track_desc(TSEL, id);
     case CK_GLO:
@@ -471,6 +479,17 @@ static void cos_lock_turn(uint32_t k, int32_t s, uint64_t held)
     cz.hot = (uint8_t)(k + 1u);
     cz.hot_ms = fm1_ms;
 }
+/* HOME held: the tempo's button (as a Syntakt's TEMPO): OCT- / OCT+ nudge, a knob's step on BPM a tenth */
+static int cos_home_held(void) { return (int)((fm1_in.buttons >> panel.btn[B_HOME]) & 1u); }
+/* "128.4" */
+static void cos_bpm_text(char *b, int32_t v)
+{
+    fmt_int(b, v / 10);
+    b += str_len(b);
+    b[0] = '.';
+    b[1] = (char)('0' + v % 10);
+    b[2] = 0;
+}
 static void cos_turn(uint32_t k, int32_t s)
 {
     const cpg_t *p = cos_page();
@@ -479,6 +498,15 @@ static void cos_turn(uint32_t k, int32_t s)
     int32_t v;
     if (!d || !vp || d->max == d->min) return;
     if (cz.mode == CM_SRC || cz.mode == CM_AMP || cz.mode == CM_FX) { cz.lk_mode = cz.mode; cz.lk_tab = cz.tab[cz.mode]; }
+    if (p->id[k] == ID_BPM) {                            /* BPM: a whole one a step (accelerated); HOME held: a tenth */
+        v = *vp + (cos_home_held() ? (s > 0 ? 1 : -1) : 10 * accel(EN_K1 + k, s, 200));
+        v = clamp(v, 400, 2400);
+        song.g[G_BPM] = (int16_t)(v / 10);
+        bpm_frac = (uint8_t)(v % 10);
+        cz.hot = (uint8_t)(k + 1u);
+        cz.hot_ms = fm1_ms;
+        return;
+    }
     v = param_turn(d, *vp, accel(EN_K1 + k, s, d->fmt == F_ENUM ? 0 : d->max - d->min));
     cz.hot = (uint8_t)(k + 1u);
     cz.hot_ms = fm1_ms;
@@ -599,11 +627,17 @@ static __attribute__((noinline)) void cos_input(void)
     int32_t s;
     song.grid = cos_keys_ui() ? 2u : 0u;                 /* (seq.c: 2, every key silent) */
     kb_mask = perf_mask = 1u << panel.btn[B_FX];         /* (seq.c keyboard_block: FX held, a key is an effect: the pad) */
-    if (favorites.factory[15][14] < 1u) {                /* (once: the pad latches, as an SP's effects; the settings' byte 14
-                                                         * is cursed-os's revision) */
-        favorites.factory[15][14] = 1u;
-        ui_prefs |= PREF_LATCH;
+    if (favorites.factory[15][14] < 2u) {                /* (once: the pad holds, each effect while its key is held; FX +
+                                                         * OCT+ latches. The settings' byte 14 is cursed-os's revision) */
+        favorites.factory[15][14] = 2u;
+        ui_prefs &= ~PREF_LATCH;
+        perf_latch_on = 0;
         settings_save();
+    }
+    {                                                    /* HOME + OCT- / OCT+ held: the tempo nudged while held */
+        int h = cos_home_held(), dn = (int)((fm1_in.buttons >> panel.btn[B_OCTDN]) & 1u),
+            up = (int)((fm1_in.buttons >> panel.btn[B_OCTUP]) & 1u);
+        bpm_nudge = (int8_t)(h ? up - dn : 0);
     }
     fx_lock_on = 0;
     for (k = 0; k < 32u && pressed; k++) {
@@ -629,15 +663,18 @@ static __attribute__((noinline)) void cos_input(void)
             ui_prefs ^= PREF_LATCH;
             perf_latch_on = (ui_prefs & PREF_LATCH) != 0u;
             perf_latched = 0;
+            cfx_latched = 0;
             settings_save();
             cos_say(perf_latch_on ? "FX LATCH" : "FX HOLD");
         }
         else if (cz.fx_down && b == B_OCTDN) {           /* FX + OCT-: every effect and macro off */
             cz.fx_used = 1;
             perf_latched = 0;
+            cfx_latched = 0;
             perf_k[0] = perf_k[1] = perf_k[2] = perf_k[3] = 0;
             cos_say("FX ALL OFF");
         }
+        else if ((b == B_OCTDN || b == B_OCTUP) && cos_home_held()) {}   /* (HOME + OCT: the nudge, above; the BPM red) */
         else if (b == B_OCTDN || b == B_OCTUP) {
             int up = b == B_OCTUP;
             if (cz.mode == CM_TRIG) {
@@ -804,8 +841,10 @@ static void cos_head(void)
         cos_tx(32 + 8 * 6, 3, b, C_DIM);
     }
     b[0] = 0;
-    fmt_int(b, song.g[G_BPM]);
-    cos_txr(226, 3, b, C_FG);
+    if (bpm_frac) cos_bpm_text(b, song.g[G_BPM] * 10 + bpm_frac % 10u);
+    else fmt_int(b, song.g[G_BPM]);
+    if (bpm_nudge) str_cpy(b + str_len(b), bpm_nudge > 0 ? "+" : "-", 2);   /* (nudged: 3 %, red) */
+    cos_txr(226, 3, b, bpm_nudge ? C_RED : C_FG);
     cos_txr(226 - 8 * 4, 3, COS_NN[cz.key_next ? cz.key_next - 1u : cos_key()], cz.key_next ? C_RED : C_MID);
 tri:
     {                                                     /* the play triangle, red while it runs */
@@ -824,6 +863,12 @@ static void cos_tabs(void)
         cv_rect(2, 20, cos_w("FX PAD") + 6, 12, C_FG);
         cos_tx(5, 22, "FX PAD", C_BG);
         cos_txr(238, 22, perf_latch_on ? "LATCH  OCT-:ALL OFF" : "HOLD  OCT+:LATCH", C_DIM);
+        return;
+    }
+    if (cz.mode == CM_HOME && cos_home_held()) {          /* (HOME held: the tempo's keys) */
+        cv_rect(2, 20, cos_w("TEMPO") + 6, 12, C_FG);
+        cos_tx(5, 22, "TEMPO", C_BG);
+        cos_txr(238, 22, "OCT-/+ NUDGE  K1 .1", C_DIM);
         return;
     }
     if (cz.mode == CM_TRIG && cos_held()) {               /* (steps held: what a knob locks) */
@@ -902,6 +947,7 @@ static void cos_dial(int32_t cx, int32_t cy, uint32_t k)
     if (str_len(b) > 7u) b[7] = 0;
     cos_txc(cx, cy + r + 4, CZ_LBL, b, C_MID);
     param_format(d, v, val, &unit);
+    if (p->id[k & 3u] == ID_BPM) cos_bpm_text(val, v);
     cos_up(val);
     if (str_len(val) > 7u) val[7] = 0;
     cos_txc(cx, cy + r + 15, CZ_TALL, val, hot ? C_RED : C_FG);
@@ -1263,25 +1309,45 @@ static void cos_body_proj(void)
 }
 
 /* the FX pad (FX held): the 16 white keys' effects in two columns, the black keys' under them; an effect on: red */
+static int cos_fx_on(uint32_t c)
+{
+    return c < CX_CODE ? (int)(((perf_held | perf_latched) >> c) & 1u) : (int)((cfx_now() >> (c - CX_CODE)) & 1u);
+}
 static void cos_body_fxpad(void)
 {
-    static const char *const WN[16] = {"RPT 1/8", "RPT 1/16", "RPT 1/32", "LPF", "HPF", "OCT-", "OCT+", "HALF",
-                                       "DEC-", "DEC+", "STUT 1/8", "STUT1/16", "ATK+", "ARP", "RANDOM", "CLR LANE"};
-    static const char *const TG[3] = {"ALL", "SYN", "DRM"};
-    uint32_t on = perf_held | perf_latched, i;
-    char b[24];
+    static const char *const WN[16] = {"RPT 1/8", "RPT 1/16", "RPT 1/32", "GATE1/16", "GATE 1/8", "TAPESTOP", "GLITCH",
+                                       "LPF", "HPF", "DRIVE", "CRUSH", "DLYTHROW", "REV WASH", "FREEZE", "HP RISER",
+                                       "NOISE UP"};
+    static const char *const BN[5] = {"KICK", "LOWS", "DRUM", "LP3", "LP7"};
+    uint32_t i;
+    int32_t x;
+    char b[4];
     for (i = 0; i < 16u; i++) {
-        int32_t x = i < 8u ? 2 : 122, y = 36 + (int32_t)(i % 8u) * 12;
-        int act = i < 15u && ((on >> i) & 1u);
+        int32_t y = 36 + (int32_t)(i % 8u) * 12;
+        int act = cos_fx_on(CFX_W[i]);
+        x = i < 8u ? 2 : 122;
         b[0] = (char)(i + 1u >= 10u ? '1' : ' '); b[1] = (char)('0' + (i + 1u) % 10u); b[2] = 0;
         cos_tx(x, y, b, C_DIM);
         if (act) cv_rect(x + 18, y - 2, cos_w(WN[i]) + 4, 11, C_RED);
-        cos_tx(x + 20, y, WN[i], act ? C_BG : (i == 15u ? C_MID : C_FG));
+        cos_tx(x + 20, y, WN[i], act ? C_BG : C_FG);
     }
-    str_cpy(b, "BLACK 1-6 MUTE  8 ON:", sizeof b);
-    str_cpy(b + str_len(b), TG[pfx_tgt % 3u], 4);
-    cos_tx(2, 132, b, (on & PF_MUTE) ? C_RED : C_DIM);
-    cos_tx(2, 143, "7 9 10 LOOP 3/5/7  11 GLITCH", (on & (PF_LOOPS | PF_BIT(PF_GLT))) ? C_RED : C_DIM);
+    cos_tx(2, 132, "BLACK", C_DIM);                      /* the black keys: 1..6 the tracks muted, then the five */
+    for (i = 0, x = 44; i < 6u; i++, x += 10) {
+        int act = cos_fx_on(CFX_B[i]);
+        b[0] = (char)('1' + i); b[1] = 0;
+        if (act) cv_rect(x - 1, 130, 9, 11, C_RED);
+        cos_tx(x, 132, b, act ? C_BG : C_MID);
+    }
+    cos_tx(x + 2, 132, "MUTE", C_DIM);
+    for (i = 0, x = 2; i < 5u; i++) {
+        int act = cos_fx_on(CFX_B[6u + i]);
+        char n[12];
+        n[0] = (char)(i + 7u >= 10u ? '1' : ' '); n[1] = (char)('0' + (i + 7u) % 10u); n[2] = 0;
+        str_cpy(n + 2, BN[i], 8);
+        if (act) cv_rect(x - 1, 141, cos_w(n) + 2, 11, C_RED);
+        cos_tx(x, 143, n, act ? C_BG : C_FG);
+        x += cos_w(n) + 5;
+    }
 }
 
 /* GLO > MASTER: the chain and the compressor's gain reduction now (a bar, dB) */

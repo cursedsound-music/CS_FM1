@@ -54,6 +54,7 @@ enum { MD_OFF, MD_PITCH, MD_CUT, MD_SHP, MD_AMP, MD_PAN, MD_DIST, MD_CHO, MD_DLY
 static const uint8_t GFX_ID[8] = {G_DTIME, G_DFDBK, G_DCOLOR, G_DMIX, G_RSIZE, G_RDAMP, G_CRATE, G_CDEPTH};
 enum { GF_DTIME, GF_DFDBK, GF_DCOL, GF_DMIX, GF_RSIZE, GF_RDAMP, GF_CRATE, GF_CDEPTH };
 static volatile int16_t gfx_off[8];                      /* the matrix's offset on each (0: the stored value, as before) */
+static volatile int16_t cfx_goff[8];                     /* (cursed-os) the FX pad's on each (cosfx.c cfx_offsets) */
 static inline int32_t gfx_val(uint32_t k)
 {
     int32_t o = gfx_off[k], v = song.g[GFX_ID[k]];
@@ -278,7 +279,7 @@ static __attribute__((noinline)) void macro_master(void)
     clip_eff = (int16_t)clamp(song.g[G_CLIP] + off[0], 0, 100);
     pnch_eff = (int16_t)clamp(song.g[G_PUNCH] + off[1], 0, 100);
     for (k = 0; k < 8u; k++)
-        gfx_off[k] = (int16_t)clamp(off[MD_DTIME - MD_CLIP + k], -32000, 32000);
+        gfx_off[k] = (int16_t)clamp(off[MD_DTIME - MD_CLIP + k] + cfx_goff[k], -32000, 32000);
 }
 
 /* after the part's block (when MOD.on): the stored values back */

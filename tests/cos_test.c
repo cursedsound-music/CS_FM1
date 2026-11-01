@@ -341,6 +341,175 @@ int main(void)
         x2_defaults(3); t3->p[P_LPHASE] = 0;
     }
 
+
+    /* (the FX pad) techno: GATE, LOW KILL, TAPE STOP, the risers, THROW / FREEZE / WASH's offsets, KICK, DRUMS; HOLD */
+    {
+        int32_t L[64], R[64], W[64], SD[64], SR[64];
+        uint32_t b, i2, P;
+        int32_t pk, lo, hi;
+        song.playing = 0; song.g[G_BPM] = 120; bpm_frac = 0; bpm_nudge = 0; song.g[G_CLOCK] = 0;
+        CHECK(beat_samples() == 22050u, "120 BPM: 22050 a beat (%u)", beat_samples());
+        bpm_frac = 5;
+        CHECK(beat_samples() == 44100u * 600u / 1205u, "120.5 BPM (%u)", beat_samples());
+        bpm_nudge = 1;
+        CHECK(beat_samples() == 44100u * 600u / 1205u * 1000u / 1030u, "nudged 3 %% faster (%u)", beat_samples());
+        bpm_nudge = -1;
+        CHECK(beat_samples() > 44100u * 600u / 1205u, "nudged slower (%u)", beat_samples());
+        bpm_nudge = 0; bpm_frac = 0;
+        perf_latch_on = 0; cfx_held = cfx_latched = 0;
+        cfx_press(CX_CODE + CX_GATE16, 1);
+        CHECK(cfx_held == CX_BIT(CX_GATE16), "HOLD: the key holds GATE 1/16");
+        cfx_press(CX_CODE + CX_GATE16, 0);
+        CHECK(!cfx_held, "let go: off");
+        perf_latch_on = 1;
+        cfx_press(CX_CODE + CX_DRIVE, 1); cfx_press(CX_CODE + CX_DRIVE, 0);
+        CHECK(cfx_latched == CX_BIT(CX_DRIVE), "LATCH: a press turns it on");
+        cfx_press(CX_CODE + CX_DRIVE, 1);
+        CHECK(!cfx_latched, ".. the next off");
+        perf_latch_on = 0;
+        /* GATE 1/16 on a steady input: half of each 1/16 open, half shut */
+        P = div_samples(2);
+        cfx_held = CX_BIT(CX_GATE16);
+        lo = 1 << 30; hi = -1;
+        for (b = 0; b < 2u * P / 64u + 200u; b++) {
+            for (i2 = 0; i2 < 64u; i2++) { L[i2] = R[i2] = 10000; W[i2] = SD[i2] = SR[i2] = 0; }
+            cfx_block(L, R, W, SD, SR, 64);
+            if (b > 100u) for (i2 = 0; i2 < 64u; i2++) { if (L[i2] < lo) lo = L[i2]; if (L[i2] > hi) hi = L[i2]; }
+        }
+        CHECK(lo < 200 && hi > 9800, "GATE 1/16: shut and open (%d .. %d)", lo, hi);
+        cfx_held = 0;
+        for (b = 0; b < 40u; b++) { for (i2 = 0; i2 < 64u; i2++) { L[i2] = R[i2] = 10000; W[i2] = 0; } cfx_block(L, R, W, SD, SR, 64); }
+        CHECK(L[63] == 10000 && !cx.gs, "let go: open again, the gate out (%d)", L[63]);
+        /* LOW KILL: 50 Hz gone, 3 kHz through */
+        {
+            uint32_t ph = 0, f;
+            for (f = 0; f < 2u; f++) {
+                uint32_t inc = f ? 3000u * 97391u : 50u * 97391u;   /* (2^32 / 44100 a Hz) */
+                cfx_held = CX_BIT(CX_LOWK); pk = 0;
+                for (b = 0; b < 400u; b++) {
+                    for (i2 = 0; i2 < 64u; i2++) { L[i2] = R[i2] = og_sin(ph >> 16) / 3; ph += inc; W[i2] = 0; }
+                    cfx_block(L, R, W, SD, SR, 64);
+                    if (b > 200u) for (i2 = 0; i2 < 64u; i2++) if (L[i2] > pk) pk = L[i2];
+                }
+                if (!f) CHECK(pk < 900, "LOW KILL: 50 Hz down (%d of ~10900)", pk);
+                else CHECK(pk > 9000, "LOW KILL: 3 kHz through (%d)", pk);
+            }
+            cfx_held = 0;
+            for (b = 0; b < 40u; b++) { for (i2 = 0; i2 < 64u; i2++) { L[i2] = R[i2] = 0; W[i2] = 0; } cfx_block(L, R, W, SD, SR, 64); }
+        }
+        /* TAPE STOP: the buffer borrowed, quiet within a beat, given back after */
+        {
+            uint32_t ph = 0;
+            cfx_held = CX_BIT(CX_TAPE);
+            for (b = 0; b < 22050u / 64u + 40u; b++) {
+                for (i2 = 0; i2 < 64u; i2++) { L[i2] = R[i2] = og_sin(ph >> 16) / 3; ph += 440u * 97391u; W[i2] = 0; }
+                cfx_block(L, R, W, SD, SR, 64);
+                if (b == 2u) CHECK(sl_lent && cx.tape == 1u, "TAPE STOP has the buffer");
+                if (b == 4u) { pk = 0; for (i2 = 0; i2 < 64u; i2++) if (L[i2] > pk) pk = L[i2]; CHECK(pk > 5000, "it starts at speed (%d)", pk); }
+            }
+            pk = 0; for (i2 = 0; i2 < 64u; i2++) if ((L[i2] < 0 ? -L[i2] : L[i2]) > pk) pk = L[i2] < 0 ? -L[i2] : L[i2];
+            CHECK(pk < 300, "stopped: quiet (%d)", pk);
+            cfx_press(PF_R16, 1);
+            CHECK(!(perf_held & PF_BIT(PF_R16)), "REPEAT waits while TAPE STOP has the buffer");
+            cfx_press(PF_R16, 0);
+            cfx_held = 0;
+            for (b = 0; b < 20u; b++) { for (i2 = 0; i2 < 64u; i2++) { L[i2] = R[i2] = 7000; W[i2] = 0; } cfx_block(L, R, W, SD, SR, 64); }
+            CHECK(!sl_lent && !cx.tape && L[63] == 7000, "let go: live again, the buffer back (%d)", L[63]);
+        }
+        /* NOISE RISER: up over 4 bars, loud but not past full scale */
+        {
+            int64_t e0 = 0, e1 = 0;
+            uint32_t nb = 64u * P / 64u;
+            cfx_held = CX_BIT(CX_NOISE); pk = 0;
+            for (b = 0; b < nb + 10u; b++) {
+                for (i2 = 0; i2 < 64u; i2++) { L[i2] = R[i2] = 0; W[i2] = SR[i2] = 0; }
+                cfx_block(L, R, W, SD, SR, 64);
+                for (i2 = 0; i2 < 64u; i2++) {
+                    if (b < nb / 4u) e0 += (int64_t)L[i2] * L[i2]; else if (b > nb) e1 += (int64_t)L[i2] * L[i2];
+                    if ((L[i2] < 0 ? -L[i2] : L[i2]) > pk) pk = L[i2] < 0 ? -L[i2] : L[i2];
+                }
+            }
+            e1 /= 640; e0 /= (int64_t)(nb / 4u) * 64;
+            printf("  (NOISE RISER: the first bar's mean square %lld, the end's %lld, peak %d)\n", (long long)e0, (long long)e1, pk);
+            CHECK(e1 > 16 * e0 && e1 > 2000000 && pk < 40000, "NOISE RISER swells (%lld -> %lld, peak %d)", (long long)e0, (long long)e1, pk);
+            cfx_held = 0;
+            for (b = 0; b < 40u; b++) { for (i2 = 0; i2 < 64u; i2++) { L[i2] = R[i2] = 0; W[i2] = 0; } cfx_block(L, R, W, SD, SR, 64); }
+            CHECK(L[63] == 0, "let go: gone");
+        }
+        /* HP RISER: after 4 bars 100 Hz is gone; let go, the drop: back at once */
+        {
+            uint32_t ph = 0, nb = 64u * P / 64u;
+            cfx_held = CX_BIT(CX_HPR); pk = 0;
+            for (b = 0; b < nb + 20u; b++) {
+                for (i2 = 0; i2 < 64u; i2++) { L[i2] = R[i2] = og_sin(ph >> 16) / 3; ph += 100u * 97391u; W[i2] = 0; }
+                cfx_block(L, R, W, SD, SR, 64);
+                if (b > nb) for (i2 = 0; i2 < 64u; i2++) if (L[i2] > pk) pk = L[i2];
+            }
+            CHECK(pk < 600, "HP RISER at its top: 100 Hz out (%d)", pk);
+            cfx_held = 0;
+            for (b = 0; b < 4u; b++) { for (i2 = 0; i2 < 64u; i2++) { L[i2] = R[i2] = 5000; W[i2] = 0; } cfx_block(L, R, W, SD, SR, 64); }
+            CHECK(L[63] == 5000, "the drop: the mix whole again (%d)", L[63]);
+        }
+        /* THROW: the dry into the delay's send, its feedback up, still a bar after; FREEZE: nothing in, feedback 100 */
+        song.g[G_DFDBK] = 40;
+        cfx_held = CX_BIT(CX_THROW);
+        for (b = 0; b < 4u; b++) { for (i2 = 0; i2 < 64u; i2++) { L[i2] = R[i2] = 8000; W[i2] = SD[i2] = SR[i2] = 0; } cfx_block(L, R, W, SD, SR, 64); }
+        CHECK(SD[63] > 7000 && cfx_goff[GF_DFDBK] == 48, "THROW: into the delay, feedback to 88 (%d, %d)", SD[63], cfx_goff[GF_DFDBK]);
+        cfx_held = 0;
+        for (b = 0; b < 8u; b++) { for (i2 = 0; i2 < 64u; i2++) { L[i2] = R[i2] = 8000; W[i2] = SD[i2] = SR[i2] = 0; } cfx_block(L, R, W, SD, SR, 64); }
+        CHECK(SD[63] == 0 && cfx_goff[GF_DFDBK] == 48, "let go: nothing more in, the echoes ring on");
+        for (b = 0; b < 16u * P / 64u + 2u; b++) { for (i2 = 0; i2 < 64u; i2++) { L[i2] = R[i2] = 0; W[i2] = SD[i2] = SR[i2] = 0; } cfx_block(L, R, W, SD, SR, 64); }
+        CHECK(cfx_goff[GF_DFDBK] == 0 && !cx.busy, "a bar on: the delay as it was");
+        cfx_held = CX_BIT(CX_FREEZE);
+        for (i2 = 0; i2 < 64u; i2++) { L[i2] = R[i2] = 8000; W[i2] = 0; SD[i2] = 500; }
+        cfx_block(L, R, W, SD, SR, 64);
+        CHECK(SD[10] == 0 && cfx_goff[GF_DFDBK] == 60, "FREEZE: the send shut, feedback at 100");
+        cfx_held = CX_BIT(CX_WASH);
+        for (i2 = 0; i2 < 64u; i2++) { L[i2] = R[i2] = 8000; W[i2] = SR[i2] = 0; }
+        for (b = 0; b < 4u; b++) cfx_block(L, R, W, SD, SR, 64);
+        CHECK(SR[63] > 0 && cfx_goff[GF_RSIZE] > 0 && L[63] < 8000, "WASH: into the reverb, larger, the dry back");
+        /* KICK KILL: the kit's kicks muted while held, as they were after; DRUMS ONLY: the kits soloed */
+        dx_mute = 0;
+        cfx_held = CX_BIT(CX_KICK) | CX_BIT(CX_DRUMS);
+        cfx_block(L, R, W, SD, SR, 64);
+        CHECK((dx_mute & DXG_KICK) && perf_solo, "KICK KILL, DRUMS ONLY (%x %x)", dx_mute, perf_solo);
+        {
+            uint32_t k2, ok = 1;
+            for (k2 = 0; k2 < NTRK; k2++)
+                ok &= ((perf_solo >> k2) & 1u) == (ENGINES[eng_idx(trk[k2].eng_req)] == &ENG_DRUM);
+            CHECK(ok, "DRUMS ONLY: the kits only (%x)", perf_solo);
+        }
+        cfx_held = 0;
+        cfx_block(L, R, W, SD, SR, 64);
+        CHECK(!(dx_mute & DXG_KICK) && !perf_solo, "let go: the kicks and every track back");
+        for (b = 0; b < 16u * P / 64u + 40u; b++) { for (i2 = 0; i2 < 64u; i2++) { L[i2] = R[i2] = 0; W[i2] = 0; } cfx_block(L, R, W, SD, SR, 64); }
+        CHECK(!cx.busy, "every share out");
+        /* the pad's keys: white 4 GATE 1/16, black 7 KICK KILL */
+        CHECK(CFX_W[3] == CX_CODE + CX_GATE16 && CFX_B[6] == CX_CODE + CX_KICK && CFX_W[0] == PF_R8, "the key map");
+    }
+
+    /* BPM in tenths (HOME held: a knob's step a tenth), the 'TF' block */
+    {
+        int16_t *vp;
+        uint8_t blk[8];
+        song.g[G_BPM] = 128; bpm_frac = 0;
+        cz.mode = CM_HOME; cz.tab[CM_HOME] = 0;
+        fm1_in.buttons |= 1u << panel.btn[B_HOME];
+        cos_turn(0, 1); cos_turn(0, 1);
+        CHECK(song.g[G_BPM] == 128 && bpm_frac == 2, "HOME held: 128.2 (%d.%u)", song.g[G_BPM], bpm_frac);
+        fm1_in.buttons &= ~(1u << panel.btn[B_HOME]);
+        cos_turn(0, 1);
+        CHECK(song.g[G_BPM] >= 129 && bpm_frac == 2, "a whole one, the tenth kept (%d.%u)", song.g[G_BPM], bpm_frac);
+        CHECK(cos_cdesc(CC_BPM, &vp) && *vp == song.g[G_BPM] * 10 + 2, "the knob's value in tenths");
+        song.g[G_BPM] = 128;
+        CHECK(proj_tf(blk, 0, 0) == 3u && blk[0] == 'T' && blk[2] == 2u, "written: TF 2");
+        bpm_frac = 0;
+        CHECK(proj_tf(blk, 0, 8) == 3u && bpm_frac == 2u, "read back");
+        blk[0] = 'X';
+        proj_tf(blk, 0, 8);
+        CHECK(bpm_frac == 0u, "a project without it: a whole BPM");
+    }
+
     printf("cos_test: %s (%d failures)\n", fails ? "FAILED" : "ok", fails);
     return fails != 0;
 }

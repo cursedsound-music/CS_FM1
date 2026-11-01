@@ -360,7 +360,7 @@ static __attribute__((noinline)) void track_post(track_t *t, const engine_t *e, 
         track_filter(t, out, n, e == &ENG_LOFI, t->p[P_FCUT], t->p[P_FRES]);
 }
 
-static uint32_t beat_samples(void);                     /* (fx.c) */
+static __attribute__((noinline)) uint32_t beat_samples(void);   /* (fx.c) */
 /* (cursed-os) LFO 2 (params.c trk_x2): RATE as LFO's (below 0 in time, on the transport's grid while it plays), WAVE
  * any shape; free running (no note restarts it); its own random stream (the shared one stays as it was) */
 static __attribute__((noinline)) void lfo2_tick(track_t *t)

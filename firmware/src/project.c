@@ -309,6 +309,23 @@ static __attribute__((noinline)) uint32_t proj_x2(const uint8_t *bc, uint32_t po
     return 2u + NTRK * n;
 }
 
+/* (cursed-os) the tempo's tenths: 'T' 'F' and the tenth, when not 0 (a project without it: a whole BPM) */
+static __attribute__((noinline)) uint32_t proj_tf(const uint8_t *bc, uint32_t pos, uint32_t room)
+{
+    uint8_t *b = (uint8_t *)(uintptr_t)bc;
+    if (!room) {
+        if (!bpm_frac) return 0;
+        if (b) { b[pos] = 'T'; b[pos + 1u] = 'F'; b[pos + 2u] = (uint8_t)(bpm_frac % 10u); }
+        return 3u;
+    }
+    if (pos + 3u > room || b[pos] != 'T' || b[pos + 1u] != 'F') {
+        bpm_frac = 0;
+        return 0;
+    }
+    bpm_frac = (uint8_t)(b[pos + 2u] % 10u);
+    return 3u;
+}
+
 /* (p9) the master's EQ: 'E' 'Q' and its four gains (-12 .. 12, a byte each), when any is set; a project without it
  * opens flat (as proj_tp) */
 static __attribute__((noinline)) uint32_t proj_eq(const uint8_t *bc, uint32_t pos, uint32_t room)
@@ -923,6 +940,7 @@ static uint32_t proj_packed_size(const project_t *q)
     n += proj_tp(q, 0, 0, 0);                           /* (snd8) the master's TAPE, when on */
     n += proj_eq(0, 0, 0);                              /* (p9) its EQ, when set */
     n += proj_x2(0, 0, 0);                              /* (cursed-os) LFO 2 and FILTER 2, when set */
+    n += proj_tf(0, 0, 0);                              /* (cursed-os) the tempo's tenths */
     if (q->g[G_DMOD] != GP[G_DMOD].def)                 /* (0.6.86) the delay's MOD's, when not the default */
         n += 3u;
     if (q->g[G_DTYPE] || q->g[G_DPING])                 /* (0.6.90) its TYPE and PING-PONG's */
@@ -1099,6 +1117,7 @@ static int proj_pack(project_store_t *out, const project_t *q)
     pos += proj_eq(b, pos, 0);
     if(q->dx_acoustic) { b[pos++]='D';b[pos++]='A';b[pos++]=q->dx_acoustic&127u; }                          /* (p9) its EQ, when set */
     pos += proj_x2(b, pos, 0);                          /* (cursed-os) LFO 2 and FILTER 2, when set (after DA's) */
+    pos += proj_tf(b, pos, 0);
     memcpy(b + PROJC_PFX_OFF, q->pfx_lane, sizeof q->pfx_lane);
     b[PROJC_PFX_OFF + sizeof q->pfx_lane] = q->pfx_ltgt > 2u ? 0u : q->pfx_ltgt;
     for (i = 0; i < 4u; i++)
@@ -1388,6 +1407,7 @@ static int proj_unpack_c(project_t *q, const uint8_t *b)
     pos += proj_eq(b, pos, room);
     if(pos+3u<=room && b[pos]=='D' && b[pos+1u]=='A') { q->dx_acoustic=b[pos+2u]&127u; pos += 3u; }        /* (p9) its EQ (else flat) */
     pos += proj_x2(b, pos, room);                       /* (cursed-os) LFO 2 and FILTER 2 (else the defaults) */
+    pos += proj_tf(b, pos, room);                       /* (cursed-os) the tempo's tenths (else 0) */
     proj_new_tracks(q, nt);                             /* (a FUNC of fewer tracks: the rest at power-on) */
     for (t = nt; t < NTRK; t++)
         memcpy(q->fm6[t], FM6_INIT, FM6_PACKED);
@@ -2129,6 +2149,7 @@ static void proj_slot_name(uint32_t slot, char *b)
                                                          * live ones: the music's own kept) */
     int8_t xv[NTRK][X2_N];
     int used;
+    uint8_t bf = bpm_frac;
     memcpy(tv, tape_v, sizeof tv);
     memcpy(ev, eq_v, sizeof ev);
     memcpy(xv, (const void *)trk_x2, sizeof xv);
@@ -2137,6 +2158,7 @@ static void proj_slot_name(uint32_t slot, char *b)
     memcpy(tape_v, tv, sizeof tv);
     memcpy(eq_v, ev, sizeof ev);
     memcpy((void *)trk_x2, xv, sizeof xv);
+    bpm_frac = bf;
     if (!used) return;
     proj_name_get(b, (const uint8_t *)proj_scratch.name);
     if (!b[0]) str_cpy(b, "UNTITLED", PROJ_NAME_LEN + 1u);
