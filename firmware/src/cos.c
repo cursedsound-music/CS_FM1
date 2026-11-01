@@ -251,10 +251,7 @@ static void cos_input(void)
     }
     if (cz.hot && fm1_ms - cz.hot_ms > 1500u) cz.hot = 0;
     cos_key_poll();
-    fm6_poll();                                          /* (what JIANT's frame keeps doing: ui_input_frame) */
-    mo_lvl = (uint8_t)(midi_out_mode & 3u);
-    midi_pc_poll();
-    rp_apply();
+    ui_polls();                                          /* (what JIANT's frame keeps doing: ui_input.c) */
 }
 
 /* ------------------------------------------------------------ drawing --- */

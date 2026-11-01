@@ -2175,6 +2175,15 @@ static void scale_link(void)
         }
 }
 
+/* (cursedsound) what every frame keeps doing, JIANT's interface's or cursed-os's: one call site each (inlined here, as
+ * they were into ui_input_frame), so the compiler builds them, and what they call, as before */
+static __attribute__((noinline)) void ui_polls(void)
+{
+    fm6_poll();                                         /* FM6: PTCH turned -> its patch */
+    mo_lvl = (uint8_t)(midi_out_mode & 3u);             /* (0.6.72) MENU > MIDI OUT (seq.c) */
+    midi_pc_poll();                                     /* (0.6.72) PROGRAM CHANGE in: the sounds it asked for */
+    rp_apply();                                         /* (MENU > CLICK, CLICK LEVEL, COUNT-IN: click.c, seq.c) */
+}
 static void ui_input_frame(void);
 static void ui_input(void)
 {
@@ -2200,7 +2209,6 @@ static void ui_input_frame(void)
     uint32_t oct;
     uint32_t lay, combo = 0, lytap, lkeys, glo, kq = 0;
     int32_t s, sel = 0, ks[4] = {0, 0, 0, 0};
-    fm6_poll();                                         /* FM6: PTCH turned -> its patch */
     mom_poll();                                         /* (0.9.9-seq2e) MOMENTARY's glide back, its header tag */
     {   /* (JIANT 0.6.5) RESO's PITCH and FOLW live in PRE's and DAMP's slots: into RESO a ROOM's values become theirs
          * (DAMP past FOLW's T6: OFF; PRE past 14: 14), out of it the reverb's own defaults back */
@@ -2231,10 +2239,8 @@ static void ui_input_frame(void)
     perf_latch_on = fx_latch & 1u;                      /* (MENU > FX LATCH; a settings load sets it too) */
     fx_usb_fixed = (ui_prefs & PREF_USB_FIXED) != 0u;   /* (MENU > USB LEVEL: fx.c, audio.c) */
     fx_usb_gain = USB_GAIN[fx_usb_fixed ? usb_lvl % 5u : 0u];   /* (0.7.0) .. and its attenuation (usb.c uac_tap) */
-    mo_lvl = (uint8_t)(midi_out_mode & 3u);             /* (0.6.72) MENU > MIDI OUT (seq.c) */
-    midi_pc_poll();                                     /* (0.6.72) PROGRAM CHANGE in: the sounds it asked for */
+    ui_polls();                                         /* (cursedsound) FM6's patch, MIDI OUT's setting, PROGRAM CHANGE, CLICK */
     ml_poll();                                          /* (p1) MIDI LEARN: a CC came for the picked parameter */
-    rp_apply();                                        /* (MENU > CLICK, CLICK LEVEL, COUNT-IN: click.c, seq.c) */
     {   /* (0.6.55) TRACKS 6 -> 4 (MENU or GLO > SYSTEM) on T5 / T6: T4 selected (ALGORITHM stops there) */
         static uint8_t live0 = NTRK;
         if (trk_live < live0 && song.sel >= trk_live)

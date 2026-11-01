@@ -303,7 +303,7 @@ def late_fns():
     # (cursedsound) the UI functions cursed-os and ACID hook into grew a little: after the sound, so the holes before its
     # pinned runs keep the room they were recorded with (the first link put one 34 bytes past its run)
     names |= {"edit_param", "ui_input", "ui_input_frame", "ui_leds", "ui_draw", "page_desc", "page_icon", "draw_graph",
-              "graph_signature", "seq_roll_view"}
+              "graph_signature", "seq_roll_view", "ui_polls"}
     for f in LATE_SRC:
         names |= set(re.findall(r"^static [^;=()]*?\b(\w+)\((?![^)]*\)\s*;)", (FW / "src" / f).read_text(), flags=re.M))
     return names

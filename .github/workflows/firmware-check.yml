@@ -10,6 +10,10 @@ on:
         description: "Branch, tag or commit to build"
         default: main
         required: true
+      repin:
+        description: "FELUCCA_REPIN: '' (the recorded layout), keep (the recorded order, the addresses anew) or 1"
+        default: ""
+        required: false
 permissions:
   contents: read
 jobs:
@@ -48,12 +52,21 @@ jobs:
           JIELI_TOOLCHAIN: /home/runner/.jieli/toolchain
         run: |
           "$JIELI_TOOLCHAIN/pi32v2/bin/clang" --version | head -1
+          export FELUCCA_REPIN="${{ inputs.repin }}"
           python3 tools/build.py
+          if [ -n "$FELUCCA_REPIN" ]; then
+            echo "----- tools/audio_layout.txt as recorded (diff against the commit's) -----"
+            git diff --stat -- tools/audio_layout.txt
+            git diff -U0 -- tools/audio_layout.txt | grep -E '^[-+][0-9a-f]{6} ' | head -40
+            echo "----- base64 of the recorded file -----"
+            gzip -9c tools/audio_layout.txt | base64 -w0; echo
+          fi
       - if: always()
         uses: actions/upload-artifact@v4
         with:
           name: firmware-${{ github.run_id }}
           path: |
+            tools/audio_layout.txt
             build/felucca.fwsc
             build/felucca.bin
             build/layout.ld
