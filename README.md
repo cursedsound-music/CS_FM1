@@ -76,8 +76,7 @@ cursed-os stands on other people's work. Thank you.
   No X0X code is in cursed-os yet; if its engines are ported, they will be credited here and in LICENSING.md.
 - **[HYP-1](https://github.com/RustyPawz/fm1-HYP1)** by RedtailWorks: the idea of the keys setting the song's key.
   Written fresh for cursed-os, no HYP-1 code.
-- **Fonts**: Press Start 2P (The Press Start 2P Project Authors) and Jersey 10 (The Soft Type Project Authors), both
-  SIL OFL 1.1.
+- **Font**: Press Start 2P (The Press Start 2P Project Authors), SIL OFL 1.1.
 
 ## Licence
 

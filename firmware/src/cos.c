@@ -14,7 +14,7 @@
  *         interval, on the next bar while playing (the kits stay); SCL held + a key does it from any page
  *   SELECT the page   ALGORITHM the track   KNOB 1-4 the page's four   PLAY start / stop
  * Outside HOME, SEQ and GEN's kit pages the keys play the track. */
-#include "ui_fonts_cos.h"                       /* AF_CS (Press Start 2P 8 px), AF_CM (Jersey 10 20 px): tools/build.py */
+#include "cos_font.h"                           /* COS_FONT: Press Start 2P, 8 x 8, 1 bit (tools/gen_cos_font.py) */
 
 #define C_BG 0x0000u
 #define C_FG 0xFFFFu
@@ -255,9 +255,29 @@ static void cos_input(void)
 }
 
 /* ------------------------------------------------------------ drawing --- */
-static void cos_tx(int32_t x, int32_t y, const char *s, uint16_t c) { cv_text(x, y, &AF_CS, s, c); }
-static void cos_txr(int32_t xr, int32_t y, const char *s, uint16_t c) { cv_text(xr - text_w(&AF_CS, s), y, &AF_CS, s, c); }
-static void cos_txc(int32_t xc, int32_t y, const aafont_t *f, const char *s, uint16_t c) { cv_text(xc - text_w(f, s) / 2, y, f, s, c); }
+/* the face: 8 x 8 a character; tall (values, titles) twice as high. Each row's runs of set pixels one rectangle */
+enum { CZ_LBL, CZ_TALL };
+static void cos_px(int32_t x, int32_t y, const char *s, uint16_t c, uint32_t tall)
+{
+    int32_t sy = tall ? 2 : 1, r, b, b0;
+    for (; *s; s++, x += 8) {
+        uint32_t ch = (uint32_t)(uint8_t)*s;
+        const uint8_t *g;
+        if (ch >= 'a' && ch <= 'z') ch -= 32u;
+        if (ch < 32u || ch > 95u) ch = '?';
+        g = COS_FONT[ch - 32u];
+        for (r = 0; r < 8; r++)
+            for (b = 0; b < 8;) {
+                if (!((g[r] << b) & 0x80u)) { b++; continue; }
+                for (b0 = b; b < 8 && ((g[r] << b) & 0x80u); b++) {}
+                cv_rect(x + b0, y + r * sy, b - b0, sy, c);
+            }
+    }
+}
+static int32_t cos_w(const char *s) { return 8 * (int32_t)str_len(s); }
+static void cos_tx(int32_t x, int32_t y, const char *s, uint16_t c) { cos_px(x, y, s, c, CZ_LBL); }
+static void cos_txr(int32_t xr, int32_t y, const char *s, uint16_t c) { cos_px(xr - cos_w(s), y, s, c, CZ_LBL); }
+static void cos_txc(int32_t xc, int32_t y, uint32_t tall, const char *s, uint16_t c) { cos_px(xc - cos_w(s) / 2, y, s, c, tall); }
 static void cos_up(char *b) { for (; *b; b++) if (*b >= 'a' && *b <= 'z') *b = (char)(*b - 32); }
 
 /* a step of track t at i: 0 empty, 1 a trig, 2 an accent, 3 a tie (a kit: lane l only, l < NLANE; else any lane) */
@@ -305,7 +325,7 @@ static void cos_tabs(void)
     int32_t x = 2;
     cos_pages(cz.mode, &p, &n);
     for (i = 0; i < n; i++) {
-        int32_t w = (int32_t)text_w(&AF_CS, p[i].tab) + 6;
+        int32_t w = cos_w(p[i].tab) + 6;
         if (i == cz.tab[cz.mode] % n) { cv_rect(x, 20, w, 12, C_FG); cos_tx(x + 3, 22, p[i].tab, C_BG); }
         else cos_tx(x + 3, 22, p[i].tab, C_DIM);
         x += w + 4;
@@ -329,7 +349,7 @@ static void cos_dial(int32_t cx, int32_t cy, uint32_t k)
     int32_t a, v, r = 12, lo, hi, z;
     uint32_t hot = cz.hot == k + 1u;
     if (!d || !vp) {
-        cos_txc(cx, cy + r + 4, &AF_CS, "-", C_DARK);
+        cos_txc(cx, cy + r + 4, CZ_LBL, "-", C_DARK);
         return;
     }
     v = *vp;
@@ -348,11 +368,11 @@ static void cos_dial(int32_t cx, int32_t cy, uint32_t k)
     str_cpy(b, d->label, sizeof b);
     cos_up(b);
     if (str_len(b) > 7u) b[7] = 0;
-    cos_txc(cx, cy + r + 4, &AF_CS, b, C_MID);
+    cos_txc(cx, cy + r + 4, CZ_LBL, b, C_MID);
     param_format(d, v, val, &unit);
     cos_up(val);
     if (str_len(val) > 7u) val[7] = 0;
-    cos_txc(cx, cy + r + 7, &AF_CM, val, hot ? C_RED : C_FG);
+    cos_txc(cx, cy + r + 15, CZ_TALL, val, hot ? C_RED : C_FG);
 }
 
 /* the foot: the selected track's sixteen of the bank, the playhead's a red bar over its cell */
@@ -461,10 +481,10 @@ static void cos_body_sound(void)
     sound_name(t, b);
     cos_up(b);
     if (str_len(b) > 18u) b[18] = 0;
-    cos_txc(120, 70, &AF_CM, b, C_FG);
+    cos_txc(120, 70, CZ_TALL, b, C_FG);
     str_cpy(b, trk_engp(t)->name, 16);
     cos_up(b);
-    cos_txc(120, 98, &AF_CS, b, C_DIM);
+    cos_txc(120, 98, CZ_LBL, b, C_DIM);
 }
 
 /* KEY: the song's key large (the next one in red while it waits for the bar) and an octave of keys from F, the key lit */
@@ -474,7 +494,7 @@ static void cos_body_key(void)
     uint32_t i, cur = cos_key(), nx = cz.key_next ? cz.key_next - 1u : 99u;
     char b[24];
     str_cpy(b, COS_NN[cur], sizeof b);
-    cv_text(20, 46, &AF_CM, b, C_FG);
+    cos_px(20, 46, b, C_FG, CZ_TALL);
     cos_tx(20, 74, "THE SONG'S KEY", C_DIM);
     if (nx < 12u) { str_cpy(b, "NEXT BAR: ", sizeof b); str_cpy(b + str_len(b), COS_NN[nx], 4); cos_tx(110, 52, b, C_RED); }
     for (i = 0; i < 12u; i++) {                         /* white keys a row, black keys above between them */
