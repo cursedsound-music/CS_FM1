@@ -108,6 +108,51 @@ int main(void)
     cos_cput(CC_MOUT, 2);
     CHECK((midi_out_mode & 3u) == 2u, "MIDI OUT ALL");
 
+    /* LOCKS: TRIG, step 3 held (its white key down), KNOB 2 of the sound page used last (SRC 1: E1) turned: a lock on step 3
+     * only, from the sound's own value; the step's trig not toggled when let go; held + REC: the lock goes */
+    song.sel = 4; set_engine_of(TSEL, ENGI_ANALOG);
+    for (i = 0; i < NSTEP; i++) step_clear(&trk[4].step[i]);
+    motion_clear_locks(&trk[4], NSTEP);
+    cz.mode = CM_SRC; cz.tab[CM_SRC] = 0; cz.lk_mode = 0;
+    cos_turn(1, 0);                                     /* (a turn of nothing: no page remembered yet beyond SRC 1) */
+    cz.mode = CM_TRIG; cz.bank = 0;
+    trk[4].step[3].time = ST_NOTE; trk[4].step[3].n = 1; trk[4].step[3].note[0] = 48;
+    cz.tg_down = 1u << WK[3]; fm1_in.notes = 1u << WK[3]; cz.lk_used = 0;
+    CHECK(cos_held() == (1ull << 3), "step 3 held (%llx)", (unsigned long long)cos_held());
+    {
+        int16_t v, base = motion_base_value(&trk[4], P_E1);
+        cos_lock_turn(1, 5, cos_held());
+        CHECK(motion_lock_get(&trk[4], 3, P_E1, &v) && v != base, "a lock of E1 on step 3 (%d, the sound's %d)", v, base);
+        CHECK(!motion_lock_get(&trk[4], 4, P_E1, &v), "no lock on step 4");
+        CHECK(motion_lock_steps(4) == (1ull << 3), "the foot's dot: step 3 only");
+    }
+    fm1_in.notes = 0; cos_input();                      /* (let go: no trig toggled, a lock was set) */
+    CHECK(trk[4].step[3].time == ST_NOTE && trk[4].step[3].n == 1, "the locked step keeps its trig");
+    CHECK(motion_clear_locks(&trk[4], 3) == 1u, "its lock clears");
+    cz.tg_down = 1u << WK[5]; fm1_in.notes = 1u << WK[5]; cz.lk_used = 0;
+    fm1_in.notes = 0; cos_input();                      /* (a tap: the trig) */
+    CHECK(trk[4].step[5].time == ST_NOTE && trk[4].step[5].n, "a tap on step 6 writes its trig on release");
+
+    /* WORDS: a VOICE track; OCT+ a phrase W1..W16 (a language set: EN), another each time; OCT- the one before */
+    song.sel = 1; set_engine_of(TSEL, ENGI_VOICE);
+    trk[1].p[P_VLANG] = 0; trk[1].p[P_VLYR] = 0;
+    cos_words(1);
+    CHECK(trk[1].p[P_VLANG] == LG_EN && trk[1].p[P_VLYR] >= 1 && trk[1].p[P_VLYR] <= (int)LYR_NW, "OCT+: EN, words W%d", trk[1].p[P_VLYR]);
+    {
+        int16_t w1 = trk[1].p[P_VLYR];
+        cos_words(1);
+        CHECK(trk[1].p[P_VLYR] != w1, "another phrase");
+        cos_words(0);
+        CHECK(trk[1].p[P_VLYR] == w1, "OCT-: the one before");
+    }
+    {
+        const cpg_t *pp; uint32_t n;
+        cos_pages(CM_SRC, &pp, &n);
+        CHECK(n == 3u && !strcmp(pp[2].tab, "WORDS"), "a VOICE track's SRC has WORDS");
+        song.sel = 4; cos_pages(CM_SRC, &pp, &n);
+        CHECK(n == 2u, "an ANALOG track's does not");
+    }
+
     printf("cos_test: %s (%d failures)\n", fails ? "FAILED" : "ok", fails);
     return fails != 0;
 }
