@@ -289,6 +289,32 @@ int main(void)
         x2_defaults(3);
     }
 
+    /* OCTAVE: TRANS in octaves (its semitones kept); a kit has none. A kit's EDIT: KICK (both MORPH ends), LEVELS */
+    {
+        const cpg_t *pp; uint32_t n;
+        int16_t *vp;
+        song.sel = 2; set_engine_of(TSEL, ENGI_ANALOG); TSEL->p[P_TRANS] = 3;
+        cos_cput(CC_OCT, -2);
+        CHECK(TSEL->p[P_TRANS] == -21, "OCTAVE -2: TRANS 3 -> -21 (%d)", TSEL->p[P_TRANS]);
+        CHECK(cos_cdesc(CC_OCT, &vp) && *vp == -2, "OCTAVE reads -2");
+        TSEL->p[P_TRANS] = 0;
+        song.sel = 0; set_engine_of(TSEL, ENGI_DRUM);
+        CHECK(!cos_cdesc(CC_OCT, &vp), "a kit: no OCTAVE");
+        cos_pages(CM_SRC, &pp, &n);
+        CHECK(!strcmp(pp[0].tab, "KICK") && !strcmp(pp[2].tab, "LEVELS"), "a kit's EDIT: KICK first, LEVELS");
+        {
+            int32_t a0 = dx_kit[0].a[DXP_DECAY], b0 = dx_kit[0].b[DXP_DECAY];
+            const param_desc_t *d = cos_cdesc(CC_KICK + DXP_DECAY, &vp);
+            CHECK(d && !strcmp(d->label, "DECAY"), "KICK 3: DECAY");
+            cos_cput(CC_KICK + DXP_DECAY, *vp + 10);
+            CHECK(dx_kit[0].a[DXP_DECAY] == clamp(a0 + 10, 0, 127) && dx_kit[0].b[DXP_DECAY] == clamp(b0 + 10, 0, 127), "both ends +10");
+            dx_kit[0].a[DXP_DECAY] = (uint8_t)a0; dx_kit[0].b[DXP_DECAY] = (uint8_t)b0;
+        }
+        cos_cput(CC_LN0, 90);
+        CHECK(TSEL->p[P_LN0] == 90, "the KICK's level (LEVELS 1)");
+        TSEL->p[P_LN0] = 127;
+    }
+
     printf("cos_test: %s (%d failures)\n", fails ? "FAILED" : "ok", fails);
     return fails != 0;
 }

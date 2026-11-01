@@ -2366,6 +2366,10 @@ static void ui_draw_page(uint32_t counting);
 static void ui_draw(void)
 {
     static uint8_t counting;
+#if COS_SLIM
+    cos_draw();                                         /* (cursed-os) its screen only */
+    return;
+#endif
     if (cos_active()) {                                 /* (cursedsound) cursed-os draws the screen */
         cos_draw();
         return;

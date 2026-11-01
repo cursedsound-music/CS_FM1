@@ -152,7 +152,7 @@ static int16_t ac_v[AK_N] COS_RAM;
 static param_desc_t ac_d COS_RAM;
 static __attribute__((noinline)) const param_desc_t *ac_desc(uint32_t k, int16_t **valp)
 {
-    static const char *const LB[AK_N] = {"DENSITY", "SLIDE", "ACCENT", "OCTAVE", "STEPS", "NOTES", "TIE", "LOCK", "EVERY",
+    static const char *const LB[AK_N] = {"DENSITY", "SLIDE", "ACCENT", "JUMPS", "STEPS", "NOTES", "TIE", "LOCK", "EVERY",
                                          "AMOUNT", "ROOT", "SCALE"};
     static const char *const LK[] = {"OFF", "RHYTHM", "NOTES", "R+N", 0};
     static const char *const EV[] = {"OFF", "1 BAR", "2 BARS", "4 BARS", "8 BARS", "16 BARS", 0};

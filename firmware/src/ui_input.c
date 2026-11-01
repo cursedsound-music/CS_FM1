@@ -340,6 +340,10 @@ static uint32_t key_leds(uint32_t *br)                 /* (*br: a layer's keys t
 static void ui_leds_jiant(void);
 static void ui_leds(void)
 {
+#if COS_SLIM
+    cos_leds();
+    return;
+#endif
     if (cos_active()) {                                 /* (cursedsound) cursed-os's LEDs */
         cos_leds();
         return;
@@ -2199,31 +2203,11 @@ static __attribute__((noinline)) void ui_polls(void)
         lim_t = LIM[m[3] <= 12u ? m[3] : 0u];
     }
 }
-static void ui_input_frame(void);
-static void ui_input(void)
+/* every frame, whichever interface (cursed-os: COS_SLIM has only its own): MOMENTARY's glide, the reverb's shared
+ * slots, retired engines' sounds converted, FX LATCH, USB LEVEL, FM6's patch, MIDI OUT, PROGRAM CHANGE, CLICK, USB SERIAL */
+static __attribute__((noinline)) void ui_house(void)
 {
-    if (cos_switch())                                   /* (cursedsound) HOME + GLO: cursed-os <-> this interface */
-        return;
-    if (cos_active()) {
-        cos_input();
-        eu_tick();
-        ac_tick();
-        scale_link();
-        return;
-    }
-    ui_input_frame();
-    eu_tick();
-    ac_tick();                                          /* (cursedsound) ACID's mutations, on the bar */                                          /* (V10.16) EUCLID's MUTATE, on the bar */
-    scale_link();                                       /* (JIANT 0.4) one scale for every melodic track (after the
-                                                         * frame's edits) */
-}
-static void ui_input_frame(void)
-{
-    uint32_t pressed = fm1_input_edges(0), notes = fm1_input_note_edges(), now = fm1_ticks(), id, b, k;
-    uint32_t home, rec, seq, save;
-    uint32_t oct;
-    uint32_t lay, combo = 0, lytap, lkeys, glo, kq = 0;
-    int32_t s, sel = 0, ks[4] = {0, 0, 0, 0};
+    uint32_t k;
     mom_poll();                                         /* (0.9.9-seq2e) MOMENTARY's glide back, its header tag */
     {   /* (JIANT 0.6.5) RESO's PITCH and FOLW live in PRE's and DAMP's slots: into RESO a ROOM's values become theirs
          * (DAMP past FOLW's T6: OFF; PRE past 14: 14), out of it the reverb's own defaults back */
@@ -2255,6 +2239,50 @@ static void ui_input_frame(void)
     fx_usb_fixed = (ui_prefs & PREF_USB_FIXED) != 0u;   /* (MENU > USB LEVEL: fx.c, audio.c) */
     fx_usb_gain = USB_GAIN[fx_usb_fixed ? usb_lvl % 5u : 0u];   /* (0.7.0) .. and its attenuation (usb.c uac_tap) */
     ui_polls();                                         /* (cursedsound) FM6's patch, MIDI OUT's setting, PROGRAM CHANGE, CLICK */
+    if (!ui.menu)
+        usb_serial_apply();                             /* (MENU > USB SERIAL: when the menu has closed) */
+    {   /* (0.6.55) TRACKS fewer: a track past them selected: the last one */
+        static uint8_t live0 = NTRK;
+        if (trk_live < live0 && song.sel >= trk_live)
+            track_select(trk_live - 1u);
+        live0 = trk_live;
+    }
+}
+static void ui_input_frame(void);
+static void ui_input(void)
+{
+#if COS_SLIM                                            /* (cursed-os) its interface only: JIANT's own left out of the image */
+    ui_house();
+    cos_input();
+    eu_tick();
+    ac_tick();
+    scale_link();
+    return;
+#endif
+    if (cos_switch())                                   /* (cursedsound) HOME + GLO: cursed-os <-> this interface */
+        return;
+    if (cos_active()) {
+        ui_house();
+        cos_input();
+        eu_tick();
+        ac_tick();
+        scale_link();
+        return;
+    }
+    ui_input_frame();
+    eu_tick();
+    ac_tick();                                          /* (cursedsound) ACID's mutations, on the bar */                                          /* (V10.16) EUCLID's MUTATE, on the bar */
+    scale_link();                                       /* (JIANT 0.4) one scale for every melodic track (after the
+                                                         * frame's edits) */
+}
+static void ui_input_frame(void)
+{
+    uint32_t pressed = fm1_input_edges(0), notes = fm1_input_note_edges(), now = fm1_ticks(), id, b, k;
+    uint32_t home, rec, seq, save;
+    uint32_t oct;
+    uint32_t lay, combo = 0, lytap, lkeys, glo, kq = 0;
+    int32_t s, sel = 0, ks[4] = {0, 0, 0, 0};
+    ui_house();                                         /* (cursed-os: shared with its frame) */
     ml_poll();                                          /* (p1) MIDI LEARN: a CC came for the picked parameter */
     {   /* (0.6.55) TRACKS 6 -> 4 (MENU or GLO > SYSTEM) on T5 / T6: T4 selected (ALGORITHM stops there) */
         static uint8_t live0 = NTRK;

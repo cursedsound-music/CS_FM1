@@ -38,19 +38,28 @@
 enum { CM_HOME, CM_TRIG, CM_SRC, CM_AMP, CM_DRONE, CM_FX, CM_GEN, CM_MIX, CM_KEY, CM_PROJ, CM_N };
 enum { CK_NONE, CK_TRK, CK_GLO, CK_AC, CK_EU, CK_COS };
 enum { CC_OUTCH, CC_MOUT, CC_CLOCK, CC_SLOT, CC_TRKS, CC_LOAD, CC_COMP, CC_CATK, CC_CREL, CC_LIM, CC_PF0, CC_PF3 = CC_PF0 + 3,
-       CC_X2, CC_X2E = CC_X2 + 6 };   /* (CC_X2 + X2_*: params.c trk_x2, LFO 2 and FILTER 2) */   /* (CK_COS: cursed-os's own knobs) */
+       CC_X2, CC_X2E = CC_X2 + 6, CC_OCT, CC_KICK, CC_KICKE = CC_KICK + 4, CC_LN0, CC_LNE = CC_LN0 + 7, CC_KDRV, CC_BT };
+#define ID_OCT 0xFEu                            /* (any page's knob: the track's OCTAVE, cos_knob) */   /* (CC_X2 + X2_*: params.c trk_x2, LFO 2 and FILTER 2) */   /* (CK_COS: cursed-os's own knobs) */
 typedef struct { const char *tab; uint8_t kind, id[4]; } cpg_t;
 #define X 0xFFu
-static const cpg_t CZP_HOME[] = {{"PERFORM", CK_GLO, {G_BPM, G_SWING, G_DJF, X}}};
+static const cpg_t CZP_HOME[] = {{"PERFORM", CK_GLO, {G_BPM, G_SWING, G_DJF, ID_OCT}}};
 static const cpg_t CZP_TRIG[] = {{"TRIG", CK_TRK, {P_SLEN, P_SDIV, P_SSWING, P_SGATE}}};
 /* EDIT: the engine's eight (its own page names: cos_tabs), the voice, the matrix's four slots; a VOICE track WORDS
  * third. ENV: the amp, the filter, the envelope's modulation, the two LFO pages */
 #define CZ_MOD(n) {"MOD " #n, CK_TRK, {P_M##n##SRC, P_M##n##DST, P_M##n##AMT, X}}
 static const cpg_t CZP_SRC[] = {{"SRC 1", CK_TRK, {P_E0, P_E1, P_E2, P_E3}}, {"SRC 2", CK_TRK, {P_E4, P_E5, P_E6, P_E7}},
-                               {"VOICE", CK_TRK, {P_VOICE, P_GLIDE, P_DETUNE, P_GLMODE}}, CZ_MOD(1), CZ_MOD(2), CZ_MOD(3), CZ_MOD(4)};
+                               {"VOICE", CK_TRK, {P_VOICE, P_GLIDE, P_DETUNE, ID_OCT}}, CZ_MOD(1), CZ_MOD(2), CZ_MOD(3), CZ_MOD(4)};
 static const cpg_t CZP_SRCV[] = {{"SRC 1", CK_TRK, {P_E0, P_E1, P_E2, P_E3}}, {"SRC 2", CK_TRK, {P_E4, P_E5, P_E6, P_E7}},
                                 {"WORDS", CK_TRK, {P_VLANG, P_VLYR, X, X}},   /* (THEME, ARTIC: on the first page) */
-                                {"VOICE", CK_TRK, {P_VOICE, P_GLIDE, P_DETUNE, P_GLMODE}}, CZ_MOD(1), CZ_MOD(2), CZ_MOD(3), CZ_MOD(4)};
+                                {"VOICE", CK_TRK, {P_VOICE, P_GLIDE, P_DETUNE, ID_OCT}}, CZ_MOD(1), CZ_MOD(2), CZ_MOD(3), CZ_MOD(4)};
+/* a DRUM track's EDIT: the KICK (DRUM-X's lane 1, both its MORPH ends moved together), the eight sounds' levels, then
+ * the kit's (SRC 1, SRC 2: the engine's E1 .. E8), the matrix */
+static const cpg_t CZP_SRCD[] = {{"KICK", CK_COS, {CC_KICK + DXP_PITCH, CC_KICK + DXP_PMOD, CC_KICK + DXP_DECAY, CC_LN0}},
+                                {"KICK 2", CK_COS, {CC_KICK + DXP_NOISE, CC_KICK + DXP_COLOR, CC_KDRV, X}},
+                                {"LEVELS", CK_COS, {CC_LN0, CC_LN0 + 1u, CC_LN0 + 2u, CC_LN0 + 3u}},
+                                {"LEVELS 2", CK_COS, {CC_LN0 + 4u, CC_LN0 + 5u, CC_LN0 + 6u, CC_LN0 + 7u}},
+                                {"KIT", CK_TRK, {P_E0, P_E1, P_E2, P_E3}}, {"KIT 2", CK_TRK, {P_E4, P_E5, P_E6, P_E7}},
+                                CZ_MOD(1), CZ_MOD(2), CZ_MOD(3), CZ_MOD(4)};
 static const cpg_t CZP_AMP[] = {{"AMP", CK_TRK, {P_ATK, P_DEC, P_SUS, P_REL}},
                                {"FILTER 1", CK_TRK, {P_FTYPE, P_FCUT, P_FRES, P_ED_FLT}},
                                {"FILTER 2", CK_COS, {CC_X2 + X2_F2T, CC_X2 + X2_F2C, CC_X2 + X2_F2R, CC_X2 + X2_F2E}},
@@ -70,14 +79,14 @@ static const cpg_t CZP_DRONE[] = {{"DRONE", CK_TRK, {P_LEVEL, P_FCUT, P_LRATE, P
 static const cpg_t CZP_FX[] = {{"SEND", CK_TRK, {P_DIST, P_CHOR, P_DLY, P_REV}}, {"DIST", CK_TRK, {P_DTYPE, P_DTONE, X, X}},
                               {"DELAY", CK_GLO, {G_DTIME, G_DFDBK, G_DCOLOR, G_DPING}},    /* (the buses: every track's) */
                               {"REVERB", CK_GLO, {G_RSIZE, G_RDAMP, G_RPRE, G_RTYPE}}};
-static const cpg_t CZP_GENA[] = {{"ACID", CK_AC, {AK_DENS, AK_SLIDE, AK_ACC, AK_OCT}}, {"ACID 2", CK_AC, {AK_STEPS, AK_NOTES, AK_TIE, AK_LOCK}},
-                                {"ACID 3", CK_AC, {AK_EVERY, AK_AMT, AK_ROOT, AK_SCALE}}};
+static const cpg_t CZP_GENA[] = {{"ACID", CK_AC, {AK_DENS, AK_SLIDE, AK_ACC, ID_OCT}}, {"ACID 2", CK_AC, {AK_STEPS, AK_NOTES, AK_TIE, AK_OCT}},
+                                {"ACID 3", CK_AC, {AK_EVERY, AK_AMT, AK_ROOT, AK_SCALE}}, {"ACID 4", CK_AC, {AK_LOCK, X, X, X}}};
 static const cpg_t CZP_GENE[] = {{"EUCLID", CK_EU, {EK_HITS, EK_STEPS, EK_ROT, EK_K4}}, {"MODES", CK_EU, {EK_M0, EK_M0 + 1u, EK_M0 + 2u, EK_M0 + 3u}},
                                 {"MUTATE", CK_EU, {EK_U0, EK_U0 + 1u, EK_U0 + 2u, EK_U0 + 3u}}};
 static const cpg_t CZP_MIX[] = {{"MIX", CK_TRK, {P_LEVEL, P_PAN, P_GLIDE, P_MUTE}},
                                {"MASTER", CK_COS, {CC_COMP, CC_CATK, CC_CREL, CC_LIM}},
                                {"MIDI", CK_COS, {CC_OUTCH, CC_MOUT, CC_CLOCK, X}},
-                               {"SYSTEM", CK_COS, {CC_TRKS, CC_LOAD, X, X}}};
+                               {"SYSTEM", CK_COS, {CC_TRKS, CC_LOAD, CC_BT, X}}};
 static const cpg_t CZP_KEY[] = {{"KEY", CK_TRK, {P_SCALE, P_QUANT, 0xFFu, 0xFFu}}};   /* (the root: the keys) */
 static const cpg_t CZP_PERF[] = {{"FX PAD", CK_COS, {CC_PF0, CC_PF0 + 1u, CC_PF0 + 2u, CC_PF3}}};   /* (FX held) */
 static const cpg_t CZP_PROJ[] = {{"PROJECT", CK_COS, {CC_SLOT, X, X, X}}};   /* (the slot: KNOB 1 or white keys 1..4) */
@@ -106,15 +115,21 @@ static struct {
     uint8_t slot, pn_ok;                                /* SAVE: the slot picked (0..3); the names below read */
     char pn[4][13];                     /* .. each slot's name ("": empty) */
 } cz COS_RAM;
+#if COS_SLIM
+static int cos_active(void) { return 1; }               /* (its interface only: JIANT's own is not in the image) */
+#else
 static int cos_active(void) { return (COS_DEFAULT ^ cz.flip) != 0; }
+#endif
 
 static int cos_kit(void) { return drum_track(TSEL) != 0; }
 static void cos_pages(uint32_t m, const cpg_t **p, uint32_t *n)
 {
     static const cpg_t *const P[CM_N] = {CZP_HOME, CZP_TRIG, CZP_SRC, CZP_AMP, CZP_DRONE, CZP_FX, CZP_GENA, CZP_MIX, CZP_KEY, CZP_PROJ};
-    static const uint8_t N[CM_N] = {1, 1, 7, 7, 2, 4, 3, 4, 1, 1};
+    static const uint8_t N[CM_N] = {1, 1, 7, 7, 2, 4, 4, 4, 1, 1};
     int vo = m == CM_SRC && trk_engp(TSEL) == &ENG_FORMANT;
-    *p = m == CM_GEN && cos_kit() ? CZP_GENE : vo ? CZP_SRCV : m == CM_AMP && trk_engp(TSEL) == &ENG_ANALOG ? CZP_AMPA : P[m % CM_N];
+    if (m == CM_SRC && cos_kit()) { *p = CZP_SRCD; *n = NELEM(CZP_SRCD); return; }   /* (a kit: KICK, LEVELS, its own ..) */
+    if (m == CM_GEN && cos_kit()) { *p = CZP_GENE; *n = 3; return; }
+    *p = vo ? CZP_SRCV : m == CM_AMP && trk_engp(TSEL) == &ENG_ANALOG ? CZP_AMPA : P[m % CM_N];
     *n = N[m % CM_N] + (uint32_t)vo;                                      /* (VOICE: WORDS too) */
 }
 static const cpg_t *cos_page(void)
@@ -231,8 +246,36 @@ static const param_desc_t *cos_cdesc(uint32_t id, int16_t **vp)
     static const char *const LD[] = {"ECO", "LITE", "FULL", 0};
     static const param_desc_t DT = {"TRACKS", F_INT, 4, NTRK, 5, 0, 0}, DL = {"LOAD", F_ENUM, 0, 2, 2, LD, 0};
     if (id == CC_SLOT) { cz.cc_v[3] = (int16_t)(cz.slot + 1u); *vp = &cz.cc_v[3]; return &DS; }
+    if (id == CC_BT) {                                   /* (MENU > SYSTEM > BLUETOOTH: a BLE-MIDI device, at once) */
+        static const char *const OO[] = {"OFF", "ON", 0};
+        static const param_desc_t DB = {"BT MIDI", F_ENUM, 0, 1, 0, OO, 0};
+        cz.cc_v[14] = (int16_t)bt_get();
+        *vp = &cz.cc_v[14];
+        return &DB;
+    }
     if (id == CC_TRKS) { cz.cc_v[4] = (int16_t)trk_live; *vp = &cz.cc_v[4]; return &DT; }
     if (id == CC_LOAD) { cz.cc_v[5] = (int16_t)load_get(); *vp = &cz.cc_v[5]; return &DL; }
+    if (id == CC_OCT) {                                  /* OCTAVE: TRANS in octaves (-2 .. +2), its semitones kept; a kit none */
+        static const param_desc_t DO = {"OCTAVE", F_INT, -2, 2, 0, 0, 0};
+        int32_t tr = TSEL->p[P_TRANS];
+        if (cos_kit()) return 0;
+        cz.cc_v[14] = (int16_t)(tr >= 0 ? (tr + 6) / 12 : -((-tr + 5) / 12));
+        *vp = &cz.cc_v[14];
+        return &DO;
+    }
+    if (id >= CC_KICK && id <= CC_KICKE) {               /* the KICK: DRUM-X lane 1's settings, where MORPH has them */
+        static const param_desc_t DK[5] = {{"TUNE", F_INT, 0, 127, 64, 0, 0}, {"PUNCH", F_PCT, 0, 127, 64, 0, 0},
+                                           {"DECAY", F_PCT, 0, 127, 64, 0, 0}, {"CLICK", F_PCT, 0, 127, 0, 0, 0},
+                                           {"TONE", F_PCT, 0, 127, 64, 0, 0}};
+        uint32_t i = id - CC_KICK;
+        const dx_lane_t *L = &dx_kit[0];
+        int32_t mo = clamp(TSEL->p[P_E0], 0, 127);
+        cz.cc_v[14] = (int16_t)(L->a[i] + ((L->b[i] - L->a[i]) * mo) / 127);
+        *vp = &cz.cc_v[14];
+        return &DK[i];
+    }
+    if (id >= CC_LN0 && id <= CC_LNE) { *vp = &TSEL->p[P_LN0 + (id - CC_LN0)]; return track_desc(TSEL, P_LN0 + (id - CC_LN0)); }
+    if (id == CC_KDRV) { *vp = &TSEL->p[P_E7]; return track_desc(TSEL, P_E7); }
     if (id >= CC_X2 && id <= CC_X2E) {                   /* LFO 2, FILTER 2: the track's (params.c trk_x2) */
         uint32_t i = id - CC_X2;
         cz.cc_v[14] = trk_x2[song.sel % NTRK][i];
@@ -276,6 +319,8 @@ static void cos_cput(uint32_t id, int32_t v)
         settings_save();
     } else if (id == CC_SLOT) {
         cz.slot = (uint8_t)(clamp(v, 1, 4) - 1);
+    } else if (id == CC_BT) {
+        bt_put((uint32_t)clamp(v, 0, 1));
     } else if (id == CC_TRKS) {                          /* (MENU > TRACKS: 6 plays T5 and T6 too, more for the CPU) */
 #if COS_SLIM
         favorites.factory[15][15] = (uint8_t)clamp(v, 4, NTRK);   /* (ui.c rp_apply reads it) */
@@ -288,6 +333,19 @@ static void cos_cput(uint32_t id, int32_t v)
     } else if (id == CC_LOAD) {
         load_put((uint32_t)clamp(v, 0, 2));
         settings_save();
+    } else if (id == CC_OCT) {
+        int32_t tr = TSEL->p[P_TRANS], o = tr >= 0 ? (tr + 6) / 12 : -((-tr + 5) / 12);
+        TSEL->p[P_TRANS] = (int16_t)clamp(tr + (clamp(v, -2, 2) - o) * 12, -24, 24);
+    } else if (id >= CC_KICK && id <= CC_KICKE) {        /* both ends moved by the turn: MORPH's span kept */
+        uint32_t i = id - CC_KICK;
+        dx_lane_t *L = &dx_kit[0];
+        int32_t mo = clamp(TSEL->p[P_E0], 0, 127), cur = L->a[i] + ((L->b[i] - L->a[i]) * mo) / 127, d = v - cur;
+        L->a[i] = (uint8_t)clamp(L->a[i] + d, 0, 127);
+        L->b[i] = (uint8_t)clamp(L->b[i] + d, 0, 127);
+    } else if (id >= CC_LN0 && id <= CC_LNE) {
+        TSEL->p[P_LN0 + (id - CC_LN0)] = (int16_t)clamp(v, 0, 127);
+    } else if (id == CC_KDRV) {
+        TSEL->p[P_E7] = (int16_t)clamp(v, 0, 127);
     } else if (id >= CC_X2 && id <= CC_X2E) {
         uint32_t i = id - CC_X2;
         trk_x2[song.sel % NTRK][i] = (int8_t)clamp(v, X2_DESC[i].min, X2_DESC[i].max);
@@ -310,6 +368,7 @@ static const param_desc_t *cos_knob(const cpg_t *p, uint32_t k, int16_t **vp)
     uint32_t id = p->id[k & 3u];
     *vp = 0;
     if (id == 0xFFu) return 0;
+    if (id == ID_OCT) return cos_cdesc(CC_OCT, vp);     /* (any page's: the track's OCTAVE) */
     switch (p->kind) {
     case CK_TRK: *vp = &TSEL->p[id]; return track_desc(TSEL, id);
     case CK_GLO:
@@ -374,7 +433,8 @@ static void cos_turn(uint32_t k, int32_t s)
     v = param_turn(d, *vp, accel(EN_K1 + k, s, d->fmt == F_ENUM ? 0 : d->max - d->min));
     cz.hot = (uint8_t)(k + 1u);
     cz.hot_ms = fm1_ms;
-    if (p->kind == CK_AC) ac_put(p->id[k], v);
+    if (p->id[k] == ID_OCT) cos_cput(CC_OCT, v);
+    else if (p->kind == CK_AC) ac_put(p->id[k], v);
     else if (p->kind == CK_EU) eu_put(p->id[k], v);
     else if (p->kind == CK_COS) cos_cput(p->id[k], v);
     else *vp = (int16_t)v;
@@ -729,15 +789,15 @@ static void cos_tabs(void)
     {
         uint32_t cur = cz.tab[cz.mode] % n, f = 0, j;
         const engine_t *e = trk_engp(TSEL);
-        const char *nm[8];
+        const char *nm[12];
         int32_t span;
-        for (i = 0; i < n && i < 8u; i++)                /* (EDIT's first two: the engine's own names for them) */
-            nm[i] = cz.mode == CM_SRC && i < 2u && e->page_title[i] ? e->page_title[i] : p[i].tab;
+        for (i = 0; i < n && i < 12u; i++)                /* (EDIT's first two: the engine's own names for them) */
+            nm[i] = cz.mode == CM_SRC && i < 2u && !cos_kit() && e->page_title[i] ? e->page_title[i] : p[i].tab;
         do {                                             /* (the first one shown: the page picked fits) */
             for (span = 0, j = f; j <= cur; j++) span += cos_w(nm[j]) + 10;
         } while (span > 236 && ++f < cur);
         if (f) cos_tx(0, 22, "<", C_DIM);
-        for (i = f, x = f ? 10 : 2; i < n && i < 8u; i++) {
+        for (i = f, x = f ? 10 : 2; i < n && i < 12u; i++) {
             int32_t w = cos_w(nm[i]) + 6;
             if (x + w > 240) { cos_txr(240, 22, ">", C_DIM); break; }
             if (i == cur) { cv_rect(x, 20, w, 12, C_FG); cos_tx(x + 3, 22, nm[i], C_BG); }
@@ -1200,12 +1260,27 @@ static void cos_body_sys(void)
     cos_tx(8, 78, "LOAD: HOW MUCH THE VOICES", C_FG);
     cos_tx(8, 92, "MAY TAKE. ECO: 4 A TRACK", C_DIM);
     cos_tx(8, 106, "FULL: 8 A TRACK", C_DIM);
-    cos_tx(8, 130, "ENGINES: EDIT + PRESETS", C_MID);
+    {                                                    /* the audio's load (voice.c load_diag: MENU > ABOUT's) */
+        char b[40], n[12];
+        str_cpy(b, "CPU ", sizeof b); fmt_int(n, (int32_t)((song.cpu_q8 * 100u) >> 8)); str_cpy(b + str_len(b), n, 8);
+        str_cpy(b + str_len(b), "% PEAK ", 9); fmt_int(n, (int32_t)load_diag.peak); str_cpy(b + str_len(b), n, 8);
+        str_cpy(b + str_len(b), "% LATE ", 9); fmt_int(n, (int32_t)load_diag.late); str_cpy(b + str_len(b), n, 8);
+        cos_tx(8, 122, b, load_diag.late ? C_RED : C_MID);
+        cos_tx(8, 136, "BT MIDI: A BLE-MIDI LINK", C_DIM);
+    }
 }
 
 /* the whole scene, drawn into the strip on the canvas (cv_oy: its top) */
+static void cos_px2(int32_t x, int32_t y, const char *s, uint16_t c);
 static void cos_scene(void)
 {
+    if (ui.uboot) {                                      /* OCT- + OCT+ held (main.c): UPDATE MODE in n seconds */
+        char b[4] = {(char)('0' + ui.uboot % 10u), 0, 0, 0};
+        cos_txc(120, 80, CZ_LBL, "UPDATE MODE IN", C_FG);
+        cos_px2(120 - 8, 100, b, C_RED);
+        cos_txc(120, 140, CZ_LBL, "LET GO TO CANCEL", C_DIM);
+        return;
+    }
     cos_head();
     cos_tabs();
     if (cz.fx_down) { cos_body_fxpad(); goto dials; }
