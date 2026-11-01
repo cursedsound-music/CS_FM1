@@ -284,29 +284,29 @@ static __attribute__((noinline)) uint32_t proj_tp(const project_t *q, const uint
 static __attribute__((noinline)) uint32_t proj_x2(const uint8_t *bc, uint32_t pos, uint32_t room)
 {
     uint8_t *b = (uint8_t *)(uintptr_t)bc;
-    uint32_t k, i, any = 0;
+    uint32_t k, i, any = 0, n;
     if (!room) {
         for (k = 0; k < NTRK; k++)
             for (i = 0; i < X2_N; i++)
                 any |= trk_x2[k][i] != X2_DESC[i].def;
         if (!any) return 0;
         if (b) {
-            b[pos] = 'X'; b[pos + 1u] = '2';
+            b[pos] = 'X'; b[pos + 1u] = '3';               /* ('X3': the LFOs' MODE and PHASE too; 'X2' had X2_N_OLD) */
             for (k = 0; k < NTRK; k++)
                 for (i = 0; i < X2_N; i++)
                     b[pos + 2u + k * X2_N + i] = (uint8_t)(trk_x2[k][i] + 64);
         }
         return 2u + NTRK * X2_N;
     }
-    if (pos + 2u + NTRK * X2_N > room || b[pos] != 'X' || b[pos + 1u] != '2') {
-        for (k = 0; k < NTRK; k++)
-            x2_defaults(k);
-        return 0;
-    }
+    n = pos + 2u <= room && b[pos] == 'X' ? (b[pos + 1u] == '3' ? X2_N : b[pos + 1u] == '2' ? X2_N_OLD : 0u) : 0u;
     for (k = 0; k < NTRK; k++)
-        for (i = 0; i < X2_N; i++)
-            trk_x2[k][i] = (int8_t)clamp((int32_t)b[pos + 2u + k * X2_N + i] - 64, X2_DESC[i].min, X2_DESC[i].max);
-    return 2u + NTRK * X2_N;
+        x2_defaults(k);
+    if (!n || pos + 2u + NTRK * n > room)
+        return 0;
+    for (k = 0; k < NTRK; k++)
+        for (i = 0; i < n; i++)
+            trk_x2[k][i] = (int8_t)clamp((int32_t)b[pos + 2u + k * n + i] - 64, X2_DESC[i].min, X2_DESC[i].max);
+    return 2u + NTRK * n;
 }
 
 /* (p9) the master's EQ: 'E' 'Q' and its four gains (-12 .. 12, a byte each), when any is set; a project without it

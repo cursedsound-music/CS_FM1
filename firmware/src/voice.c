@@ -366,15 +366,29 @@ static uint32_t beat_samples(void);                     /* (fx.c) */
 static __attribute__((noinline)) void lfo2_tick(track_t *t)
 {
     const volatile int8_t *x = trk_x2[(uint32_t)(t - trk) % NTRK];
-    uint32_t old = t->lfo2_ph;
+    uint32_t old = t->lfo2_ph, md = (uint32_t)x[X2_L2MODE] % 3u;
     int32_t r = x[X2_RATE];
-    if (r < 0) {
+    if (x[X2_L1ONE] && t->p[P_LPHASE] >= 0) {           /* LFO 1 ONE: its cycle done (wrapped since the note), held there */
+        if (!t->lfo1_done && t->lfo_ph < t->lfo1_last)
+            t->lfo1_done = 1;
+        if (t->lfo1_done) {
+            t->lfo_ph = 0xFFFFFFFFu;
+            t->lfo_val = lfo_shape((uint32_t)t->p[P_LWAVE], t->lfo_ph, t->lfo_rnd, t->lfo_prev);
+        }
+    }
+    t->lfo1_last = t->lfo_ph;
+    if (md == LM_ONE && t->lfo2_done) {                  /* ONE: held at its end */
+        t->lfo2_val = lfo_shape((uint32_t)x[X2_WAVE], 0xFFFFFFFFu, t->lfo2_rnd, t->lfo2_prev);
+        return;
+    }
+    if (r < 0) {                                         /* in time: FREE on the transport's grid while it plays; TRIG, ONE
+                                                          * from the note, at the division's length */
         static const uint16_t U2[12] = {384, 192, 96, 48, 24, 18, 16, 12, 8, 6, 4, 3};
         uint32_t len = beat_samples() * U2[(uint32_t)(-r - 1) % 12u] / 24u;
         if (len < 64u)
             len = 64u;
-        if (song.playing)
-            t->lfo2_ph = (uint32_t)(((uint64_t)(ms_clock % len) << 32) / len);
+        if (song.playing && md == LM_FREE)
+            t->lfo2_ph = (uint32_t)(((uint64_t)(ms_clock % len) << 32) / len) + ((uint32_t)x[X2_L2PH] << 25);
         else
             t->lfo2_ph += (uint32_t)(((uint64_t)CTL << 32) / len);
     } else
@@ -386,8 +400,23 @@ static __attribute__((noinline)) void lfo2_tick(track_t *t)
         s ^= s << 5;
         t->lfo2_prev = t->lfo2_rnd;
         t->lfo2_rnd = s;
+        if (md == LM_ONE && !(r < 0 && song.playing && md == LM_FREE)) {
+            t->lfo2_done = 1;
+            t->lfo2_ph = 0xFFFFFFFFu;
+        }
     }
     t->lfo2_val = lfo_shape((uint32_t)x[X2_WAVE], t->lfo2_ph, t->lfo2_rnd, t->lfo2_prev);
+}
+/* (cursed-os) a fresh phrase's note (no gate held: trk_note_on): LFO 1's ONE and LFO 2 TRIG / ONE from their PHASE */
+static __attribute__((noinline)) void lfo_note(track_t *t)
+{
+    const volatile int8_t *x = trk_x2[(uint32_t)(t - trk) % NTRK];
+    t->lfo1_done = 0;
+    t->lfo1_last = t->lfo_ph;
+    if ((uint32_t)x[X2_L2MODE] % 3u != LM_FREE) {
+        t->lfo2_ph = (uint32_t)x[X2_L2PH] << 25;
+        t->lfo2_done = 0;
+    }
 }
 
 /* (cursed-os) FILTER 2 on the part, after FILTER: an SVF, TYPE LP HP BP NOTCH at CUT, RES, moved by the loudest voice's
@@ -1231,6 +1260,11 @@ static void trk_note_on(track_t *t, uint32_t note, uint32_t vel)
                                                          * FADE once from a project's load (lfo_fade_restart) */
         t->lfo_ph = (uint32_t)t->p[P_LPHASE] << 25;
         t->lfo_fade = 0;
+    }
+    if (!any) {                                         /* (cursed-os) LFO 1 ONE, LFO 2 TRIG / ONE: from here too */
+        void (*f)(track_t *) = lfo_note;
+        FM1_OPAQUE(f);
+        f(t);
     }
     if (mode == V_POLY) {
         voice_t *v = voice_alloc(t, note);

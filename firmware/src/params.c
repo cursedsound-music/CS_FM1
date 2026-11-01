@@ -89,14 +89,18 @@ static const char *const N_ENGNAME[] = {"ANALOG", FELUCCA_FM4 ? "DIGITAL" : "-",
  * in a project's 'X2' block (project.c proj_x2), edited on cursed-os's ENV pages (cos.c). LFO 2: RATE (as LFO's: below
  * 0 in time), WAVE; FILTER 2 on the part after FILTER (voice.c track_f2): TYPE (OFF: out of the chain) CUT RES, ENV
  * (the loudest voice's envelope) and LFO 2's amounts */
-enum { X2_RATE, X2_WAVE, X2_F2T, X2_F2C, X2_F2R, X2_F2E, X2_F2L, X2_N };
+enum { X2_RATE, X2_WAVE, X2_F2T, X2_F2C, X2_F2R, X2_F2E, X2_F2L, X2_L2MODE, X2_L2PH, X2_L1ONE, X2_N };
+#define X2_N_OLD 7u                            /* (the first X2 block's: up to X2_F2L) */
+enum { LM_FREE, LM_TRIG, LM_ONE };            /* (cursed-os) an LFO's MODE: running on, from PHASE at a note, one cycle then held */
 static const char *const N_F2TYPE[] = {"OFF", "LP", "HP", "BP", "NOTCH"};
+static const char *const N_LMODE3[] = {"FREE", "TRIG", "ONE"};
 static const param_desc_t X2_DESC[X2_N] = {
     {"RATE", F_LFOHZ, -12, 127, 40, 0, 0}, {"WAVE", F_ENUM, 0, (int16_t)(sizeof N_LWAVE / sizeof N_LWAVE[0] - 1), 0, N_LWAVE, 0},
     {"TYPE", F_ENUM, 0, 4, 0, N_F2TYPE, 0}, {"CUT", F_CUTOFF, 0, 127, 64, 0, 0}, {"RES", F_PCT, 0, 127, 0, 0, 0},
-    {"ENV", F_BIPCT, -64, 63, 0, 0, 0}, {"FILT 2", F_BIPCT, -64, 63, 0, 0, 0}};   /* (FILT 2: LFO 2 on FILTER 2) */
-static volatile int8_t trk_x2[NTRK][X2_N] = {{40, 0, 0, 64, 0, 0, 0}, {40, 0, 0, 64, 0, 0, 0}, {40, 0, 0, 64, 0, 0, 0},
-                                            {40, 0, 0, 64, 0, 0, 0}, {40, 0, 0, 64, 0, 0, 0}, {40, 0, 0, 64, 0, 0, 0}};
+    {"ENV", F_BIPCT, -64, 63, 0, 0, 0}, {"FILT 2", F_BIPCT, -64, 63, 0, 0, 0},   /* (FILT 2: LFO 2 on FILTER 2) */
+    {"MODE", F_ENUM, 0, 2, 0, N_LMODE3, 0}, {"PHASE", F_INT, 0, 127, 0, 0, 0}, {"ONE", F_INT, 0, 1, 0, 0, 0}};
+static volatile int8_t trk_x2[NTRK][X2_N] = {{40, 0, 0, 64, 0, 0, 0, 0, 0, 0}, {40, 0, 0, 64, 0, 0, 0, 0, 0, 0}, {40, 0, 0, 64, 0, 0, 0, 0, 0, 0},
+                                            {40, 0, 0, 64, 0, 0, 0, 0, 0, 0}, {40, 0, 0, 64, 0, 0, 0, 0, 0, 0}, {40, 0, 0, 64, 0, 0, 0, 0, 0, 0}};
 _Static_assert(NTRK == 6, "trk_x2's defaults: six tracks");
 static void x2_defaults(uint32_t k)
 {

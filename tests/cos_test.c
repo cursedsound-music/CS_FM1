@@ -315,6 +315,32 @@ int main(void)
         TSEL->p[P_LN0] = 127;
     }
 
+    /* the LFOs' SYNC, RATE, MODE: HZ <-> BPM, ONE held after its cycle, TRIG from PHASE at a fresh note */
+    {
+        int16_t *vp;
+        uint32_t q;
+        track_t *t3 = &trk[3];
+        song.sel = 3; set_engine_of(t3, ENGI_ANALOG); t3->p[P_LRATE] = 60;
+        cos_cput(CC_L1SYNC, 1);
+        CHECK(t3->p[P_LRATE] == -5 && cos_cdesc(CC_L1RATE, &vp)->fmt == F_ENUM && *vp == 4, "LFO 1 BPM: 1/4");
+        cos_cput(CC_L1RATE, 9);
+        CHECK(t3->p[P_LRATE] == -10, "1/16 (%d)", t3->p[P_LRATE]);
+        cos_cput(CC_L1SYNC, 0);
+        CHECK(t3->p[P_LRATE] == 60, "back to HZ");
+        cos_cput(CC_L1MODE, LM_FREE);
+        CHECK(t3->p[P_LPHASE] < 0, "FREE: PHASE -1");
+        cos_cput(CC_L1MODE, LM_ONE);
+        CHECK(t3->p[P_LPHASE] >= 0 && trk_x2[3][X2_L1ONE] == 1, "ONE: TRIG with ONE");
+        trk_x2[3][X2_RATE] = 127; trk_x2[3][X2_WAVE] = 2; trk_x2[3][X2_L2MODE] = LM_ONE; trk_x2[3][X2_L2PH] = 0;
+        lfo_note(t3);
+        for (q = 0; q < 4000u; q++) lfo2_tick(t3);
+        CHECK(t3->lfo2_done && t3->lfo2_val > 30000, "LFO 2 ONE: one SAW cycle, held at its top (%d)", t3->lfo2_val);
+        lfo_note(t3);
+        CHECK(!t3->lfo2_done && t3->lfo2_ph == 0, "a fresh note: from PHASE again");
+        trk_x2[3][X2_L2MODE] = LM_FREE; lfo2_tick(t3); { uint32_t p0 = t3->lfo2_ph; lfo_note(t3); CHECK(t3->lfo2_ph == p0, "FREE: a note does not restart it"); }
+        x2_defaults(3); t3->p[P_LPHASE] = 0;
+    }
+
     printf("cos_test: %s (%d failures)\n", fails ? "FAILED" : "ok", fails);
     return fails != 0;
 }

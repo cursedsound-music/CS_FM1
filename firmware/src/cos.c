@@ -38,7 +38,9 @@
 enum { CM_HOME, CM_TRIG, CM_SRC, CM_AMP, CM_DRONE, CM_FX, CM_GEN, CM_MIX, CM_KEY, CM_PROJ, CM_N };
 enum { CK_NONE, CK_TRK, CK_GLO, CK_AC, CK_EU, CK_COS };
 enum { CC_OUTCH, CC_MOUT, CC_CLOCK, CC_SLOT, CC_TRKS, CC_LOAD, CC_COMP, CC_CATK, CC_CREL, CC_LIM, CC_PF0, CC_PF3 = CC_PF0 + 3,
-       CC_X2, CC_X2E = CC_X2 + 6, CC_OCT, CC_KICK, CC_KICKE = CC_KICK + 4, CC_LN0, CC_LNE = CC_LN0 + 7, CC_KDRV, CC_BT };
+       CC_X2, CC_X2E = CC_X2 + 15, CC_OCT, CC_KICK, CC_KICKE = CC_KICK + 4, CC_LN0, CC_LNE = CC_LN0 + 7, CC_KDRV, CC_BT,
+       CC_L1SYNC, CC_L1RATE, CC_L1WAVE, CC_L1MODE, CC_L1PH, CC_L1FADE, CC_L2SYNC, CC_L2RATE };
+_Static_assert(X2_N <= 16u, "CC_X2 .. CC_X2E: room for every trk_x2 field");
 #define ID_OCT 0xFEu                            /* (any page's knob: the track's OCTAVE, cos_knob) */   /* (CC_X2 + X2_*: params.c trk_x2, LFO 2 and FILTER 2) */   /* (CK_COS: cursed-os's own knobs) */
 typedef struct { const char *tab; uint8_t kind, id[4]; } cpg_t;
 #define X 0xFFu
@@ -64,17 +66,21 @@ static const cpg_t CZP_AMP[] = {{"AMP", CK_TRK, {P_ATK, P_DEC, P_SUS, P_REL}},
                                {"FILTER 1", CK_TRK, {P_FTYPE, P_FCUT, P_FRES, P_ED_FLT}},
                                {"FILTER 2", CK_COS, {CC_X2 + X2_F2T, CC_X2 + X2_F2C, CC_X2 + X2_F2R, CC_X2 + X2_F2E}},
                                {"ENV MOD", CK_TRK, {P_ED_FLT, P_ED_PIT, P_ED_SHP, X}},
-                               {"LFO 1", CK_TRK, {P_LRATE, P_LWAVE, P_LD_FLT, P_LD_PIT}},
-                               {"LFO 1+", CK_TRK, {P_LFADE, P_LD_SHP, P_LD_AMP, P_LPHASE}},
-                               {"LFO 2", CK_COS, {CC_X2 + X2_RATE, CC_X2 + X2_WAVE, CC_X2 + X2_F2L, X}}};
+                               {"LFO 1", CK_COS, {CC_L1SYNC, CC_L1RATE, CC_L1WAVE, CC_L1MODE}},
+                               {"LFO 1 TO", CK_TRK, {P_LD_FLT, P_LD_PIT, P_LD_SHP, P_LD_AMP}},
+                               {"LFO 1+", CK_COS, {CC_L1PH, CC_L1FADE, X, X}},
+                               {"LFO 2", CK_COS, {CC_L2SYNC, CC_L2RATE, CC_X2 + X2_WAVE, CC_X2 + X2_L2MODE}},
+                               {"LFO 2+", CK_COS, {CC_X2 + X2_L2PH, CC_X2 + X2_F2L, X, X}}};
 /* (ANALOG filters its notes itself: its FILTER 1 is its CUT and RES, E4 E5) */
 static const cpg_t CZP_AMPA[] = {{"AMP", CK_TRK, {P_ATK, P_DEC, P_SUS, P_REL}},
                                 {"FILTER 1", CK_TRK, {P_FTYPE, P_E4, P_E5, P_ED_FLT}},
                                 {"FILTER 2", CK_COS, {CC_X2 + X2_F2T, CC_X2 + X2_F2C, CC_X2 + X2_F2R, CC_X2 + X2_F2E}},
                                 {"ENV MOD", CK_TRK, {P_ED_FLT, P_ED_PIT, P_ED_SHP, X}},
-                                {"LFO 1", CK_TRK, {P_LRATE, P_LWAVE, P_LD_FLT, P_LD_PIT}},
-                                {"LFO 1+", CK_TRK, {P_LFADE, P_LD_SHP, P_LD_AMP, P_LPHASE}},
-                                {"LFO 2", CK_COS, {CC_X2 + X2_RATE, CC_X2 + X2_WAVE, CC_X2 + X2_F2L, X}}};
+                                {"LFO 1", CK_COS, {CC_L1SYNC, CC_L1RATE, CC_L1WAVE, CC_L1MODE}},
+                                {"LFO 1 TO", CK_TRK, {P_LD_FLT, P_LD_PIT, P_LD_SHP, P_LD_AMP}},
+                                {"LFO 1+", CK_COS, {CC_L1PH, CC_L1FADE, X, X}},
+                                {"LFO 2", CK_COS, {CC_L2SYNC, CC_L2RATE, CC_X2 + X2_WAVE, CC_X2 + X2_L2MODE}},
+                                {"LFO 2+", CK_COS, {CC_X2 + X2_L2PH, CC_X2 + X2_F2L, X, X}}};
 static const cpg_t CZP_DRONE[] = {{"DRONE", CK_TRK, {P_LEVEL, P_FCUT, P_LRATE, P_LD_FLT}}, {"SPACE", CK_TRK, {P_ATK, P_REL, P_DLY, P_REV}}};
 static const cpg_t CZP_FX[] = {{"SEND", CK_TRK, {P_DIST, P_CHOR, P_DLY, P_REV}}, {"DIST", CK_TRK, {P_DTYPE, P_DTONE, X, X}},
                               {"DELAY", CK_GLO, {G_DTIME, G_DFDBK, G_DCOLOR, G_DPING}},    /* (the buses: every track's) */
@@ -125,7 +131,7 @@ static int cos_kit(void) { return drum_track(TSEL) != 0; }
 static void cos_pages(uint32_t m, const cpg_t **p, uint32_t *n)
 {
     static const cpg_t *const P[CM_N] = {CZP_HOME, CZP_TRIG, CZP_SRC, CZP_AMP, CZP_DRONE, CZP_FX, CZP_GENA, CZP_MIX, CZP_KEY, CZP_PROJ};
-    static const uint8_t N[CM_N] = {1, 1, 7, 7, 2, 4, 4, 4, 1, 1};
+    static const uint8_t N[CM_N] = {1, 1, 7, 9, 2, 4, 4, 4, 1, 1};
     int vo = m == CM_SRC && trk_engp(TSEL) == &ENG_FORMANT;
     if (m == CM_SRC && cos_kit()) { *p = CZP_SRCD; *n = NELEM(CZP_SRCD); return; }   /* (a kit: KICK, LEVELS, its own ..) */
     if (m == CM_GEN && cos_kit()) { *p = CZP_GENE; *n = 3; return; }
@@ -255,6 +261,24 @@ static const param_desc_t *cos_cdesc(uint32_t id, int16_t **vp)
     }
     if (id == CC_TRKS) { cz.cc_v[4] = (int16_t)trk_live; *vp = &cz.cc_v[4]; return &DT; }
     if (id == CC_LOAD) { cz.cc_v[5] = (int16_t)load_get(); *vp = &cz.cc_v[5]; return &DL; }
+    if (id >= CC_L1SYNC && id <= CC_L2RATE) {            /* the LFOs: SYNC (HZ / BPM: RATE's sign), RATE in its kind, MODE */
+        static const char *const SY[] = {"HZ", "BPM", 0}, *const MO3[] = {"FREE", "TRIG", "ONE", 0};
+        static const param_desc_t DSY = {"SYNC", F_ENUM, 0, 1, 0, SY, 0}, DHZ = {"RATE", F_LFOHZ, 0, 127, 60, 0, 0},
+                                  DBP = {"RATE", F_ENUM, 0, 11, 4, N_LSYNC, 0}, DMO = {"MODE", F_ENUM, 0, 2, 0, MO3, 0},
+                                  DPH = {"PHASE", F_INT, 0, 127, 0, 0, 0};
+        const track_t *t = TSEL;
+        uint32_t k = song.sel % NTRK;
+        int32_t r = id >= CC_L2SYNC ? trk_x2[k][X2_RATE] : t->p[P_LRATE];
+        *vp = &cz.cc_v[14];
+        switch (id) {
+        case CC_L1SYNC: case CC_L2SYNC: cz.cc_v[14] = (int16_t)(r < 0); return &DSY;
+        case CC_L1RATE: case CC_L2RATE: cz.cc_v[14] = (int16_t)(r < 0 ? -r - 1 : r); return r < 0 ? &DBP : &DHZ;
+        case CC_L1WAVE: *vp = &TSEL->p[P_LWAVE]; return track_desc(TSEL, P_LWAVE);
+        case CC_L1MODE: cz.cc_v[14] = (int16_t)(t->p[P_LPHASE] < 0 ? LM_FREE : trk_x2[k][X2_L1ONE] ? LM_ONE : LM_TRIG); return &DMO;
+        case CC_L1PH: cz.cc_v[14] = (int16_t)(t->p[P_LPHASE] < 0 ? lfo_ph_mem[k] : t->p[P_LPHASE]); return &DPH;
+        default: *vp = &TSEL->p[P_LFADE]; return track_desc(TSEL, P_LFADE);
+        }
+    }
     if (id == CC_OCT) {                                  /* OCTAVE: TRANS in octaves (-2 .. +2), its semitones kept; a kit none */
         static const param_desc_t DO = {"OCTAVE", F_INT, -2, 2, 0, 0, 0};
         int32_t tr = TSEL->p[P_TRANS];
@@ -276,7 +300,7 @@ static const param_desc_t *cos_cdesc(uint32_t id, int16_t **vp)
     }
     if (id >= CC_LN0 && id <= CC_LNE) { *vp = &TSEL->p[P_LN0 + (id - CC_LN0)]; return track_desc(TSEL, P_LN0 + (id - CC_LN0)); }
     if (id == CC_KDRV) { *vp = &TSEL->p[P_E7]; return track_desc(TSEL, P_E7); }
-    if (id >= CC_X2 && id <= CC_X2E) {                   /* LFO 2, FILTER 2: the track's (params.c trk_x2) */
+    if (id >= CC_X2 && id < CC_X2 + X2_N) {               /* LFO 2, FILTER 2: the track's (params.c trk_x2) */
         uint32_t i = id - CC_X2;
         cz.cc_v[14] = trk_x2[song.sel % NTRK][i];
         *vp = &cz.cc_v[14];
@@ -333,6 +357,31 @@ static void cos_cput(uint32_t id, int32_t v)
     } else if (id == CC_LOAD) {
         load_put((uint32_t)clamp(v, 0, 2));
         settings_save();
+    } else if (id >= CC_L1SYNC && id <= CC_L2RATE) {
+        track_t *t = TSEL;
+        uint32_t k = song.sel % NTRK;
+        int lf2 = id >= CC_L2SYNC;
+        int32_t r = lf2 ? trk_x2[k][X2_RATE] : t->p[P_LRATE], nr = r;
+        if (id == CC_L1SYNC || id == CC_L2SYNC)          /* (HZ -> BPM: 1/4; BPM -> HZ: about a beat's at 120) */
+            nr = v ? (r < 0 ? r : -5) : (r < 0 ? 60 : r);
+        else if (id == CC_L1RATE || id == CC_L2RATE)
+            nr = r < 0 ? -(clamp(v, 0, 11) + 1) : clamp(v, 0, 127);
+        if (id == CC_L1SYNC || id == CC_L1RATE || id == CC_L2SYNC || id == CC_L2RATE) {
+            if (lf2) trk_x2[k][X2_RATE] = (int8_t)nr;
+            else t->p[P_LRATE] = (int16_t)nr;
+        } else if (id == CC_L1WAVE) {
+            t->p[P_LWAVE] = (int16_t)clamp(v, TP[P_LWAVE].min, TP[P_LWAVE].max);
+        } else if (id == CC_L1MODE) {                    /* FREE: PHASE -1 (TRIG's kept in lfo_ph_mem); TRIG, ONE: PHASE back */
+            v = clamp(v, 0, 2);
+            if (v == LM_FREE && t->p[P_LPHASE] >= 0) { lfo_ph_mem[k] = (uint8_t)t->p[P_LPHASE]; t->p[P_LPHASE] = -1; }
+            else if (v != LM_FREE && t->p[P_LPHASE] < 0) t->p[P_LPHASE] = (int16_t)lfo_ph_mem[k];
+            trk_x2[k][X2_L1ONE] = (int8_t)(v == LM_ONE);
+        } else if (id == CC_L1PH) {
+            if (t->p[P_LPHASE] >= 0) t->p[P_LPHASE] = (int16_t)clamp(v, 0, 127);
+            else lfo_ph_mem[k] = (uint8_t)clamp(v, 0, 127);
+        } else {
+            t->p[P_LFADE] = (int16_t)clamp(v, TP[P_LFADE].min, TP[P_LFADE].max);
+        }
     } else if (id == CC_OCT) {
         int32_t tr = TSEL->p[P_TRANS], o = tr >= 0 ? (tr + 6) / 12 : -((-tr + 5) / 12);
         TSEL->p[P_TRANS] = (int16_t)clamp(tr + (clamp(v, -2, 2) - o) * 12, -24, 24);
@@ -346,7 +395,7 @@ static void cos_cput(uint32_t id, int32_t v)
         TSEL->p[P_LN0 + (id - CC_LN0)] = (int16_t)clamp(v, 0, 127);
     } else if (id == CC_KDRV) {
         TSEL->p[P_E7] = (int16_t)clamp(v, 0, 127);
-    } else if (id >= CC_X2 && id <= CC_X2E) {
+    } else if (id >= CC_X2 && id < CC_X2 + X2_N) {
         uint32_t i = id - CC_X2;
         trk_x2[song.sel % NTRK][i] = (int8_t)clamp(v, X2_DESC[i].min, X2_DESC[i].max);
     } else if (id >= CC_PF0 && id <= CC_PF3) {

@@ -698,6 +698,8 @@ typedef struct track {
     uint32_t lfo_prev;           /* (cursed-os) the S&H value before (SMOOTH glides from it) */
     uint32_t lfo2_ph, lfo2_rnd, lfo2_prev;   /* (cursed-os) LFO 2 (params.c trk_x2): phase, its random values */
     int32_t lfo2_val;            /* .. Q15 */
+    uint32_t lfo1_last;          /* (cursed-os) LFO 1's phase the block before (its ONE: a cycle done) */
+    uint8_t lfo1_done, lfo2_done;   /* .. ONE: the cycle over, held at its end until the next fresh note */
     /* keyboard / arp input: held notes in press order */
     uint8_t held[16];
     uint8_t nheld;
