@@ -37,6 +37,8 @@ static void system_init(void);                  /* (0.6.40) project.c: INIT SYST
 static int undo_do(void);                       /* .. back (and again: forward) */
 static uint8_t undo_ok;
 static int project_used(uint32_t slot);
+static void proj_slot_name(uint32_t slot, char *b);   /* (cursedsound) cos.c SAVE */
+static uint32_t proj_cur_slot(void);
 static int project_erase(uint32_t slot);       /* (V10.17) SAVE > SECTIONS > ERASE */
 static uint32_t lib_scan(uint32_t n, char *b);           /* (0.8.5) project.c: SAVE > LIBRARY's tiles */
 static uint32_t lib_gen(void);

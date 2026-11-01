@@ -2089,6 +2089,15 @@ static void persist_boot(void)                    /* before settings_init / pane
 }
 
 static int project_used(uint32_t slot) { return proj_import(&proj_scratch, &proj_slot[slot & 3u], sizeof(project_store_t)); }
+/* (cursedsound) cos.c's SAVE page: slot's name into b (13 bytes; "" empty, UNTITLED unnamed); the slot open, 4: none */
+static void proj_slot_name(uint32_t slot, char *b)
+{
+    b[0] = 0;
+    if (!project_used(slot)) return;
+    proj_name_get(b, (const uint8_t *)proj_scratch.name);
+    if (!b[0]) str_cpy(b, "UNTITLED", PROJ_NAME_LEN + 1u);
+}
+static uint32_t proj_cur_slot(void) { return proj_cur < 4u ? proj_cur : 4u; }
 
 /* (V10.17) SAVE > SECTIONS > ERASE: section slot of the open project (song) empty again, in RAM and in flash (both
  * copies' sectors erased: EMPTY, and the LIBRARY's chip dark); the music playing stays as it is. Stopped only (a flash

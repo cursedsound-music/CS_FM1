@@ -293,6 +293,9 @@ static __attribute__((noinline)) uint32_t cpu_lost(uint32_t said)
 static __attribute__((noinline)) void boot_splash(void)
 {
     uint32_t t0 = fm1_ms, n, ms;
+#if COS_SLIM
+    cos_boot_demo();                                    /* (cursedsound) nothing in the patterns: a groove (cos.c) */
+#endif
     for (n = 0; n < 600u && (ms = fm1_ms - t0) < SPL_WRITE + SPL_HOLD; n++) {   /* (600: a stalled clock still ends it,
                                                                                * in ~2.4 s) */
         splash_write(ms);

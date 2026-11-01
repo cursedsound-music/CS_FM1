@@ -35,9 +35,9 @@
 #define C_DIM 0x6B6Du                           /* (110, 110, 110): idle */
 #define C_DARK 0x2965u                          /* (45, 45, 45): empty cells, the arcs' tracks */
 
-enum { CM_HOME, CM_TRIG, CM_SRC, CM_AMP, CM_DRONE, CM_FX, CM_GEN, CM_MIX, CM_KEY, CM_N };
+enum { CM_HOME, CM_TRIG, CM_SRC, CM_AMP, CM_DRONE, CM_FX, CM_GEN, CM_MIX, CM_KEY, CM_PROJ, CM_N };
 enum { CK_NONE, CK_TRK, CK_GLO, CK_AC, CK_EU, CK_COS };
-enum { CC_OUTCH, CC_MOUT, CC_CLOCK };   /* (CK_COS: cursed-os's own knobs) */
+enum { CC_OUTCH, CC_MOUT, CC_CLOCK, CC_SLOT };   /* (CK_COS: cursed-os's own knobs) */
 typedef struct { const char *tab; uint8_t kind, id[4]; } cpg_t;
 #define X 0xFFu
 static const cpg_t CZP_HOME[] = {{"PERFORM", CK_GLO, {G_BPM, G_SWING, G_DJF, X}}};
@@ -54,9 +54,10 @@ static const cpg_t CZP_GENE[] = {{"EUCLID", CK_EU, {EK_HITS, EK_STEPS, EK_ROT, E
                                 {"MUTATE", CK_EU, {EK_U0, EK_U0 + 1u, EK_U0 + 2u, EK_U0 + 3u}}};
 static const cpg_t CZP_MIX[] = {{"MIX", CK_TRK, {P_LEVEL, P_PAN, P_GLIDE, P_MUTE}}, {"MIDI", CK_COS, {CC_OUTCH, CC_MOUT, CC_CLOCK, X}}};
 static const cpg_t CZP_KEY[] = {{"KEY", CK_TRK, {P_SCALE, P_QUANT, 0xFFu, 0xFFu}}};   /* (the root: the keys) */
+static const cpg_t CZP_PROJ[] = {{"PROJECT", CK_COS, {CC_SLOT, X, X, X}}};   /* (the slot: KNOB 1 or white keys 1..4) */
 #undef X
-static const char *const CM_NAME[CM_N] = {"HOME", "TRIG", "SRC", "AMP", "DRONE", "FX", "GEN", "MIX", "KEY"};
-static const uint8_t CM_BTN[CM_N] = {B_HOME, B_SEQ, B_EDIT, B_ENV, B_LFO, B_FX, B_ARP, B_GLO, B_SCL};
+static const char *const CM_NAME[CM_N] = {"HOME", "TRIG", "SRC", "AMP", "DRONE", "FX", "GEN", "MIX", "KEY", "SAVE"};
+static const uint8_t CM_BTN[CM_N] = {B_HOME, B_SEQ, B_EDIT, B_ENV, B_LFO, B_FX, B_ARP, B_GLO, B_SCL, B_SAVE};
 static const uint8_t WK[16] = {0, 2, 4, 6, 7, 9, 11, 12, 14, 16, 18, 19, 21, 23, 24, 26};   /* the white keys */
 static const uint8_t BK[11] = {1, 3, 5, 8, 10, 13, 15, 17, 20, 22, 25};                    /* the black keys */
 static const char *const COS_LN[NLANE] = {"BD", "SD", "CP", "CH", "OH", "TM", "RS", "CB"};
@@ -72,15 +73,17 @@ static struct {
     uint32_t tg_down, notes0;                           /* TRIG: the white keys down since their press; the keys a frame ago */
     uint8_t ly_prev;                                    /* WORDS: the lyric before OCT+ */
     int8_t dr_oct;
-    int16_t cc_v[3];                                    /* (CK_COS: the knobs' views) */
+    int16_t cc_v[4];                                    /* (CK_COS: the knobs' views) */
+    uint8_t slot, pn_ok;                                /* SAVE: the slot picked (0..3); the names below read */
+    char pn[4][13];                     /* .. each slot's name ("": empty) */
 } cz COS_RAM;
 static int cos_active(void) { return (COS_DEFAULT ^ cz.flip) != 0; }
 
 static int cos_kit(void) { return drum_track(TSEL) != 0; }
 static void cos_pages(uint32_t m, const cpg_t **p, uint32_t *n)
 {
-    static const cpg_t *const P[CM_N] = {CZP_HOME, CZP_TRIG, CZP_SRC, CZP_AMP, CZP_DRONE, CZP_FX, CZP_GENA, CZP_MIX, CZP_KEY};
-    static const uint8_t N[CM_N] = {1, 1, 2, 4, 2, 2, 3, 2, 1};
+    static const cpg_t *const P[CM_N] = {CZP_HOME, CZP_TRIG, CZP_SRC, CZP_AMP, CZP_DRONE, CZP_FX, CZP_GENA, CZP_MIX, CZP_KEY, CZP_PROJ};
+    static const uint8_t N[CM_N] = {1, 1, 2, 4, 2, 2, 3, 2, 1, 1};
     *p = m == CM_GEN && cos_kit() ? CZP_GENE : P[m % CM_N];
     *n = N[m % CM_N] + (m == CM_SRC && trk_engp(TSEL) == &ENG_FORMANT);   /* (VOICE: WORDS too) */
 }
@@ -191,7 +194,9 @@ static const param_desc_t *cos_cdesc(uint32_t id, int16_t **vp)
 {
     static const char *const MO[] = {"KEYS", "CLOCK", "ALL", "OFF", 0};
     static const param_desc_t D[2] = {{"OUT CH", F_INT, 1, 16, 1, 0, 0}, {"SENDS", F_ENUM, 0, 3, 0, MO, 0}};
+    static const param_desc_t DS = {"SLOT", F_INT, 1, 4, 1, 0, 0};
     uint32_t t = song.sel % NTRK, v = favorites.factory[15][8u + t];
+    if (id == CC_SLOT) { cz.cc_v[3] = (int16_t)(cz.slot + 1u); *vp = &cz.cc_v[3]; return &DS; }
     id %= 3u;
     *vp = &cz.cc_v[id];
     if (id == CC_OUTCH) { cz.cc_v[id] = (int16_t)(v && v <= 16u ? v : t + 1u); return &D[0]; }
@@ -209,6 +214,8 @@ static void cos_cput(uint32_t id, int32_t v)
     } else if (id == CC_MOUT) {
         midi_out_mode = (uint8_t)(clamp(v, 0, 3));
         settings_save();
+    } else if (id == CC_SLOT) {
+        cz.slot = (uint8_t)(clamp(v, 1, 4) - 1);
     } else
         song.g[G_CLOCK] = (int16_t)clamp(v, GP[G_CLOCK].min, GP[G_CLOCK].max);
 }
@@ -329,8 +336,36 @@ static int cos_empty(const track_t *t)
 {
     uint32_t i;
     for (i = 0; i < NSTEP; i++)
-        if (t->step[i].time == ST_NOTE && t->step[i].n) return 0;
+        if (t->step[i].time == ST_NOTE && (t->step[i].n || t->step[i].hit)) return 0;
     return 1;
+}
+/* power-on with nothing in any pattern (a first start, the browser's preview): a groove to start from, PLAY and it
+ * sounds. The kit four to the floor, open hats on the offbeats, closed ones between, a clap on 2 and 4; an acid line
+ * thrown on ACID's track (main.c boot_splash, web/emu felucca_web.c web_power_on) */
+static __attribute__((noinline)) void cos_boot_demo(void)
+{
+    static const uint8_t L[4][16] = {
+        {1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0},           /* BD */
+        {0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0},           /* CP */
+        {0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1},           /* CH */
+        {0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1, 0}};          /* OH */
+    static const uint8_t LN[4] = {0, 2, 3, 4};
+    uint32_t k, i, l, made = 0, sel = song.sel;
+    for (k = 0; k < trk_live; k++)
+        if (!cos_empty(&trk[k])) return;
+    for (k = 0; k < trk_live && !drum_track(&trk[k]); k++) {}
+    if (k < trk_live) {
+        trk[k].p[P_SLEN] = 16;
+        for (l = 0; l < 4u; l++)
+            for (i = 0; i < 16u; i++)
+                if (L[l][i]) grid_hit(&trk[k], i, LN[l], 1);
+    }
+    k = cos_acid_trk(&made);
+    ac_throw(k, 1);
+    ui.msg_t = 0;
+    cz.msg[0] = 0;
+    song.g[G_BPM] = 128;
+    track_select(sel);
 }
 /* GEN entered: on a kit, over to ACID's track; an empty track gets a line at once */
 static void cos_gen_enter(void)
@@ -342,8 +377,25 @@ static void cos_gen_enter(void)
     if (made) ui.msg_t = 0;                              /* (what it said: the track's new sound, not NEW LINE) */
 }
 
+/* SAVE: the four slots (JIANT's projects, SECT A..D): their names read again on entering and after a save or a load.
+ * OCT+ saves the music to the slot picked (stopped: a flash erase), OCT- loads it */
+static __attribute__((noinline)) void cos_proj_scan(void)
+{
+    uint32_t i;
+    for (i = 0; i < 4u; i++) proj_slot_name(i, cz.pn[i]);
+    cz.pn_ok = 1;
+}
+static __attribute__((noinline)) void cos_proj_oct(int up)
+{
+    if (up) project_save(cz.slot);
+    else if (!cz.pn[cz.slot][0]) cos_say("EMPTY SLOT");
+    else { project_load(cz.slot); ui.msg_t = 0; cos_say("LOADED"); }
+    cos_proj_scan();
+}
+
 static void cos_mode(uint32_t m)
 {
+    if (m == CM_PROJ && cz.mode != CM_PROJ) { cz.slot = proj_cur_slot() < 4u ? (uint8_t)proj_cur_slot() : cz.slot; cos_proj_scan(); }
     if (m == CM_GEN && cz.mode != CM_GEN) { cz.mode = (uint8_t)m; cz.hot = 0; cos_gen_enter(); return; }
     if (cz.mode == m) {                                 /* again: the next page (Elektron's way) */
         const cpg_t *p;
@@ -357,7 +409,7 @@ static void cos_mode(uint32_t m)
 /* the keys are the interface's (silent) on HOME, TRIG and a kit's GEN; elsewhere they play the track */
 static int cos_keys_ui(void)
 {
-    return cz.mode == CM_HOME || cz.mode == CM_TRIG || cz.mode == CM_KEY || cz.mode == CM_DRONE || (cz.mode == CM_GEN && cos_kit()) ||
+    return cz.mode == CM_HOME || cz.mode == CM_TRIG || cz.mode == CM_KEY || cz.mode == CM_PROJ || cz.mode == CM_DRONE || (cz.mode == CM_GEN && cos_kit()) ||
            ((fm1_in.buttons >> panel.btn[B_SCL]) & 1u);
 }
 
@@ -382,7 +434,6 @@ static __attribute__((noinline)) void cos_input(void)
         }
         else if (b == B_REC && cz.mode == CM_GEN) cos_say(undo_do() ? "NOTHING TO UNDO" : "UNDONE");
         else if (b == B_REC) cos_say("REC: CLASSIC UI (HOME+GLO)");
-        else if (b == B_SAVE) cos_say("SAVE: CLASSIC UI (HOME+GLO)");
         else if (b == B_SCL) { cz.scl_down = 1; cz.scl_used = 0; }   /* (its tap acts when let go: held, it is a shift) */
         else if (b == B_OCTDN || b == B_OCTUP) {
             int up = b == B_OCTUP;
@@ -390,6 +441,7 @@ static __attribute__((noinline)) void cos_input(void)
                 uint32_t n = cos_banks();
                 cz.bank = (uint8_t)((cz.bank + (up ? 1u : n - 1u)) % n);
             } else if (cz.mode == CM_SRC && cz.tab[CM_SRC] == 2u) cos_words(up);
+            else if (cz.mode == CM_PROJ) cos_proj_oct(up);
             else if (cz.mode == CM_GEN && cos_kit()) eu_oct(up, cz.tab[CM_GEN] == 2u);
             else if (cz.mode == CM_GEN) ac_oct(up, cz.tab[CM_GEN] == 2u);
             else if (cz.mode == CM_DRONE) cz.dr_oct = (int8_t)clamp(cz.dr_oct + (up ? 1 : -1), -2, 2);
@@ -435,6 +487,8 @@ static __attribute__((noinline)) void cos_input(void)
             cos_key_ask(k);
         } else if (cz.mode == CM_DRONE) {
             cos_drone_key(k);
+        } else if (cz.mode == CM_PROJ) {
+            if (w < 4u) cz.slot = (uint8_t)w;
         } else if (cz.mode == CM_HOME) {
             if (w < trk_live) track_select(w);
             else if (j < trk_live) {
@@ -859,6 +913,22 @@ static void cos_body_gen(void)
     }
 }
 
+static void cos_body_proj(void)
+{
+    uint32_t i;
+    char b[24];
+    for (i = 0; i < 4u; i++) {
+        int32_t y = 36 + (int32_t)i * 24;
+        int pick = i == cz.slot, used = cz.pn[i][0] != 0;
+        if (pick) cv_rect(0, y - 3, 240, 20, C_DARK);
+        b[0] = (char)('A' + i); b[1] = 0;
+        cos_px(8, y, b, pick ? C_FG : C_MID, CZ_TALL);
+        cos_tx(32, y + 4, used ? cz.pn[i] : "EMPTY", used ? (pick ? C_FG : C_MID) : C_DIM);
+        if (i == proj_cur_slot()) cos_txr(232, y + 4, "NOW", C_MID);
+    }
+    cos_txc(120, 136, CZ_LBL, song.playing ? "OCT- LOAD  (STOP TO SAVE)" : "OCT+ SAVE  OCT- LOAD", C_DIM);
+}
+
 /* the whole scene, drawn into the strip on the canvas (cv_oy: its top) */
 static void cos_scene(void)
 {
@@ -869,6 +939,7 @@ static void cos_scene(void)
     case CM_TRIG: cos_body_trig(); break;
     case CM_GEN: cos_body_gen(); break;
     case CM_KEY: cos_body_key(); break;
+    case CM_PROJ: cos_body_proj(); break;
     case CM_DRONE: cos_body_drone(); break;
     case CM_MIX: if (cz.tab[CM_MIX] == 1u) { cos_body_midi(); break; } cos_body_sound(); break;
     default: cos_body_sound(); break;

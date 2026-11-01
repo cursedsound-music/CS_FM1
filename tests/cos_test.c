@@ -171,6 +171,38 @@ int main(void)
         CHECK(cnt == 1u && trk_eng(TSEL) == ENGI_ANALOG, "again: the same track, no other made");
     }
 
+    /* the power-on groove: only when every pattern is empty; the kit's four kicks, an acid line, 128 BPM */
+    {
+        uint32_t j, i2, kicks = 0, notes = 0;
+        for (j = 0; j < trk_live; j++) for (i2 = 0; i2 < NSTEP; i2++) step_clear(&trk[j].step[i2]);
+        set_engine_of(&trk[0], ENGI_DRUM); track_select(0);
+        cos_boot_demo();
+        for (i2 = 0; i2 < 16u; i2++) kicks += cos_step(&trk[0], i2, 0) != 0u;
+        for (j = 0; j < trk_live; j++) if (trk_eng(&trk[j]) == ENGI_ANALOG) for (i2 = 0; i2 < NSTEP; i2++) notes += trk[j].step[i2].time == ST_NOTE && trk[j].step[i2].n;
+        CHECK(kicks == 4u, "four kicks (%u)", kicks);
+        CHECK(notes > 0u, "an acid line (%u notes)", notes);
+        CHECK(song.g[G_BPM] == 128 && song.sel == 0u, "128 BPM, T1 still selected");
+        song.g[G_BPM] = 120; grid_hit(&trk[0], 1, 0, 1);
+        cos_boot_demo();
+        CHECK(song.g[G_BPM] == 120, "a pattern there: no groove written");
+    }
+
+    /* SAVE: OCT+ the music into the slot picked, its name read back; OCT- loads it */
+    {
+        uint32_t j, i2;
+        song.playing = 0;
+        cz.mode = CM_HOME; cos_mode(CM_PROJ);
+        CHECK(cz.mode == CM_PROJ, "SAVE: its page");
+        cz.slot = 2; cos_proj_oct(1);
+        CHECK(cz.pn[2][0] != 0, "slot C saved (%s)", cz.pn[2]);
+        CHECK(proj_cur_slot() == 2u, "C the slot open");
+        for (j = 0; j < trk_live; j++) for (i2 = 0; i2 < NSTEP; i2++) step_clear(&trk[j].step[i2]);
+        cos_proj_oct(0);
+        CHECK(!cos_empty(&trk[0]), "OCT-: the music back from C");
+        cz.slot = 3; cos_proj_oct(0);
+        CHECK(!strcmp(cz.msg, "EMPTY SLOT") || cz.pn[3][0], "an empty slot: said so");
+    }
+
     printf("cos_test: %s (%d failures)\n", fails ? "FAILED" : "ok", fails);
     return fails != 0;
 }
