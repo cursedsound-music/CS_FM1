@@ -57,7 +57,21 @@ jobs:
         run: |
           "$JIELI_TOOLCHAIN/pi32v2/bin/clang" --version | head -1
           export FELUCCA_REPIN="${{ inputs.repin }}"
-          python3 tools/build.py
+          python3 tools/build.py || BUILD_FAIL=1
+          if [ -s build/felucca.elf ]; then              # (cursed-os) where the image's bytes go: the biggest symbols, by file
+            echo "----- the 250 biggest symbols (size, section, name) -----"
+            "$JIELI_TOOLCHAIN/common/bin/objdump" -t build/felucca.elf | python3 -c "
+          import sys
+          r = []
+          for ln in sys.stdin:
+              p = ln.split()
+              if len(p) >= 5:
+                  try: r.append((int(p[-2], 16), p[-3], p[-1]))
+                  except ValueError: pass
+          for sz, sec, n in sorted(r)[-250:]: print(sz, sec, n)
+          " || true
+          fi
+          [ -z "$BUILD_FAIL" ] || exit 1
           if [ -n "$FELUCCA_REPIN" ]; then
             echo "----- tools/audio_layout.txt as recorded (diff against the commit's) -----"
             git diff --stat -- tools/audio_layout.txt
