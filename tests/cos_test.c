@@ -188,6 +188,18 @@ int main(void)
         CHECK(!strcmp(cz.msg, "EMPTY SLOT") || cz.pn[3][0], "an empty slot: said so");
     }
 
+    /* ACID's two 303s: the first two ACID tracks get one each, a third none; one whose track left ACID is taken */
+    {
+        set_engine_of(&trk[1], ENGI_ACID); set_engine_of(&trk[2], ENGI_ACID); set_engine_of(&trk[3], ENGI_ACID);
+        trk[1].engine = trk[2].engine = trk[3].engine = ENGI_ACID;
+        acid_own[0] = acid_own[1] = 0;
+        CHECK(acid_slot(&trk[1]) == 0 && acid_slot(&trk[2]) == 1, "two 303s");
+        CHECK(acid_slot(&trk[3]) < 0, "a third ACID track: none");
+        trk[1].engine = ENGI_PHASE;
+        CHECK(acid_slot(&trk[3]) == 0, "T2 left ACID: its 303 to T4");
+        CHECK(acid_slot(&trk[2]) == 1, "T3 keeps its own");
+    }
+
     printf("cos_test: %s (%d failures)\n", fails ? "FAILED" : "ok", fails);
     return fails != 0;
 }

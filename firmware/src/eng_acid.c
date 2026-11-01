@@ -4,7 +4,7 @@
  * github.com/charlesvestal/fm1-x0x ca2d377: Open303 by Robin Schmidt (MIT), the Devilfish ranges after jc303 (midilab),
  * the RAT drive after dm-Rat (Dave Mollen), the speed-ups after Optimist (henri / hdavid); GPL-3.0, the Open303 parts
  * MIT): its TeeBeeFilter, the decay envelope with its RC followers, the measured ENV MOD mapping, accent, the 303 square,
- * the pitch slew of a slide. One instance a track (mono: .poly 1), in the pool.
+ * the pitch slew of a slide. Mono (.poly 1); two instances in the pool, for the first two ACID tracks.
  *
  * What the voice gives it: the note (its start, a slide's note when a legato note arrives with the gate still held), the
  * pitch as it sounds (the phase increment: TUNE, TRANS, the LFO and the matrix on PITCH, a bend), LFO / matrix on FILTER
@@ -28,35 +28,42 @@ void acid_hw_render(bass303_t *b, uint32_t inc, int32_t *out, int n);
 static const char *const N_ACID_WAVE[] = {"SAW", "SQR", 0};
 static const uint8_t ACID_POT[8] = {BASS303_CUTOFF, BASS303_RESO, BASS303_ENVMOD, BASS303_DECAY,
                                     BASS303_ACCENT, BASS303_WAVE, BASS303_DRIVE, BASS303_SLIDE};
-static bass303_t acid_b[NTRK] __attribute__((section(".pool")));
-static int16_t acid_pv[NTRK][8] __attribute__((section(".pool")));   /* the pots set last (-1: not yet) */
-static uint8_t acid_rdy[NTRK] __attribute__((section(".pool")));
-static uint8_t acid_note[NTRK] __attribute__((section(".pool")));    /* the note sounding (a legato one: a slide) */
+/* two 303s (~470 B each, in the pool, which keeps 8 KB free): the first two tracks on ACID sound; a slot whose track
+ * left ACID goes to the next one that asks (a third ACID track at once stays silent) */
+#define ACID_NB 2u
+static bass303_t acid_b[ACID_NB] __attribute__((section(".pool")));
+static int16_t acid_pv[ACID_NB][8] __attribute__((section(".pool")));   /* the pots set last (-1: not yet) */
+static uint8_t acid_own[ACID_NB] __attribute__((section(".pool")));     /* 1 + its track; 0 free */
+static uint8_t acid_note[ACID_NB] __attribute__((section(".pool")));    /* the note sounding (a legato one: a slide) */
 
-static uint32_t acid_k(const track_t *t) { return (uint32_t)(t - trk) % NTRK; }
-static __attribute__((noinline)) void acid_ready(track_t *t)
+/* track t's 303 (a free one or one whose track left ACID taken, set up from silence), -1 none */
+static __attribute__((noinline)) int32_t acid_slot(const track_t *t)
 {
-    uint32_t k = acid_k(t), i;
-    if (acid_rdy[k])
-        return;
-    acid_hw_init(&acid_b[k]);
+    uint32_t k = (uint32_t)(t - trk) % NTRK, s, i;
+    for (s = 0; s < ACID_NB; s++)
+        if (acid_own[s] == k + 1u) return (int32_t)s;
+    for (s = 0; s < ACID_NB; s++)
+        if (!acid_own[s] || trk[(acid_own[s] - 1u) % NTRK].engine != ENGI_ACID) break;
+    if (s == ACID_NB) return -1;
+    acid_hw_init(&acid_b[s]);
     for (i = 0; i < 8u; i++)
-        acid_pv[k][i] = -1;
-    acid_rdy[k] = 1;
+        acid_pv[s][i] = -1;
+    acid_own[s] = (uint8_t)(k + 1u);
+    return (int32_t)s;
 }
 /* the EDIT knobs into the 303's pots (only what changed: a pot's maths is a few exps); CUTOFF with the LFO and the
  * matrix on FILTER (m: 0 at a note's start) */
-static void acid_pots(track_t *t, const vmod_t *m)
+static void acid_pots(const track_t *t, uint32_t s, const vmod_t *m)
 {
-    uint32_t k = acid_k(t), i;
+    uint32_t i;
     for (i = 0; i < 8u; i++) {
         int32_t v = t->p[P_E0 + i];
         if (i == 0u && m)
             v += m->cutoff >> 8;
         v = clamp(v, 0, i == 5u ? 1 : 127);
-        if (v != acid_pv[k][i]) {
-            acid_pv[k][i] = (int16_t)v;
-            acid_hw_set(&acid_b[k], ACID_POT[i], v);
+        if (v != acid_pv[s][i]) {
+            acid_pv[s][i] = (int16_t)v;
+            acid_hw_set(&acid_b[s], ACID_POT[i], v);
         }
     }
 }
@@ -64,24 +71,26 @@ static int acid_note_of(const voice_t *v) { return clamp((v->pitch16 + 8) >> 4, 
 
 static void acid_note_on(track_t *t, voice_t *v)
 {
-    uint32_t k = acid_k(t);
-    bass303_t *b = &acid_b[k];
-    acid_ready(t);
-    acid_pots(t, 0);
-    acid_note[k] = (uint8_t)acid_note_of(v);
-    acid_hw_note_on(b, acid_note[k], v->vel >= 120u, t->slide_glide && b->gate);
+    int32_t s = acid_slot(t);
+    bass303_t *b;
+    if (s < 0) return;
+    b = &acid_b[s];
+    acid_pots(t, (uint32_t)s, 0);
+    acid_note[s] = (uint8_t)acid_note_of(v);
+    acid_hw_note_on(b, acid_note[s], v->vel >= 120u, t->slide_glide && b->gate);
 }
 
 static void acid_render(track_t *t, voice_t *v, int32_t *out, uint32_t n, const vmod_t *m)
 {
-    uint32_t k = acid_k(t), i;
-    bass303_t *b = &acid_b[k];
-    int32_t buf[CTL];
-    acid_ready(t);
-    acid_pots(t, m);
-    if (v->gate && b->gate && acid_note_of(v) != acid_note[k]) {   /* legato (a slide): no retrigger, the slew */
-        acid_note[k] = (uint8_t)acid_note_of(v);
-        acid_hw_note_on(b, acid_note[k], v->vel >= 120u, 1);
+    int32_t s = acid_slot(t), buf[CTL];
+    uint32_t i;
+    bass303_t *b;
+    if (s < 0) return;
+    b = &acid_b[s];
+    acid_pots(t, (uint32_t)s, m);
+    if (v->gate && b->gate && acid_note_of(v) != acid_note[s]) {   /* legato (a slide): no retrigger, the slew */
+        acid_note[s] = (uint8_t)acid_note_of(v);
+        acid_hw_note_on(b, acid_note[s], v->vel >= 120u, 1);
     }
     if (!v->gate && b->gate)
         acid_hw_note_off(b);
@@ -90,11 +99,12 @@ static void acid_render(track_t *t, voice_t *v, int32_t *out, uint32_t n, const 
     for (i = 0; i < n; i++)
         out[i] += voice_amp(buf[i] >> 1, m, i) << 1;
 }
-/* the voice ends when the 303 has gone quiet (its amp envelope down, the idle hold-off over) */
+/* the voice ends when its 303 has gone quiet (its amp envelope down, the idle hold-off over), or it has none */
 static int acid_done(track_t *t, voice_t *v)
 {
-    const bass303_t *b = &acid_b[acid_k(t)];
-    return !v->gate && (b->idle || !acid_rdy[acid_k(t)]);
+    uint32_t k = (uint32_t)(t - trk) % NTRK, s;
+    for (s = 0; s < ACID_NB && acid_own[s] != k + 1u; s++) {}
+    return !v->gate && (s == ACID_NB || acid_b[s].idle);
 }
 
 /* {CUTOFF RESO ENVMOD DECAY ACCENT WAVE DRIVE SLIDE}, {A D S R} (unused: its own envelopes), fenv, mono */
