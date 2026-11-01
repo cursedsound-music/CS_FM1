@@ -148,27 +148,27 @@ int main(void)
     {
         const cpg_t *pp; uint32_t n;
         cos_pages(CM_SRC, &pp, &n);
-        CHECK(n == 3u && !strcmp(pp[2].tab, "WORDS"), "a VOICE track's SRC has WORDS");
+        CHECK(n == 8u && !strcmp(pp[2].tab, "WORDS"), "a VOICE track's SRC has WORDS");
         song.sel = 4; cos_pages(CM_SRC, &pp, &n);
-        CHECK(n == 2u, "an ANALOG track's does not");
+        CHECK(n == 7u && strcmp(pp[2].tab, "WORDS"), "an ANALOG track's does not");
     }
 
     /* ACID made easy: GEN from a kit goes over to an ANALOG track (one made from the last melodic one if none), an
      * empty one gets a line at once */
     {
         uint32_t j, na = 0, cnt = 0;
-        for (j = 0; j < trk_live; j++) if (trk_eng(&trk[j]) == ENGI_ANALOG) set_engine_of(&trk[j], ENGI_PHASE);
+        for (j = 0; j < trk_live; j++) if (trk_eng(&trk[j]) == ENGI_ACID) set_engine_of(&trk[j], ENGI_PHASE);
         for (j = 0; j < trk_live; j++) { uint32_t i2; for (i2 = 0; i2 < NSTEP; i2++) step_clear(&trk[j].step[i2]); }
         set_engine_of(&trk[0], ENGI_DRUM); track_select(0);
         cz.mode = CM_HOME; cos_mode(CM_GEN);
-        CHECK(!cos_kit() && trk_eng(TSEL) == ENGI_ANALOG, "GEN from the kit: on an ANALOG track (T%u)", song.sel + 1u);
+        CHECK(!cos_kit() && trk_eng(TSEL) == ENGI_ACID, "GEN from the kit: on an ACID track (T%u)", song.sel + 1u);
         for (j = 0; j < NSTEP; j++) if (TSEL->step[j].time == ST_NOTE) na++;
         CHECK(na > 0u, "a line thrown at once (%u notes)", na);
-        for (j = 0; j < trk_live; j++) cnt += trk_eng(&trk[j]) == ENGI_ANALOG;
+        for (j = 0; j < trk_live; j++) cnt += trk_eng(&trk[j]) == ENGI_ACID;
         CHECK(cnt == 1u, "one ACID track");
         track_select(0); cz.mode = CM_HOME; cos_mode(CM_GEN);
-        cnt = 0; for (j = 0; j < trk_live; j++) cnt += trk_eng(&trk[j]) == ENGI_ANALOG;
-        CHECK(cnt == 1u && trk_eng(TSEL) == ENGI_ANALOG, "again: the same track, no other made");
+        cnt = 0; for (j = 0; j < trk_live; j++) cnt += trk_eng(&trk[j]) == ENGI_ACID;
+        CHECK(cnt == 1u && trk_eng(TSEL) == ENGI_ACID, "again: the same track, no other made");
     }
 
     /* SAVE: OCT+ the music into the slot picked, its name read back; OCT- loads it */

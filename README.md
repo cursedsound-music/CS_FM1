@@ -72,8 +72,10 @@ cursed-os stands on other people's work. Thank you.
   on (hardware layer, USB, update loader, installer, storage).
 - **[SLOOP](https://github.com/isod89/sloop-fm1)**: JIANT's song system.
 - **[X0X](https://github.com/charlesvestal/fm1-x0x)** by Charles Vestal: the groovebox layout cursed-os follows (the
-  home grid of parts, one row of four knobs, the steps along the foot), and the browser emulator JIANT's is based on.
-  No X0X code is in cursed-os yet; if its engines are ported, they will be credited here and in LICENSING.md.
+  home grid of parts, one row of four knobs, the steps along the foot), the browser emulator JIANT's is based on, and
+  the ACID engine's 303 voice: X0X's port (`firmware/src/x0x/bass303.c`) of **[Open303](https://github.com/RobinSchmidt/Open303)**
+  by Robin Schmidt (MIT), with the Devilfish ranges after jc303 (midilab), the RAT drive after dm-Rat (Dave Mollen) and
+  the speed-ups after Optimist (henri / hdavid).
 - **[HYP-1](https://github.com/RustyPawz/fm1-HYP1)** by RedtailWorks: the idea of the keys setting the song's key.
   Written fresh for cursed-os, no HYP-1 code.
 - **Font**: Press Start 2P (The Press Start 2P Project Authors), SIL OFL 1.1.

@@ -42,10 +42,17 @@ typedef struct { const char *tab; uint8_t kind, id[4]; } cpg_t;
 #define X 0xFFu
 static const cpg_t CZP_HOME[] = {{"PERFORM", CK_GLO, {G_BPM, G_SWING, G_DJF, X}}};
 static const cpg_t CZP_TRIG[] = {{"TRIG", CK_TRK, {P_SLEN, P_SDIV, P_SSWING, P_SGATE}}};
+/* EDIT: the engine's eight (its own page names: cos_tabs), the voice, the matrix's four slots; a VOICE track WORDS
+ * third. ENV: the amp, the filter, the envelope's modulation, the two LFO pages */
+#define CZ_MOD(n) {"MOD " #n, CK_TRK, {P_M##n##SRC, P_M##n##DST, P_M##n##AMT, X}}
 static const cpg_t CZP_SRC[] = {{"SRC 1", CK_TRK, {P_E0, P_E1, P_E2, P_E3}}, {"SRC 2", CK_TRK, {P_E4, P_E5, P_E6, P_E7}},
-                               {"WORDS", CK_TRK, {P_VLANG, P_VLYR, P_E1, P_E2}}};   /* (WORDS: VOICE only) */
+                               {"VOICE", CK_TRK, {P_VOICE, P_GLIDE, P_DETUNE, P_GLMODE}}, CZ_MOD(1), CZ_MOD(2), CZ_MOD(3), CZ_MOD(4)};
+static const cpg_t CZP_SRCV[] = {{"SRC 1", CK_TRK, {P_E0, P_E1, P_E2, P_E3}}, {"SRC 2", CK_TRK, {P_E4, P_E5, P_E6, P_E7}},
+                                {"WORDS", CK_TRK, {P_VLANG, P_VLYR, P_E1, P_E2}},
+                                {"VOICE", CK_TRK, {P_VOICE, P_GLIDE, P_DETUNE, P_GLMODE}}, CZ_MOD(1), CZ_MOD(2), CZ_MOD(3), CZ_MOD(4)};
 static const cpg_t CZP_AMP[] = {{"AMP", CK_TRK, {P_ATK, P_DEC, P_SUS, P_REL}}, {"FLTR", CK_TRK, {P_FCUT, P_FRES, P_FTYPE, P_ED_FLT}},
-                               {"LFO", CK_TRK, {P_LRATE, P_LWAVE, P_LD_PIT, P_LD_FLT}}, {"LFO 2", CK_TRK, {P_LFADE, P_LD_SHP, P_LD_AMP, X}}};
+                               {"ENV MOD", CK_TRK, {P_ED_FLT, P_ED_PIT, P_ED_SHP, X}},
+                               {"LFO", CK_TRK, {P_LRATE, P_LWAVE, P_LD_PIT, P_LD_FLT}}, {"LFO 2", CK_TRK, {P_LFADE, P_LD_SHP, P_LD_AMP, P_LPHASE}}};
 static const cpg_t CZP_DRONE[] = {{"DRONE", CK_TRK, {P_LEVEL, P_FCUT, P_LRATE, P_LD_FLT}}, {"SPACE", CK_TRK, {P_ATK, P_REL, P_DLY, P_REV}}};
 static const cpg_t CZP_FX[] = {{"SEND", CK_TRK, {P_DIST, P_CHOR, P_DLY, P_REV}}, {"DIST", CK_TRK, {P_DTYPE, P_DTONE, X, X}}};
 static const cpg_t CZP_GENA[] = {{"ACID", CK_AC, {AK_DENS, AK_SLIDE, AK_ACC, AK_OCT}}, {"ACID 2", CK_AC, {AK_STEPS, AK_NOTES, AK_TIE, AK_LOCK}},
@@ -83,9 +90,10 @@ static int cos_kit(void) { return drum_track(TSEL) != 0; }
 static void cos_pages(uint32_t m, const cpg_t **p, uint32_t *n)
 {
     static const cpg_t *const P[CM_N] = {CZP_HOME, CZP_TRIG, CZP_SRC, CZP_AMP, CZP_DRONE, CZP_FX, CZP_GENA, CZP_MIX, CZP_KEY, CZP_PROJ};
-    static const uint8_t N[CM_N] = {1, 1, 2, 4, 2, 2, 3, 2, 1, 1};
-    *p = m == CM_GEN && cos_kit() ? CZP_GENE : P[m % CM_N];
-    *n = N[m % CM_N] + (m == CM_SRC && trk_engp(TSEL) == &ENG_FORMANT);   /* (VOICE: WORDS too) */
+    static const uint8_t N[CM_N] = {1, 1, 7, 5, 2, 2, 3, 2, 1, 1};
+    int vo = m == CM_SRC && trk_engp(TSEL) == &ENG_FORMANT;
+    *p = m == CM_GEN && cos_kit() ? CZP_GENE : vo ? CZP_SRCV : P[m % CM_N];
+    *n = N[m % CM_N] + (uint32_t)vo;                                      /* (VOICE: WORDS too) */
 }
 static const cpg_t *cos_page(void)
 {
@@ -94,6 +102,7 @@ static const cpg_t *cos_page(void)
     cos_pages(cz.mode, &p, &n);
     return &p[cz.tab[cz.mode] % n];
 }
+static int cos_on_words(void) { return cz.mode == CM_SRC && trk_engp(TSEL) == &ENG_FORMANT && cz.tab[CM_SRC] % 8u == 2u; }
 static void cos_say(const char *s) { str_cpy(cz.msg, s, sizeof cz.msg); cz.msg_ms = fm1_ms; }
 static const char *const COS_NN[12] = {"C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"};
 
@@ -309,23 +318,20 @@ static void cos_trig(uint32_t w)
 }
 static uint32_t cos_banks(void) { return ((uint32_t)clamp(TSEL->p[P_SLEN], 1, NSTEP) + 15u) / 16u; }
 
-/* ACID's track: the first ANALOG one; none: the last live one that is neither a kit nor VOICE becomes ANALOG's ACID
- * sound (an UNDO point first; REC on GEN undoes it) */
+/* ACID's track: the first one on the ACID engine (the 303); none: the last live one that is neither a kit nor VOICE
+ * becomes ACID's TB CLASSIC (an UNDO point first; REC on GEN undoes it) */
 static __attribute__((noinline)) uint32_t cos_acid_trk(uint32_t *made)
 {
     uint32_t i, k = trk_live;
     char b[24];
     for (i = 0; i < trk_live; i++)
-        if (trk_eng(&trk[i]) == ENGI_ANALOG) return i;
+        if (trk_eng(&trk[i]) == ENGI_ACID) return i;
     for (i = trk_live; i-- > 0u;)
         if (!drum_track(&trk[i]) && trk_eng(&trk[i]) != ENGI_VOICE) { k = i; break; }
     if (k >= trk_live) k = trk_live - 1u;
     undo_mark();
-    set_engine_of(&trk[k], ENGI_ANALOG);
-    for (i = 0; i < ENG_ANALOG.npresets; i++) {
-        const char *n = ENG_ANALOG.presets[i].name;
-        if (n[0] == 'A' && n[1] == 'C' && n[2] == 'I' && n[3] == 'D' && !n[4]) { apply_preset_to(&trk[k], i); break; }
-    }
+    set_engine_of(&trk[k], ENGI_ACID);
+    apply_preset_to(&trk[k], 0);
     str_cpy(b, "T", 2); b[1] = (char)('1' + k); b[2] = 0;
     str_cpy(b + 2, " NOW ACID 303", 14);
     cos_say(b);
@@ -412,7 +418,7 @@ static __attribute__((noinline)) void cos_input(void)
             if (cz.mode == CM_TRIG) {
                 uint32_t n = cos_banks();
                 cz.bank = (uint8_t)((cz.bank + (up ? 1u : n - 1u)) % n);
-            } else if (cz.mode == CM_SRC && cz.tab[CM_SRC] == 2u) cos_words(up);
+            } else if (cos_on_words()) cos_words(up);
             else if (cz.mode == CM_PROJ) cos_proj_oct(up);
             else if (cz.mode == CM_GEN && cos_kit()) eu_oct(up, cz.tab[CM_GEN] == 2u);
             else if (cz.mode == CM_GEN) ac_oct(up, cz.tab[CM_GEN] == 2u);
@@ -572,11 +578,24 @@ static void cos_tabs(void)
         return;
     }
     cos_pages(cz.mode, &p, &n);
-    for (i = 0; i < n; i++) {
-        int32_t w = cos_w(p[i].tab) + 6;
-        if (i == cz.tab[cz.mode] % n) { cv_rect(x, 20, w, 12, C_FG); cos_tx(x + 3, 22, p[i].tab, C_BG); }
-        else cos_tx(x + 3, 22, p[i].tab, C_DIM);
-        x += w + 4;
+    {
+        uint32_t cur = cz.tab[cz.mode] % n, f = 0, j;
+        const engine_t *e = trk_engp(TSEL);
+        const char *nm[8];
+        int32_t span;
+        for (i = 0; i < n && i < 8u; i++)                /* (EDIT's first two: the engine's own names for them) */
+            nm[i] = cz.mode == CM_SRC && i < 2u && e->page_title[i] ? e->page_title[i] : p[i].tab;
+        do {                                             /* (the first one shown: the page picked fits) */
+            for (span = 0, j = f; j <= cur; j++) span += cos_w(nm[j]) + 10;
+        } while (span > 236 && ++f < cur);
+        if (f) cos_tx(0, 22, "<", C_DIM);
+        for (i = f, x = f ? 10 : 2; i < n && i < 8u; i++) {
+            int32_t w = cos_w(nm[i]) + 6;
+            if (x + w > 240) { cos_txr(240, 22, ">", C_DIM); break; }
+            if (i == cur) { cv_rect(x, 20, w, 12, C_FG); cos_tx(x + 3, 22, nm[i], C_BG); }
+            else cos_tx(x + 3, 22, nm[i], C_DIM);
+            x += w + 4;
+        }
     }
     if (cz.mode == CM_TRIG && cos_banks() > 1u) {       /* the bank of 16: 1/4 */
         char b[8];
@@ -747,7 +766,7 @@ static void cos_body_sound(void)
 {
     const track_t *t = TSEL;
     char b[40];
-    if (cz.mode == CM_SRC && cz.tab[CM_SRC] == 2u && trk_engp(t) == &ENG_FORMANT) {
+    if (cos_on_words()) {
         const sing_t *sv = sing_view(t);
         int32_t lv = clamp(sv->gv >> 9, 0, 64);
         str_cpy(b, t->p[P_VLANG] ? (sv->w[0] ? sv->w : "PLAY A NOTE") : "LANG: OFF", 20);
@@ -760,6 +779,36 @@ static void cos_body_sound(void)
         str_cpy(b + str_len(b), N_LYRIC[(uint32_t)t->p[P_VLYR] % LYR_N], 6);
         cos_tx(20, 104, b, C_MID);
         cos_tx(20, 124, "OCT+ NEW WORDS  OCT- BEFORE", C_DIM);
+        return;
+    }
+    if (cz.mode == CM_SRC && cos_page()->id[0] >= P_M1SRC && cos_page()->id[0] <= P_M4SRC) {   /* MOD: the matrix */
+        uint32_t k, cur = (uint32_t)(cos_page()->id[0] - P_M1SRC) / 3u;
+        for (k = 0; k < 4u; k++) {
+            uint32_t id = P_M1SRC + 3u * k;
+            int32_t y = 40 + (int32_t)k * 24;
+            const char *u = 0;
+            char w[16];
+            uint16_t c = k == cur ? C_FG : C_MID;
+            if (k == cur) cv_rect(0, y - 4, 240, 20, C_DARK);
+            b[0] = (char)('1' + k); b[1] = 0;
+            cos_tx(6, y, b, c);
+            if (!t->p[id]) { cos_tx(28, y, "OFF", C_DIM); continue; }
+            param_format(track_desc(t, id), t->p[id], w, &u); cos_up(w); w[6] = 0;
+            cos_tx(28, y, w, c);
+            cos_tx(84, y, ">", C_DIM);
+            param_format(track_desc(t, id + 1u), t->p[id + 1u], w, &u); cos_up(w); w[8] = 0;
+            cos_tx(100, y, w, c);
+            param_format(track_desc(t, id + 2u), t->p[id + 2u], w, &u); cos_up(w); w[5] = 0;
+            cos_txr(234, y, w, c);
+        }
+        return;
+    }
+    if (trk_engp(t)->ownenv && cz.mode == CM_AMP && (cz.tab[CM_AMP] == 0u || cz.tab[CM_AMP] == 2u)) {
+        str_cpy(b, trk_engp(t)->name, 16);
+        cos_up(b);
+        cos_txc(120, 64, CZ_TALL, b, C_FG);
+        cos_txc(120, 96, CZ_LBL, "HAS ITS OWN ENVELOPES:", C_MID);
+        cos_txc(120, 110, CZ_LBL, "SHAPE THEM ON EDIT", C_MID);
         return;
     }
     if (cz.mode == CM_AMP && cz.tab[CM_AMP] == 0u) {

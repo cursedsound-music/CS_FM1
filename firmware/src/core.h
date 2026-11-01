@@ -19,7 +19,7 @@
 #define FELUCCA_FM4 0            /* the DIGITAL engine (eng_digital.c, four-operator FM): kept in the tree, not built
                                   * by default; replaced by FM6, its sounds convert (fm4_convert.c) */
 #endif
-#define NENGINES 15              /* the stores' engine numbers 0..14 (engines.c ENGINES[], append-only; 0.8.3: 14 ANIMAL;
+#define NENGINES 16              /* the stores' engine numbers 0..15 (cursed-os: 15 ACID) (engines.c ENGINES[], append-only; 0.8.3: 14 ANIMAL;
                                   * 0.9.9-snd5: STRING and ADD in the retired GRAIN's 8 and SLICE's 13) */
 #define ENGI_DIGITAL 1u          /* reserved without FELUCCA_FM4: never selectable (eng_ok), its sounds load as FM6 */
 #define NENG_SHOWN (NENGINES - !FELUCCA_FM4 - 3)   /* the engines one can pick: PRESETS, the EDIT layer, the editor,
@@ -248,6 +248,7 @@ static void params_by_count(int16_t *out, const int16_t *in, uint32_t np, const 
 #define ENGI_ADD 13u             /* (JIANT 0.9.9-snd5) eng_add.c: additive (SLICE's number, retired in JIANT) */
 #define ENGI_PHASE 2u            /* (0.9.9: named for the power-on parts and the display order, engines.c) */
 #define ENGI_LOFI 3u
+#define ENGI_ACID 15u            /* (cursed-os) eng_acid.c: the 303 (X0X's Open303) */
 #define ENGI_VOICE 5u            /* eng_formant.c ENG_FORMANT */
 #define ENGI_WHEEL 7u
 #define ENGI_NOISE 11u
