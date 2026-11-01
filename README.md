@@ -6,6 +6,9 @@ cursed-os is an Elektron-style interface built on [JIANT FM](https://github.com/
 sequencer. One button per mode, its pages as tabs, the 16 white keys as trigs, four knobs per page. The screen is black and
 white; red is kept for what is live: the playhead, the knob being turned, REC, a key change waiting for the bar.
 
+**[Try it in your browser](https://cursedsound-music.github.io/cursed-os/)**: the real firmware compiled to WebAssembly,
+with sound, played with your computer keyboard and mouse (Chrome or Edge).
+
 > **Status: early and untested on hardware.** Everything here has been built and run in the host tests and the browser
 > emulator, not yet on a real FM-1. Back up your FM-1 before installing, and keep the web installer's
 > "Return to official" in mind.
@@ -50,7 +53,11 @@ white; red is kept for what is live: the playhead, the knob being turned, REC, a
 
 See [BUILDING.md](BUILDING.md) (JIANT's): `tools/get_toolchain.sh` for JieLi's toolchain, the AC79 SDK, then
 `./build.sh` makes `build/felucca.fwsc`. `tests/run_tests.sh` runs the host tests, including cursed-os's
-(`tests/cos_test.c`, `tests/acid_test.c`). `web/emu/build.sh` builds the browser emulator.
+(`tests/cos_test.c`, `tests/acid_test.c`). The browser preview: `web/emu/build.sh` (Emscripten) or
+`web/emu/build_clang.sh` (plain clang and a WASI libc), then `python3 -m http.server -d build/emu`.
+
+Every push to `main` rebuilds the preview on GitHub Pages (`.github/workflows/site.yml`, after JIANT's); when JieLi's
+toolchain downloads on the runner, the firmware file and the web installer go up beside it.
 
 ## Credits
 
