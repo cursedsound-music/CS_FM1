@@ -44,6 +44,7 @@ RAMTEXT_END = 0x01C76000         # .. RAMTEXT's end (the user stack's guard band
 LOADER_NAME = b"usb_hid_ota.bin"    # the file name the SPL looks for
 DOCKER_IMAGE = os.environ.get("JIELI_DOCKER_IMAGE", "debian:bookworm-slim")
 CFLAGS = ["-Os", "-ffunction-sections", "-fno-builtin", "-Wall", "-Wno-unused-function"]
+COS_FPU = ["-mcpu=r3", "-mfprev1", "-ffp-contract=off"]   # (cursed-os) the 303's unit: the FPU, X0X's flags (no fused mul-add)
 LINE = re.compile(r"^\s*([0-9a-f]+):\s+((?:[0-9a-f]{2} )+)\s*\t(.*)$")
 
 # SDK files of AC79NN_SDK_V1.2.1_2023-12-13 (the tested version)
@@ -373,6 +374,7 @@ def build_app():
     if v in ("0", "1", "2", "3"):
         flags.append(f"-DFELUCCA_USB_LAYOUT={v}")
     flags.append(f'-DFELUCCA_ID="{PRODUCT}"')
+    flags.append("-DCOS_ACID_OBJ=1")   # (cursed-os) the 303's float code: a unit of its own, built with the FPU (below)
     if VERSION:
         flags.append(f'-DFELUCCA_VERSION="{VERSION}"')
     # felucca.c goes to LLVM IR without the optimizer, the main-loop functions (UI, stores, editor) are
@@ -389,6 +391,10 @@ def build_app():
            # (V10.12) the Bluetooth segment, a unit of its own at -Os (app.ld BTSEG: flash 0xEA000, outside the slot)
            ("cc", *CFLAGS, "-fdata-sections", "-Wno-undefined-internal", "-Ifirmware/hal", "-Ifirmware/bt/ble", "-c",
             FW / "bt" / "bt_seg.c", "-o", OUT / "bt_seg.o"),
+           # (cursed-os) ACID's 303 (X0X's bass303.c): single-precision floats on the AC79's FPU, as X0X builds it; only
+           # integers cross into it (src/eng_acid.c), so the rest stays integer code built without the FPU
+           ("cc", *CFLAGS, "-fdata-sections", *COS_FPU, "-Ifirmware/src/x0x", "-c",
+            FW / "src" / "x0x" / "acid_glue.c", "-o", OUT / "acid_glue.o"),
            cmain)
     if size:
         subprocess.run([sys.executable, SRC / "tools" / "size_fns.py", OUT / "felucca.ll", OUT / "felucca_size.ll"],
@@ -405,7 +411,7 @@ def build_app():
         else:
             tc("cc", *cf, "-c", OUT / "felucca_size.ll", "-o", OUT / "felucca.o")
     elf = OUT / "felucca.elf"
-    objs = (OUT / "crt0.o", OUT / "fm1_vec.o", OUT / "fm1_isr.o", OUT / "felucca.o", OUT / "bt_seg.o")
+    objs = (OUT / "crt0.o", OUT / "fm1_vec.o", OUT / "fm1_isr.o", OUT / "felucca.o", OUT / "bt_seg.o", OUT / "acid_glue.o")
 
     def link(probe=False):
         """probe (0.9.9-gen1): the holes measured with the code moved past the sound (LATE_SRC) before the UI's tables

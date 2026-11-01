@@ -13,109 +13,17 @@
  * into the next, the voice goes legato) - the 303's own slew, SLIDE its time.
  *
  * EDIT: CUTOFF RESO ENV MOD DECAY | ACCENT WAVE DRIVE SLIDE (DRIVE: the RAT's, 0 off). */
-#define BASS303_OS 2
+#define BASS303_OS 2                             /* (the same as x0x/acid_glue.c's: one struct layout) */
 #define BASS303_LITE 0
-/* bass303.c's file-scope names, prefixed: it is compiled in this one translation unit with the rest of the firmware */
-#define blep b3_blep
-#define bq_get b3_bq_get
-#define bq_low_shelf b3_bq_low_shelf
-#define bq_lowpass b3_bq_lowpass
-#define bq_pass b3_bq_pass
-#define bq_put b3_bq_put
-#define bq_run b3_bq_run
-#define bql_run b3_bql_run
-#define c_expf b3_c_expf
-#define c_exp2f b3_c_exp2f
-#define c_log2f b3_c_log2f
-#define c_powf b3_c_powf
-#define c_sinf b3_c_sinf
-#define c_cosf b3_c_cosf
-#define c_db2lin b3_c_db2lin
-#define calc_envmod b3_calc_envmod
-#define clear_audio_state b3_clear_audio_state
-#define dcb_pass b3_dcb_pass
-#define decim_hb1 b3_decim_hb1
-#define decim_hb2 b3_decim_hb2
-#define down_pass b3_down_pass
-#define drive_block b3_drive_block
-#define drive_rat b3_drive_rat
-#define drive_soft b3_drive_soft
-#define env_tables b3_env_tables
-#define fixed_init b3_fixed_init
-#define hb b3_hb
-#define idle_advance b3_idle_advance
-#define ladder_samples b3_ladder_samples
-#define osc_samples b3_osc_samples
-#define powers b3_powers
-#define rat_coeffs b3_rat_coeffs
-#define rc_coeff b3_rc_coeff
-#define run b3_run
-#define run_amp b3_run_amp
-#define run_control b3_run_control
-#define run_decim b3_run_decim
-#define run_ladder b3_run_ladder
-#define run_osc_saw b3_run_osc_saw
-#define run_osc_sqr b3_run_osc_sqr
-#define run_post b3_run_post
-#define run_voice b3_run_voice
-#define set_accent_state b3_set_accent_state
-#define up_pass b3_up_pass
-#define wave_names b3_wave_names
-#define drv_names b3_drv_names
-#define params b3_params
-#define recip b3_recip
-#include "x0x/bass303.c"
-#undef blep
-#undef bq_get
-#undef bq_low_shelf
-#undef bq_lowpass
-#undef bq_pass
-#undef bq_put
-#undef bq_run
-#undef bql_run
-#undef c_expf
-#undef c_exp2f
-#undef c_log2f
-#undef c_powf
-#undef c_sinf
-#undef c_cosf
-#undef c_db2lin
-#undef calc_envmod
-#undef clear_audio_state
-#undef dcb_pass
-#undef decim_hb1
-#undef decim_hb2
-#undef down_pass
-#undef drive_block
-#undef drive_rat
-#undef drive_soft
-#undef env_tables
-#undef fixed_init
-#undef hb
-#undef idle_advance
-#undef ladder_samples
-#undef osc_samples
-#undef powers
-#undef rat_coeffs
-#undef rc_coeff
-#undef run
-#undef run_amp
-#undef run_control
-#undef run_decim
-#undef run_ladder
-#undef run_osc_saw
-#undef run_osc_sqr
-#undef run_post
-#undef run_voice
-#undef set_accent_state
-#undef up_pass
-#undef wave_names
-#undef drv_names
-#undef params
-#undef recip
-#undef FSO
-#undef BASS303_SUB
-#undef BASS303_DSUB
+#include "x0x/bass303.h"
+void acid_hw_init(bass303_t *b);
+void acid_hw_set(bass303_t *b, int pot, int v);
+void acid_hw_note_on(bass303_t *b, int note, int accent, int slide);
+void acid_hw_note_off(bass303_t *b);
+void acid_hw_render(bass303_t *b, uint32_t inc, int32_t *out, int n);
+#if !COS_ACID_OBJ                                /* (the host tests, the browser: one translation unit) */
+#include "x0x/acid_glue.c"
+#endif
 
 static const char *const N_ACID_WAVE[] = {"SAW", "SQR", 0};
 static const uint8_t ACID_POT[8] = {BASS303_CUTOFF, BASS303_RESO, BASS303_ENVMOD, BASS303_DECAY,
@@ -131,9 +39,7 @@ static __attribute__((noinline)) void acid_ready(track_t *t)
     uint32_t k = acid_k(t), i;
     if (acid_rdy[k])
         return;
-    bass303_init(&acid_b[k]);
-    bass303_set(&acid_b[k], BASS303_DRVTYPE, BASS303_DRV_RAT);
-    bass303_set(&acid_b[k], BASS303_VOLUME, 110);      /* (-8 dB: as loud as the other engines' basses) */
+    acid_hw_init(&acid_b[k]);
     for (i = 0; i < 8u; i++)
         acid_pv[k][i] = -1;
     acid_rdy[k] = 1;
@@ -150,7 +56,7 @@ static void acid_pots(track_t *t, const vmod_t *m)
         v = clamp(v, 0, i == 5u ? 1 : 127);
         if (v != acid_pv[k][i]) {
             acid_pv[k][i] = (int16_t)v;
-            bass303_set(&acid_b[k], ACID_POT[i], v);
+            acid_hw_set(&acid_b[k], ACID_POT[i], v);
         }
     }
 }
@@ -163,30 +69,26 @@ static void acid_note_on(track_t *t, voice_t *v)
     acid_ready(t);
     acid_pots(t, 0);
     acid_note[k] = (uint8_t)acid_note_of(v);
-    bass303_note_on(b, acid_note[k], v->vel >= 120u, t->slide_glide && b->gate);
+    acid_hw_note_on(b, acid_note[k], v->vel >= 120u, t->slide_glide && b->gate);
 }
 
 static void acid_render(track_t *t, voice_t *v, int32_t *out, uint32_t n, const vmod_t *m)
 {
     uint32_t k = acid_k(t), i;
     bass303_t *b = &acid_b[k];
-    float buf[CTL];
+    int32_t buf[CTL];
     acid_ready(t);
     acid_pots(t, m);
     if (v->gate && b->gate && acid_note_of(v) != acid_note[k]) {   /* legato (a slide): no retrigger, the slew */
         acid_note[k] = (uint8_t)acid_note_of(v);
-        bass303_note_on(b, acid_note[k], v->vel >= 120u, 1);
+        acid_hw_note_on(b, acid_note[k], v->vel >= 120u, 1);
     }
     if (!v->gate && b->gate)
-        bass303_note_off(b);
-    b->osc_freq = (float)m->inc * (44100.0f / 4294967296.0f);   /* (the pitch as the voice has it: the slew's target) */
+        acid_hw_note_off(b);
     n = n < CTL ? n : CTL;
-    bass303_render(b, buf, (int)n);
-    for (i = 0; i < n; i++) {
-        int32_t x = (int32_t)(buf[i] * 52000.0f);
-        x = clamp(x, -65535, 65535);
-        out[i] += voice_amp(x >> 1, m, i) << 1;
-    }
+    acid_hw_render(b, m->inc, buf, (int)n);           /* (the pitch as the voice has it: the slew's target) */
+    for (i = 0; i < n; i++)
+        out[i] += voice_amp(buf[i] >> 1, m, i) << 1;
 }
 /* the voice ends when the 303 has gone quiet (its amp envelope down, the idle hold-off over) */
 static int acid_done(track_t *t, voice_t *v)
