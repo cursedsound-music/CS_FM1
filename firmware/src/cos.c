@@ -339,34 +339,6 @@ static int cos_empty(const track_t *t)
         if (t->step[i].time == ST_NOTE && (t->step[i].n || t->step[i].hit)) return 0;
     return 1;
 }
-/* power-on with nothing in any pattern (a first start, the browser's preview): a groove to start from, PLAY and it
- * sounds. The kit four to the floor, open hats on the offbeats, closed ones between, a clap on 2 and 4; an acid line
- * thrown on ACID's track (main.c boot_splash, web/emu felucca_web.c web_power_on) */
-static __attribute__((noinline)) void cos_boot_demo(void)
-{
-    static const uint8_t L[4][16] = {
-        {1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0},           /* BD */
-        {0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0},           /* CP */
-        {0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1},           /* CH */
-        {0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1, 0}};          /* OH */
-    static const uint8_t LN[4] = {0, 2, 3, 4};
-    uint32_t k, i, l, made = 0, sel = song.sel;
-    for (k = 0; k < trk_live; k++)
-        if (!cos_empty(&trk[k])) return;
-    for (k = 0; k < trk_live && !drum_track(&trk[k]); k++) {}
-    if (k < trk_live) {
-        trk[k].p[P_SLEN] = 16;
-        for (l = 0; l < 4u; l++)
-            for (i = 0; i < 16u; i++)
-                if (L[l][i]) grid_hit(&trk[k], i, LN[l], 1);
-    }
-    k = cos_acid_trk(&made);
-    ac_throw(k, 1);
-    ui.msg_t = 0;
-    cz.msg[0] = 0;
-    song.g[G_BPM] = 128;
-    track_select(sel);
-}
 /* GEN entered: on a kit, over to ACID's track; an empty track gets a line at once */
 static void cos_gen_enter(void)
 {
