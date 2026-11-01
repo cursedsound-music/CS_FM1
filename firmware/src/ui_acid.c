@@ -200,9 +200,10 @@ static void ac_put(uint32_t k, int32_t v)
 static void ac_throw(uint32_t k, int up)
 {
     ac_t *a = ac_of(k);
+    uint32_t i;
     if (up) {
         uint32_t r = fm1_ms * 2654435761u ^ ac_h(a->s.r ^ a->s.n, a->nh, 0xACu);
-        memmove(&a->hist[1], &a->hist[0], (AC_HIST - 1u) * sizeof a->hist[0]);
+        for (i = AC_HIST - 1u; i > 0u; i--) a->hist[i] = a->hist[i - 1u];   /* (the firmware's libc has no memmove) */
         a->hist[0] = a->s;
         a->nh = (uint8_t)(a->nh < AC_HIST ? a->nh + 1u : AC_HIST);
         if (a->lock != AL_RHY && a->lock != AL_RN) a->s.r = (uint16_t)(ac_h(r, 1, 1) | 1u);
@@ -212,7 +213,7 @@ static void ac_throw(uint32_t k, int up)
     } else {
         if (!a->nh) { ui_message("NO LINE BEFORE"); return; }
         a->s = a->hist[0];
-        memmove(&a->hist[0], &a->hist[1], (AC_HIST - 1u) * sizeof a->hist[0]);
+        for (i = 0; i + 1u < AC_HIST; i++) a->hist[i] = a->hist[i + 1u];
         a->nh--;
         ui_message("LINE BEFORE");
     }

@@ -66,6 +66,7 @@ jobs:
           fi
           test -s "$T/uboot.boot" && test -s "$T/cfg_tool.bin" && test -s "$T/cfg/eq_cfg_hw.bin"
       - name: the firmware package and the installer
+        id: fw
         if: steps.tc.outcome == 'success'
         continue-on-error: true
         env:
@@ -76,6 +77,12 @@ jobs:
           python3 web/make_site.py build/felucca.fwsc "cursed-os-${GITHUB_SHA::7}" build/site
           cp -r build/site/webapp build/site/firmware build/emu/
           cp build/felucca.fwsc build/emu/cursed-os.fwsc
+      - name: firmware status
+        if: always()
+        run: |
+          if [ "${{ steps.fw.outcome }}" = success ]; then echo "### Firmware built: cursed-os.fwsc is in the download" >> "$GITHUB_STEP_SUMMARY"
+          else echo "::warning title=No firmware this run::the firmware step ended '${{ steps.fw.outcome }}' (toolchain '${{ steps.tc.outcome }}'); the preview is still in the download"
+               echo "### No firmware this run (the preview is still in the download): see the 'the firmware package and the installer' step" >> "$GITHUB_STEP_SUMMARY"; fi
       - name: the private download (the preview, the firmware file and the installer when built)
         uses: actions/upload-artifact@v4
         with:

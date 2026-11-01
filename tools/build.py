@@ -293,12 +293,17 @@ def layout_record(mapt, syms, reach):
 # (0.9.9-gen1) main-loop code placed after the sound (never in the holes before its pinned runs): the song generator's
 # functions (firmware/src/gen.c), so it can change size without moving the sound and without the UI's room before it.
 # Only UI code ('-' rows): they leave the recorded order and land with the code not in the layout, past the tables
-LATE_SRC = ("gen.c", "favorites.c")   # (0.9.9-snd5: favorites.c fav_rows_new, once)
+LATE_SRC = ("gen.c", "favorites.c",  # (0.9.9-snd5: favorites.c fav_rows_new, once)
+            "cos.c", "ui_acid.c")      # (cursedsound) cursed-os and ACID: after the sound, never in its pinned runs' holes
 
 
 def late_fns():
     # REC arming is UI-only; keep its undo checkpoint out of the pinned DSP gaps.
     names = {"rec_tap", "ly_keyname"}
+    # (cursedsound) the UI functions cursed-os and ACID hook into grew a little: after the sound, so the holes before its
+    # pinned runs keep the room they were recorded with (the first link put one 34 bytes past its run)
+    names |= {"edit_param", "ui_input", "ui_input_frame", "ui_leds", "ui_draw", "page_desc", "page_icon", "draw_graph",
+              "graph_signature", "seq_roll_view"}
     for f in LATE_SRC:
         names |= set(re.findall(r"^static [^;=()]*?\b(\w+)\((?![^)]*\)\s*;)", (FW / "src" / f).read_text(), flags=re.M))
     return names
