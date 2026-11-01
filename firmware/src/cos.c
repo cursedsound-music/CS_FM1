@@ -10,6 +10,8 @@
  *   SEQ   TRIG: the track's steps        white keys: trigs   OCT-/+: the bank of 16   (a kit: black keys pick the lane)
  *   EDIT  SRC 1 / SRC 2: the engine      ENV  AMP / FLTR      LFO  LFO      FX  SEND      GLO  MIX      SCL  KEY
  *   ARP   GEN: ACID (a synth) or EUCLID (a kit); OCT+ a new line, OCT- the one before (ACID 3 / MUTATE: mutate, anchor)
+ *   SCL   KEY: a key pressed is the song's new key (HYP-1's way): every synth track's notes and root move by the nearest
+ *         interval, on the next bar while playing (the kits stay); SCL held + a key does it from any page
  *   SELECT the page   ALGORITHM the track   KNOB 1-4 the page's four   PLAY start / stop
  * Outside HOME, SEQ and GEN's kit pages the keys play the track. */
 #include "ui_fonts_cos.h"                       /* AF_CS (Press Start 2P 8 px), AF_CM (Jersey 10 20 px): tools/build.py */
@@ -36,7 +38,7 @@ static const cpg_t CZP_GENA[] = {{"ACID", CK_AC, {AK_DENS, AK_SLIDE, AK_ACC, AK_
 static const cpg_t CZP_GENE[] = {{"EUCLID", CK_EU, {EK_HITS, EK_STEPS, EK_ROT, EK_K4}}, {"MODES", CK_EU, {EK_M0, EK_M0 + 1u, EK_M0 + 2u, EK_M0 + 3u}},
                                 {"MUTATE", CK_EU, {EK_U0, EK_U0 + 1u, EK_U0 + 2u, EK_U0 + 3u}}};
 static const cpg_t CZP_MIX[] = {{"MIX", CK_TRK, {P_LEVEL, P_PAN, P_GLIDE, P_MUTE}}};
-static const cpg_t CZP_KEY[] = {{"KEY", CK_TRK, {P_ROOT, P_SCALE, P_QUANT, P_TRANS}}};
+static const cpg_t CZP_KEY[] = {{"KEY", CK_TRK, {P_SCALE, P_QUANT, 0xFFu, 0xFFu}}};   /* (the root: the keys) */
 #undef X
 static const char *const CM_NAME[CM_N] = {"HOME", "TRIG", "SRC", "AMP", "LFO", "FX", "GEN", "MIX", "KEY"};
 static const uint8_t CM_BTN[CM_N] = {B_HOME, B_SEQ, B_EDIT, B_ENV, B_LFO, B_FX, B_ARP, B_GLO, B_SCL};
@@ -48,6 +50,8 @@ static struct {
     uint8_t on, mode, tab[CM_N], bank, lane, hot, combo, ready;
     uint32_t hot_ms, msg_ms, sig[6];
     char msg[24];
+    uint8_t key_next, scl_down, scl_used;              /* key_next: 1 + the key asked for (0 C .. 11 B) */
+    uint32_t key_bar;                                   /* (bar_n when it was asked for) */
 } cz = {COS_DEFAULT};
 static int cos_active(void) { return cz.on != 0u; }
 
@@ -67,6 +71,47 @@ static const cpg_t *cos_page(void)
     return &p[cz.tab[cz.mode] % n];
 }
 static void cos_say(const char *s) { str_cpy(cz.msg, s, sizeof cz.msg); cz.msg_ms = fm1_ms; }
+static const char *const COS_NN[12] = {"C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"};
+
+/* the song's key: the first synth track's root (C with none) */
+static uint32_t cos_key(void)
+{
+    uint32_t k;
+    for (k = 0; k < NTRK && drum_track(&trk[k]); k++) {}
+    return k < NTRK ? (uint32_t)((trk[k].p[P_ROOT] % 12 + 12) % 12) : 0u;
+}
+/* the song into key pc (0..11): the nearest interval (-6 .. +5), every synth track's notes and root moved by it (the
+ * notes as stored: MIDI OUT, ACID and the scale all agree; a kit's lanes stay) */
+static void cos_key_apply(uint32_t pc)
+{
+    int32_t d = ((int32_t)pc - (int32_t)cos_key() + 18) % 12 - 6;
+    uint32_t k, i, c;
+    for (k = 0; d && k < NTRK; k++) {
+        track_t *t = &trk[k];
+        if (drum_track(t)) continue;
+        for (i = 0; i < NSTEP; i++) {
+            step_t *s = &t->step[i];
+            if (s->time != ST_NOTE) continue;
+            for (c = 0; c < s->n && c < 4u; c++) s->note[c] = (uint8_t)clamp((int32_t)s->note[c] + d, 0, 127);
+        }
+        t->p[P_ROOT] = (int16_t)((t->p[P_ROOT] + d + 120) % 12);
+    }
+    cz.key_next = 0;
+    cos_say(COS_NN[pc % 12u]);
+}
+/* a key asked for: now when stopped, on the next bar while playing */
+static void cos_key_ask(uint32_t key)
+{
+    uint32_t pc = (5u + key) % 12u;                      /* (key 0 is F) */
+    if (!song.playing) { cos_key_apply(pc); return; }
+    cz.key_next = (uint8_t)(pc + 1u);
+    cz.key_bar = bar_n;
+}
+static void cos_key_poll(void)
+{
+    if (cz.key_next && (!song.playing || bar_n != cz.key_bar))
+        cos_key_apply(cz.key_next - 1u);
+}
 
 /* knob k of the page: its description and its value (0: none) */
 static const param_desc_t *cos_knob(const cpg_t *p, uint32_t k, int16_t **vp)
@@ -128,11 +173,16 @@ static void cos_mode(uint32_t m)
     cz.hot = 0;
 }
 /* the keys are the interface's (silent) on HOME, TRIG and a kit's GEN; elsewhere they play the track */
-static int cos_keys_ui(void) { return cz.mode == CM_HOME || cz.mode == CM_TRIG || (cz.mode == CM_GEN && cos_kit()); }
+static int cos_keys_ui(void)
+{
+    return cz.mode == CM_HOME || cz.mode == CM_TRIG || cz.mode == CM_KEY || (cz.mode == CM_GEN && cos_kit()) ||
+           ((fm1_in.buttons >> panel.btn[B_SCL]) & 1u);
+}
 
 static void cos_input(void)
 {
-    uint32_t pressed = fm1_input_edges(0), notes = fm1_input_note_edges(), k, b;
+    uint32_t released = 0, pressed = fm1_input_edges(&released), notes = fm1_input_note_edges(), k, b;
+    int scl_held = (int)((fm1_in.buttons >> panel.btn[B_SCL]) & 1u);
     int32_t s;
     song.grid = cos_keys_ui() ? 2u : 0u;                 /* (seq.c: 2, every key silent) */
     for (k = 0; k < 32u && pressed; k++) {
@@ -142,6 +192,7 @@ static void cos_input(void)
         if (b == B_PLAY) transport_req = song.playing || seq_counting() ? 2u : 1u;
         else if (b == B_REC) cos_say("REC: CLASSIC UI (HOME+GLO)");
         else if (b == B_SAVE) cos_say("SAVE: CLASSIC UI (HOME+GLO)");
+        else if (b == B_SCL) { cz.scl_down = 1; cz.scl_used = 0; }   /* (its tap acts when let go: held, it is a shift) */
         else if (b == B_OCTDN || b == B_OCTUP) {
             int up = b == B_OCTUP;
             if (cz.mode == CM_TRIG) {
@@ -153,6 +204,10 @@ static void cos_input(void)
         } else
             for (s = 0; s < CM_N; s++)
                 if (CM_BTN[s] == b) cos_mode((uint32_t)s);
+    }
+    if (cz.scl_down && ((released >> panel.btn[B_SCL]) & 1u)) {
+        cz.scl_down = 0;
+        if (!cz.scl_used) cos_mode(CM_KEY);
     }
     if ((s = panel_enc(EN_SELECT)) != 0) {
         const cpg_t *p;
@@ -178,7 +233,10 @@ static void cos_input(void)
         notes &= ~(1u << k);
         for (w = 0; w < 16u && WK[w] != k; w++) {}
         for (j = 0; j < 11u && BK[j] != k; j++) {}
-        if (cz.mode == CM_HOME) {
+        if (scl_held || cz.mode == CM_KEY) {               /* the song's new key */
+            cz.scl_used = (uint8_t)scl_held;
+            cos_key_ask(k);
+        } else if (cz.mode == CM_HOME) {
             if (w < trk_live) track_select(w);
             else if (j < trk_live) {
                 trk[j].p[P_MUTE] = (int16_t)!trk[j].p[P_MUTE];
@@ -192,6 +250,7 @@ static void cos_input(void)
         }
     }
     if (cz.hot && fm1_ms - cz.hot_ms > 1500u) cz.hot = 0;
+    cos_key_poll();
     fm6_poll();                                          /* (what JIANT's frame keeps doing: ui_input_frame) */
     mo_lvl = (uint8_t)(midi_out_mode & 3u);
     midi_pc_poll();
@@ -234,6 +293,7 @@ static void cos_head(void)
     b[0] = 0;
     fmt_int(b, song.g[G_BPM]);
     cos_txr(226, 3, b, C_FG);
+    cos_txr(226 - 8 * 4, 3, COS_NN[cz.key_next ? cz.key_next - 1u : cos_key()], cz.key_next ? C_RED : C_MID);
     {                                                     /* the play triangle, red while it runs */
         int32_t i;
         for (i = 0; i < 5; i++) cv_rect(230 + i, 2 + i, 1, 10 - 2 * i, song.playing ? C_RED : C_DIM);
@@ -309,8 +369,8 @@ static void cos_foot(void)
         int32_t x = 2 + (int32_t)i * 15, y = 224;
         uint16_t edge = st >= len ? C_BG : (i & 3u) ? C_DARK : C_DIM;
         cv_frame(x, y, 13, 13, edge);
-        if (v == 1u) cv_rect(x + 1, y + 1, 11, 11, C_FG);
-        else if (v == 2u) cv_rect(x + 1, y + 1, 11, 11, C_RED);
+        if (v == 1u) cv_rect(x + 1, y + 1, 11, 11, C_MID);   /* (a trig grey, an accent white: red is the playhead's) */
+        else if (v == 2u) cv_rect(x + 1, y + 1, 11, 11, C_FG);
         else if (v == 3u) cv_rect(x + 1, y + 5, 11, 3, C_DIM);
         if (st == now) cv_rect(x, y - 3, 13, 2, C_RED);
     }
@@ -334,7 +394,7 @@ static void cos_body_home(void)
         for (i = 0; i < 16u; i++) {
             uint32_t st = (now != ~0u ? now / 16u * 16u : 0u) + i, v = st < len ? cos_step(tr, st, NLANE) : 0u;
             int32_t x = 64 + (int32_t)i * 11;
-            uint16_t c = mute ? C_DIM : v == 2u ? C_RED : C_FG;
+            uint16_t c = mute ? C_DIM : v == 2u ? C_FG : C_MID;
             if (v == 1u || v == 2u) cv_rect(x, y, 9, 9, c);
             else if (v == 3u) cv_rect(x, y + 3, 9, 3, C_DIM);
             else cv_frame(x, y, 9, 9, C_DARK);
@@ -357,7 +417,7 @@ static void cos_body_trig(void)
             for (i = 0; i < 16u; i++) {
                 uint32_t st = cz.bank * 16u + i, v = st < len ? cos_step(t, st, l) : 0u;
                 int32_t x = 26 + (int32_t)i * 13;
-                if (v) cv_rect(x, y, 10, 9, v == 2u ? C_RED : C_FG);
+                if (v) cv_rect(x, y, 10, 9, v == 2u ? C_FG : C_MID);
                 else cv_rect(x + 4, y + 4, 2, 2, st < len ? C_DIM : C_BG);
                 if (st == now) cv_rect(x, y + 10, 10, 1, C_RED);
             }
@@ -380,7 +440,7 @@ static void cos_body_trig(void)
             if (st >= len || s->time != ST_NOTE || !s->n) continue;
             while (i + g < 16u && t->step[(st + g) % NSTEP].time == ST_TIE) g++;
             y = 140 - (s->note[0] - lo) * 100 / (hi - lo);
-            cv_rect(x, y, 15 * (int32_t)g - 2, 4, (s->flags & SF_ACCENT) ? C_RED : C_FG);
+            cv_rect(x, y, 15 * (int32_t)g - 2, (s->flags & SF_ACCENT) ? 5 : 3, (s->flags & SF_ACCENT) ? C_FG : C_MID);
             if (s->flags & SF_SLIDE) cv_rect(x + 15 * (int32_t)g - 2, y + 1, 4, 2, C_MID);
         }
     }
@@ -408,6 +468,29 @@ static void cos_body_sound(void)
     str_cpy(b, trk_engp(t)->name, 16);
     cos_up(b);
     cos_txc(120, 98, &AF_CS, b, C_DIM);
+}
+
+/* KEY: the song's key large (the next one in red while it waits for the bar) and an octave of keys from F, the key lit */
+static void cos_body_key(void)
+{
+    static const uint8_t BL[12] = {0, 1, 0, 1, 0, 0, 1, 0, 1, 0, 1, 0};   /* from F: F F# G G# A A# B C C# D D# E */
+    uint32_t i, cur = cos_key(), nx = cz.key_next ? cz.key_next - 1u : 99u;
+    char b[24];
+    str_cpy(b, COS_NN[cur], sizeof b);
+    cv_text(20, 46, &AF_CM, b, C_FG);
+    cos_tx(20, 74, "THE SONG'S KEY", C_DIM);
+    if (nx < 12u) { str_cpy(b, "NEXT BAR: ", sizeof b); str_cpy(b + str_len(b), COS_NN[nx], 4); cos_tx(110, 52, b, C_RED); }
+    for (i = 0; i < 12u; i++) {                         /* white keys a row, black keys above between them */
+        uint32_t pc = (5u + i) % 12u, wi = 0, j;
+        int on = pc == cur, nxt = pc == nx;
+        for (j = 0; j < i; j++) wi += !BL[j];
+        if (BL[i]) cv_rect(14 + (int32_t)wi * 30 - 9, 92, 16, 26, nxt ? C_RED : on ? C_FG : C_DARK);
+        else {
+            cv_frame(14 + (int32_t)wi * 30, 92, 28, 50, C_DIM);
+            if (on || nxt) cv_rect(16 + (int32_t)wi * 30, 122, 24, 18, nxt ? C_RED : C_FG);
+        }
+    }
+    cos_tx(4, 146, "A KEY: THE SONG MOVES THERE", C_DIM);
 }
 
 static void cos_body_gen(void)
@@ -440,6 +523,7 @@ static void cos_scene(void)
     case CM_HOME: cos_body_home(); break;
     case CM_TRIG: cos_body_trig(); break;
     case CM_GEN: cos_body_gen(); break;
+    case CM_KEY: cos_body_key(); break;
     default: cos_body_sound(); break;
     }
     if (cz.mode == CM_GEN && !cos_kit()) {}            /* (GEN's key over its roll: drawn above) */

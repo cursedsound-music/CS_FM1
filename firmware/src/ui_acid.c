@@ -12,7 +12,7 @@
  * OCT+ on ACID / ACID 2: a new throw of the parts LOCK does not keep; OCT- walks back through the last eight throws.
  * OCT+ on ACID 3: a mutation now (AMOUNT % of the steps thrown again from a mutation seed); OCT- back to the anchor.
  * EVERY > OFF: a mutation every EVERY bars, on the bar (turn EVERY back to OFF to freeze the line where it is).
- * The key: ROOT / SCALE when set; else the track's SCL; else the key the other tracks' notes fit; else the seed's.
+ * The key: ROOT / SCALE when set; else the track's root (the song's key) in its SCL scale, or minor without one.
  * Every knob turn writes the whole line again (the same seeds: the same line for the same settings); the track's
  * automation stays. The settings are the session's (RAM), the steps are the track's as any other (saved with it) */
 #define AC_HIST 8u
@@ -57,8 +57,10 @@ static void ac_key(uint32_t k, const ac_t *a, eu_t *e)
 {
     memset(e, 0, sizeof *e);
     e->seed = a->s.n;
-    if (!a->root && !a->scale) { eu_key(k, e); return; }
-    eu_key(k, e);                                        /* (what the root or scale left on AUTO is) */
+    /* (cursed-os) AUTO: the song's key, the track's root (SCL, or the key pressed on cursed-os's KEY), in the track's
+     * scale or minor without one; ROOT / SCALE set: theirs */
+    e->root = (uint8_t)((trk[k % NTRK].p[P_ROOT] % 12 + 12) % 12);
+    e->mask = (uint16_t)SCALE_MASK[trk[k % NTRK].p[P_SCALE] > 0 ? trk[k % NTRK].p[P_SCALE] : 2];
     if (a->root) e->root = (uint8_t)((a->root - 1u) % 12u);
     if (a->scale) e->mask = (uint16_t)SCALE_MASK[AC_SCL[a->scale % 7u]];
     e->src = 8;
