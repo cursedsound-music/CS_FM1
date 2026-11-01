@@ -200,6 +200,41 @@ int main(void)
         CHECK(acid_slot(&trk[2]) == 1, "T3 keeps its own");
     }
 
+    /* MASTER: COMP pulls a loud mix down (the reduction shown), leaves a quiet one about as it was; LIMIT's ceiling */
+    {
+        uint32_t i, b2;
+        int32_t pk_in = 0, pk_out = 0;
+        mc_amt = 80; mc_atk = 5; mc_rel = 40; comp_env = 0; comp_g = 32768;
+        for (b2 = 0; b2 < 40u; b2++) {                  /* (40 blocks of a loud square: the envelope settles) */
+            for (i = 0; i < CTL; i++) { mix_l[i] = mix_r[i] = ((i / 16u) & 1u) ? 120000 : -120000; wet[i] = 0; }
+            comp_block(CTL);
+        }
+        for (i = 0; i < CTL; i++) { pk_in = 120000; pk_out = mix_l[i] > pk_out ? mix_l[i] : pk_out; }
+        CHECK(comp_gr > 256, "loud: over an octave (6 dB) of reduction (%d/256)", comp_gr);
+        CHECK(pk_out < pk_in / 2, "the loud mix brought down (%d of %d)", pk_out, pk_in);
+        for (b2 = 0; b2 < 900u; b2++) {                  /* (~1.3 s: RELEASE 40 is ~260 ms a step of e) */
+            for (i = 0; i < CTL; i++) { mix_l[i] = mix_r[i] = ((i / 16u) & 1u) ? 800 : -800; wet[i] = 0; }
+            comp_block(CTL);
+        }
+        CHECK(comp_gr == 0, "quiet: no reduction once released (%d)", comp_gr);
+        CHECK(mix_l[20] >= 800 && mix_l[20] <= 1700, "quiet: about as it was, the makeup on it (%d)", mix_l[20]);
+        favorites.factory[15][4] = 0; favorites.factory[15][7] = 6; ui_polls();
+        CHECK(mc_amt == 0 && lim_t == 9021, "COMP 0 off; LIMIT -6 dB: the ceiling halved (%d)", lim_t);
+        favorites.factory[15][7] = 0; ui_polls();
+    }
+
+    /* the FX pad: FX held, its page the macros (CRUSH, DEPTH as the level), the keys the effects' (seq.c's mask) */
+    {
+        cz.mode = CM_HOME; cz.fx_down = 1; cz.fx_used = 0;
+        CHECK(cos_page() == CZP_PERF, "FX held: the pad's knobs");
+        cos_cput(CC_PF0 + 1u, 40); cos_cput(CC_PF3, 70);
+        CHECK(perf_k[1] == 40 && perf_k[3] == 30 && cz.fx_used, "CRUSH 40, DEPTH 70 (cut 30), the hold used");
+        host_notes = 1u; cos_input();
+        CHECK(kb_mask == (1u << panel.btn[B_FX]) && perf_mask == kb_mask, "the keys go to the effects while FX is down");
+        CHECK(cz.mode == CM_HOME, "a key on the pad: no mode change");
+        cz.fx_down = 0; perf_k[1] = perf_k[3] = 0;
+    }
+
     printf("cos_test: %s (%d failures)\n", fails ? "FAILED" : "ok", fails);
     return fails != 0;
 }

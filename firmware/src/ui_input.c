@@ -2183,10 +2183,20 @@ static __attribute__((noinline)) void ui_polls(void)
     mo_lvl = (uint8_t)(midi_out_mode & 3u);             /* (0.6.72) MENU > MIDI OUT (seq.c) */
     midi_pc_poll();                                     /* (0.6.72) PROGRAM CHANGE in: the sounds it asked for */
     rp_apply();                                         /* (MENU > CLICK, CLICK LEVEL, COUNT-IN: click.c, seq.c) */
+    perf_latch_on = fx_latch & 1u;                      /* (cursed-os: its FX pad, the frame JIANT's would have set it in) */
     {                                                   /* (cursedsound) the tracks' MIDI OUT channels: the settings' */
         uint32_t i;                                     /* bytes 8 .. 13 of engine 15's (0: the track's own) */
         for (i = 0; i < NTRK; i++)
             mo_ch[i] = (uint8_t)(favorites.factory[15][8u + i] <= 16u ? favorites.factory[15][8u + i] : 0u);
+    }
+    {                                                   /* (cursed-os) GLO > MASTER (fx.c comp_block, the limiter): bytes 4 .. 7
+                                                         * of engine 15's, COMP, ATTACK + 1, RELEASE + 1 (0: the default), LIMIT dB */
+        static const uint16_t LIM[13] = {18000, 16043, 14298, 12743, 11357, 10122, 9021, 8040, 7166, 6387, 5692, 5073, 4521};
+        const uint8_t *m = &favorites.factory[15][4];
+        mc_amt = (uint8_t)(m[0] <= 100u ? m[0] : 0u);
+        mc_atk = (uint8_t)(m[1] && m[1] <= 101u ? m[1] - 1u : 20u);
+        mc_rel = (uint8_t)(m[2] && m[2] <= 101u ? m[2] - 1u : 40u);
+        lim_t = LIM[m[3] <= 12u ? m[3] : 0u];
     }
 }
 static void ui_input_frame(void);

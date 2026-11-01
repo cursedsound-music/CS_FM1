@@ -235,8 +235,10 @@ static void track_dist(track_t *t, int32_t *b, uint32_t n)
 /* master: peak limiter in front of the soft clipper. Fast attack (~0.1 ms),
  * ~150 ms release, threshold where tanh is still nearly linear, so chords
  * get quieter instead of crushed. */
-#define LIM_T 18000
-static int32_t lim_env = LIM_T;
+#define LIM_T0 18000
+static volatile int32_t lim_t = LIM_T0;               /* (cursed-os) GLO > MASTER LIMIT: the ceiling, 0 .. -12 dB of LIM_T0 */
+#define LIM_T lim_t
+static int32_t lim_env = LIM_T0;
 /* (JIANT) CLIP (G_CLIP 0..100): the mix driven x1 .. x4 into the soft clip ahead of the limiter, its level kept near
  * -4 dBFS (as DRUM's DRV); 0: out of the chain. Set each block (master_begin) */
 static int32_t clip_g, clip_mk;
@@ -260,6 +262,63 @@ static __attribute__((noinline)) void clip_block(uint32_t n)
         wet[i] = 0;
     }
 }
+/* (cursed-os) the master COMPRESSOR (GLO > MASTER): COMP 0..100 the amount (0: out of the chain, not run), ATTACK
+ * 0..100 (0.1 .. 30 ms), RELEASE 0..100 (30 .. 600 ms). Feed-forward on the mix (dry + wet, before the leveler and
+ * the MASTER knob), the two sides linked: the peak every 16 samples followed by the envelope, its level in octaves
+ * (log2, Q8; the mix's scale: about 34000 full, lev_block's LEV_T), over the THRESHOLD (-3 dBFS .. -33 with COMP) brought down by the RATIO
+ * (1.5:1 .. 6:1 with COMP), half the reduction at the threshold given back (MAKEUP); the gain ramped across the 16.
+ * mc_*: the settings' bytes, ui_input.c ui_polls copies them; comp_gr the gain reduction for the meter (Q8 octaves) */
+static volatile uint8_t mc_amt, mc_atk, mc_rel;
+static volatile int32_t comp_gr;
+static int32_t comp_env, comp_g = 32768;
+static int32_t comp_lg2(uint32_t x)                     /* log2(x), Q8 (the mantissa linear: within ~0.09 octave) */
+{
+    int32_t e = 31 - (int32_t)__builtin_clz(x | 1u);
+    uint32_t m = e >= 8 ? x >> (e - 8) : x << (8 - e);
+    return e * 256 + (int32_t)(m & 255u);
+}
+static int32_t comp_ex2(int32_t q)                      /* 2^(q / 256) * 32768, q <= 0 .. a few octaves up, Q15 */
+{
+    int32_t e = q >> 8, f = q & 255, m = 32768 + ((32768 * f) >> 8) - ((f * (256 - f) * 43) >> 8);   /* (a bent line) */
+    return e >= 0 ? (e > 6 ? m << 6 : m << e) : (-e > 30 ? 0 : m >> -e);
+}
+static __attribute__((noinline)) void comp_block(uint32_t n)
+{
+    uint32_t i, j, amt = mc_amt > 100u ? 100u : mc_amt;
+    int32_t thr = comp_lg2(24000u) - (int32_t)(amt * 256u * 5u / 100u),   /* (0 .. -5 octaves: -30 dB) */
+            rq = 384 + (int32_t)(amt * 1152u / 100u),                  /* the ratio, Q8: 1.5 .. 6 */
+            slope = 256 - (65536 / rq),                                /* 1 - 1 / ratio, Q8 */
+            mk = (((comp_lg2(24000u) - thr) * slope) >> 8) / 3,        /* the makeup: a third of the reduction at the threshold */
+            ka = 65536 / (1 + (int32_t)(mc_atk > 100u ? 100u : mc_atk) * 4),     /* the followers a 16, Q16 */
+            kr = 65536 / (8 + (int32_t)(mc_rel > 100u ? 100u : mc_rel) * 8);
+    for (j = 0; j < n; j += 16u) {
+        int32_t pk = 0, g1, g0 = comp_g, over, dg;
+        for (i = j; i < j + 16u && i < n; i++) {
+            int32_t l = mix_l[i] + wet[i], r = mix_r[i] + wet[i];
+            l = l < 0 ? -l : l;
+            r = r < 0 ? -r : r;
+            pk = l > pk ? l : pk;
+            pk = r > pk ? r : pk;
+        }
+        pk = pk > (1 << 22) ? 1 << 22 : pk;
+        comp_env += pk > comp_env ? (((pk - comp_env) >> 8) * ka) >> 8 : -((((comp_env - pk) >> 8) * kr) >> 8) - 1;
+        comp_env = comp_env < 0 ? 0 : comp_env;
+        over = comp_lg2((uint32_t)(comp_env > 0 ? comp_env : 1)) - thr;
+        comp_gr = over > 0 ? (over * slope) >> 8 : 0;
+        g1 = comp_ex2(mk - comp_gr);
+        g1 = g1 > 2 * 32768 ? 2 * 32768 : g1;             /* (+6 dB at most) */
+        comp_g = g1;
+        dg = (g1 - g0) / 16;
+        for (i = j; i < j + 16u && i < n; i++) {        /* (the mix and the buses' return, folded: as CLIP) */
+            int32_t l = clamp(mix_l[i] + wet[i], -(1 << 22), 1 << 22), r = clamp(mix_r[i] + wet[i], -(1 << 22), 1 << 22);
+            mix_l[i] = ((l >> 4) * (g0 >> 4)) >> 7;
+            mix_r[i] = ((r >> 4) * (g0 >> 4)) >> 7;
+            wet[i] = 0;
+            g0 += dg;
+        }
+    }
+}
+
 /* (0.9.9-snd8) the master's TAPE (FX > TAPE: tape_v, params.c, 0..100; both 0: out of the chain, not run), ahead of CLIP:
  * WOW reads the mix from a short line at a delay swinging 0 .. 2 x (a wow ~0.55 Hz and a drift, up to ~40 samples: a few
  * cents; a flutter ~7 Hz, ~3 samples), 0 at WOW 0 (no jump when it comes in), with a faint hiss; TAPE drives it x1 .. x4
@@ -2903,6 +2962,11 @@ static __attribute__((noinline)) void mix_block(int32_t *out, uint32_t n)   /* (
     }
     if (clip_g)
         clip_block(n);
+    if (mc_amt) {                                       /* (cursed-os) GLO > MASTER's COMP; 0: not run */
+        void (*f)(uint32_t) = comp_block;
+        FM1_OPAQUE(f);                                  /* (as tape_block: out of the RAM code's direct reach) */
+        f(n);
+    }
     lev_block(n);                                       /* (JIANT 0.5) the leveler: the loudness held */
     if (perf) {
         perf_master(out, n);

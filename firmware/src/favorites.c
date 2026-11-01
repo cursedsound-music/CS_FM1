@@ -17,12 +17,15 @@ static __attribute__((noinline)) void fav_rows_new(void)
     favorites.factory[15][25] = 3u;                    /* (prefs_rev) */
     settings_save();
 }
+/* (cursed-os) the row of an engine's stars: ACID (15) in SAMPLE's (4, retired, no presets): row 15 is the settings'
+ * spare bytes (ui.c hint_given, cos.c's MIDI channels and master) */
+static uint32_t fav_row(uint32_t engine) { return engine == ENGI_ACID ? 4u : engine; }
 static int favorite_has(uint32_t engine, uint32_t preset)
 {
     if (engine == NENGINES)
         return preset < UP_SLOTS && ((favorites.user >> preset) & 1u);
     return engine < NENGINES && engine < 16u && preset < 256u &&
-        ((favorites.factory[engine][preset / 8u] >> (preset % 8u)) & 1u);
+        ((favorites.factory[fav_row(engine)][preset / 8u] >> (preset % 8u)) & 1u);
 }
 static int favorite_set(uint32_t engine, uint32_t preset, int on)
 {
@@ -33,7 +36,7 @@ static int favorite_set(uint32_t engine, uint32_t preset, int on)
         if (on) favorites.user |= 1u << preset;
         else favorites.user &= ~(1u << preset);
     } else {
-        uint8_t *b = &favorites.factory[engine][preset / 8u];
+        uint8_t *b = &favorites.factory[fav_row(engine)][preset / 8u];
         if (on) *b |= (uint8_t)(1u << (preset % 8u));
         else *b &= (uint8_t)~(1u << (preset % 8u));
     }
