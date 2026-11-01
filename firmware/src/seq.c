@@ -49,7 +49,10 @@ static volatile uint8_t midi_hint;       /* MIDI IN played track n - 1, which is
 
 static uint32_t trk_index(const track_t *t) { return (uint32_t)(t - trk); }
 
-static uint32_t trk_midi_ch(uint32_t i) { return i % NTRK; }   /* MIDI channel 0..15 of track i (keys -> MIDI out) */
+/* (cursedsound) each track's MIDI OUT channel: mo_ch[i] 0 the track's own (i, as JIANT), else 1 + the channel (cos.c's
+ * GLO > MIDI page, kept in the settings: ui_input.c ui_polls copies them here) */
+static volatile uint8_t mo_ch[NTRK];
+static uint32_t trk_midi_ch(uint32_t i) { i %= NTRK; return mo_ch[i] ? (mo_ch[i] - 1u) & 15u : i; }   /* MIDI channel 0..15 */
 
 static int drum_track(const track_t *t) { return ENGINES[eng_idx(t->eng_req)] == &ENG_DRUM; }
 
@@ -2720,9 +2723,29 @@ static int32_t click_beat_now(void)
 }
 
 /* everything that happens between two rendered blocks */
+/* (cursedsound) cursed-os's DRONE: notes held on one track whatever the transport does (seq_stop releases only the
+ * sequencer's). cos.c writes the request (its notes, then gen); here, between blocks, what sounds follows it */
+static volatile struct { uint8_t gen, trk, n, note[4]; } cos_dr;
+static uint8_t cos_dr_gen, cos_dr_trk, cos_dr_n, cos_dr_note[4];
+static __attribute__((noinline)) void cos_drone_block(void)
+{
+    uint32_t i;
+    if (cos_dr.gen == cos_dr_gen)
+        return;
+    for (i = 0; i < cos_dr_n && i < 4u; i++)
+        trk_note_off(&trk[cos_dr_trk % NTRK], cos_dr_note[i]);
+    cos_dr_trk = cos_dr.trk;
+    cos_dr_n = cos_dr.n;
+    for (i = 0; i < cos_dr_n && i < 4u; i++) {
+        cos_dr_note[i] = cos_dr.note[i];
+        trk_note_on(&trk[cos_dr_trk % NTRK], cos_dr_note[i], 96u);
+    }
+    cos_dr_gen = cos_dr.gen;
+}
 static void events_block(uint32_t n)
 {
     uint32_t i, pr, fo, seq_n = n;
+    cos_drone_block();
     uint32_t clock_mode = (uint32_t)song.g[G_CLOCK];
     blk_n = n ? n : 1u;                                /* (ctl64: ev_at) */
     ev_off = 0;

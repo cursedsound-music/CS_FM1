@@ -73,6 +73,41 @@ int main(void)
     cos_trig(2);
     CHECK(step_lanes(&trk[0].step[2]) & 2u, "a kit: the lane's hit (SD)");
 
+    /* DRONE: a key holds its note on the selected track, again lets it go; four at most; another track moves it; the audio
+     * side (seq.c cos_drone_block) sounds what is asked, STOP leaves it; a key change moves it with the song */
+    song.sel = 4; cz.mode = CM_DRONE; cz.dr_oct = 0;
+    cos_drone_key(0); cos_drone_key(7);
+    CHECK(cz.dr_n == 2 && cz.dr_note[0] == 41 && cz.dr_note[1] == 48 && cz.dr_trk == 4, "two notes held on T5 (%u)", cz.dr_n);
+    cos_drone_key(7);
+    CHECK(cz.dr_n == 1 && cz.dr_note[0] == 41, "a key again lets its note go");
+    cos_drone_key(1); cos_drone_key(2); cos_drone_key(3); cos_drone_key(4);
+    CHECK(cz.dr_n == 4 && cz.dr_note[0] == 42, "four at most, the oldest goes (%u: %u)", cz.dr_n, cz.dr_note[0]);
+    cos_drone_block();
+    CHECK(cos_dr_n == 4 && cos_dr_trk == 4 && cos_dr_gen == cos_dr.gen, "the audio side took the request");
+    seq_stop();
+    cos_drone_block();
+    CHECK(cos_dr_n == 4, "STOP leaves the drone");
+    {
+        uint8_t n0 = cz.dr_note[0];
+        cos_key_ask((uint32_t)((cos_key() + 2u + 7u) % 12u));   /* (a key two semitones up: key = pc - 5) */
+        CHECK(cz.dr_note[0] == n0 + 2u, "the key change moves the drone (%u -> %u)", n0, cz.dr_note[0]);
+    }
+    song.sel = 2; cos_drone_key(0);
+    CHECK(cz.dr_n == 1 && cz.dr_trk == 2, "a key on another track moves the drone there");
+    cos_drone_clear(); cos_drone_block();
+    CHECK(cz.dr_n == 0 && cos_dr_n == 0, "REC lets it go");
+
+    /* GLO > MIDI: T3's MIDI OUT channel 10, kept as 10 (its own: 0); MIDI OUT ALL; the sequencer's channel follows */
+    song.sel = 2; cz.mode = CM_MIX; cz.tab[CM_MIX] = 1;
+    cos_cput(CC_OUTCH, 10);
+    CHECK(favorites.factory[15][8 + 2] == 10u, "T3 -> channel 10 kept in the settings (%u)", favorites.factory[15][10]);
+    ui_polls();
+    CHECK(trk_midi_ch(2) == 9u && trk_midi_ch(1) == 1u, "the sequencer sends T3 on 10, T2 on its own 2");
+    cos_cput(CC_OUTCH, 3);
+    CHECK(favorites.factory[15][10] == 0u, "its own channel: 0, as JIANT");
+    cos_cput(CC_MOUT, 2);
+    CHECK((midi_out_mode & 3u) == 2u, "MIDI OUT ALL");
+
     printf("cos_test: %s (%d failures)\n", fails ? "FAILED" : "ok", fails);
     return fails != 0;
 }

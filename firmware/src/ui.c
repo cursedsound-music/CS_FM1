@@ -13,6 +13,9 @@ static uint32_t trk_eng(const track_t *t) { return t->eng_req % NENGINES; }   /*
 static const engine_t *trk_engp(const track_t *t) { return ENGINES[trk_eng(t)]; }   /* .. its engine's table */
 static int project_save(uint32_t slot);
 /* (cursedsound) cursed-os (cos.c): while it is on it has the input, the screen and the LEDs; HOME + GLO switches */
+#ifndef COS_SLIM
+#define COS_SLIM 0                                      /* (felucca.c: 1 in the firmware; the host tests: JIANT's whole UI) */
+#endif
 #ifndef COS_DEFAULT
 #define COS_DEFAULT 1
 #endif

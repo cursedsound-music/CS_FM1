@@ -7,6 +7,9 @@
 /* build.py: FELUCCA_<NAME>=0 / 1 in the environment overrides these. Elsewhere: FELUCCA_FM4
  * (core.h: the DIGITAL engine), FELUCCA_ICONS (icons.c, the parameter icons; on by default),
  * FELUCCA_OTA_RAMONLY (ota.c). */
+#ifndef COS_SLIM
+#define COS_SLIM 1               /* (cursedsound) JIANT's engine creatures (ui_engvis.c) left out: flash for cursed-os */
+#endif
 #ifndef FELUCCA_FLASH
 #define FELUCCA_FLASH 1          /* flash driver + storage.c: settings, projects, user presets */
 #endif

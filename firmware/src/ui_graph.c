@@ -88,7 +88,11 @@ static uint16_t heat_y(int32_t y, int32_t y0, int32_t y1, uint16_t c)
     return settings.palette == UI_JIANT_INDEX && y1 > y0 ? heat_col(24 + (y1 - y) * 232 / (y1 - y0)) : c;
 }
 #include "ui_being.c"                                /* (JIANT 0.5) the beings: the engine pages' creatures */
+#if COS_SLIM                                         /* (cursedsound) the creatures out of the build: cos.c's room */
+#include "ui_engvis_slim.c"
+#else
 #include "ui_engvis.c"                               /* (0.9.4) VOICE's head, ANIMAL's creature, DRUM-X's kit */
+#endif
 
 /* Matches voice.c: attack is linear, decay and release are exponential
  * (env += (target - env) * k each tick, ~99 % after the set time). Time

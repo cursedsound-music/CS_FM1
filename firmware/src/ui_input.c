@@ -2183,6 +2183,11 @@ static __attribute__((noinline)) void ui_polls(void)
     mo_lvl = (uint8_t)(midi_out_mode & 3u);             /* (0.6.72) MENU > MIDI OUT (seq.c) */
     midi_pc_poll();                                     /* (0.6.72) PROGRAM CHANGE in: the sounds it asked for */
     rp_apply();                                         /* (MENU > CLICK, CLICK LEVEL, COUNT-IN: click.c, seq.c) */
+    {                                                   /* (cursedsound) the tracks' MIDI OUT channels: the settings' */
+        uint32_t i;                                     /* bytes 8 .. 13 of engine 15's (0: the track's own) */
+        for (i = 0; i < NTRK; i++)
+            mo_ch[i] = (uint8_t)(favorites.factory[15][8u + i] <= 16u ? favorites.factory[15][8u + i] : 0u);
+    }
 }
 static void ui_input_frame(void);
 static void ui_input(void)

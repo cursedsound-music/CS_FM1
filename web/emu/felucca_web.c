@@ -1,3 +1,6 @@
+#ifndef COS_SLIM
+#define COS_SLIM 1   /* (cursedsound) as the firmware: felucca.c */
+#endif
 /* SPDX-License-Identifier: GPL-3.0-only
  * Copyright (C) 2026 Leo Kuroshita (@kurogedelic), Hügelton Instruments
  * The design (the device clock driven by the audio the worklet asks for, the exports below, the saved
