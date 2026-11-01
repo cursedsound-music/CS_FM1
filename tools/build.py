@@ -311,8 +311,8 @@ def late_tables():
     """the generator's own constant tables (gen.c, gen_tables.c): out of .rodata like the UI's recorded ones ('n'), so a
     new one never moves the sound's merged constants after .rodata"""
     names = set()
-    names.add("COS_FONT")                                   # (cursedsound) cursed-os's face (build/gen/cos_font.h)
-    for f in ("gen.c", "gen_tables.c", "eng_string.c", "eng_add.c", "ui_engvis.c", "cos.c", "ui_acid.c"):   # (0.9.9-snd5: the two engines' own
+    for f in ("gen.c", "gen_tables.c", "eng_string.c", "eng_add.c", "ui_engvis.c"):   # (cursedsound: cos.c's and ui_acid.c's
+        # tables stay in .rodata: moved out, they shifted what the sound reads, its code 220 bytes past a pinned run)   # (0.9.9-snd5: the two engines' own
         # tables and descriptors, the creatures' new ones: out of .rodata too, the sound's tables where they were)
         txt = (FW / "src" / f).read_text()
         names |= set(re.findall(r"^static const [^=;(]*?\b(\w+)\s*\[", txt, flags=re.M))
