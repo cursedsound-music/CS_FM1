@@ -302,8 +302,49 @@ static void cos_trig(uint32_t w)
 }
 static uint32_t cos_banks(void) { return ((uint32_t)clamp(TSEL->p[P_SLEN], 1, NSTEP) + 15u) / 16u; }
 
+/* ACID's track: the first ANALOG one; none: the last live one that is neither a kit nor VOICE becomes ANALOG's ACID
+ * sound (an UNDO point first; REC on GEN undoes it) */
+static __attribute__((noinline)) uint32_t cos_acid_trk(uint32_t *made)
+{
+    uint32_t i, k = trk_live;
+    char b[24];
+    for (i = 0; i < trk_live; i++)
+        if (trk_eng(&trk[i]) == ENGI_ANALOG) return i;
+    for (i = trk_live; i-- > 0u;)
+        if (!drum_track(&trk[i]) && trk_eng(&trk[i]) != ENGI_VOICE) { k = i; break; }
+    if (k >= trk_live) k = trk_live - 1u;
+    undo_mark();
+    set_engine_of(&trk[k], ENGI_ANALOG);
+    for (i = 0; i < ENG_ANALOG.npresets; i++) {
+        const char *n = ENG_ANALOG.presets[i].name;
+        if (n[0] == 'A' && n[1] == 'C' && n[2] == 'I' && n[3] == 'D' && !n[4]) { apply_preset_to(&trk[k], i); break; }
+    }
+    str_cpy(b, "T", 2); b[1] = (char)('1' + k); b[2] = 0;
+    str_cpy(b + 2, " NOW ACID 303", 14);
+    cos_say(b);
+    *made = 1;
+    return k;
+}
+static int cos_empty(const track_t *t)
+{
+    uint32_t i;
+    for (i = 0; i < NSTEP; i++)
+        if (t->step[i].time == ST_NOTE && t->step[i].n) return 0;
+    return 1;
+}
+/* GEN entered: on a kit, over to ACID's track; an empty track gets a line at once */
+static void cos_gen_enter(void)
+{
+    uint32_t made = 0;
+    if (cos_kit()) { track_select(cos_acid_trk(&made)); cz.bank = 0; }
+    cz.tab[CM_GEN] = 0;
+    if (cos_empty(TSEL) && !chain_busy()) ac_throw(song.sel, 1);
+    if (made) ui.msg_t = 0;                              /* (what it said: the track's new sound, not NEW LINE) */
+}
+
 static void cos_mode(uint32_t m)
 {
+    if (m == CM_GEN && cz.mode != CM_GEN) { cz.mode = (uint8_t)m; cz.hot = 0; cos_gen_enter(); return; }
     if (cz.mode == m) {                                 /* again: the next page (Elektron's way) */
         const cpg_t *p;
         uint32_t n;
@@ -339,6 +380,7 @@ static __attribute__((noinline)) void cos_input(void)
             cz.lk_used = 1;
             cos_say(n ? "LOCKS CLEARED" : "NO LOCKS");
         }
+        else if (b == B_REC && cz.mode == CM_GEN) cos_say(undo_do() ? "NOTHING TO UNDO" : "UNDONE");
         else if (b == B_REC) cos_say("REC: CLASSIC UI (HOME+GLO)");
         else if (b == B_SAVE) cos_say("SAVE: CLASSIC UI (HOME+GLO)");
         else if (b == B_SCL) { cz.scl_down = 1; cz.scl_used = 0; }   /* (its tap acts when let go: held, it is a shift) */
@@ -417,6 +459,7 @@ static __attribute__((noinline)) void cos_input(void)
         cz.tg_down &= fm1_in.notes;
     }
     if (cz.hot && fm1_ms - cz.hot_ms > 1500u) cz.hot = 0;
+    if (ui.msg_t && ui.msg[0]) { cos_say(ui.msg); ui.msg_t = 0; }   /* (what JIANT's code says: on our top line) */
     cos_key_poll();
     ui_polls();                                          /* (what JIANT's frame keeps doing: ui_input.c) */
 }
@@ -467,9 +510,12 @@ static void cos_head(void)
     b[0] = 'T'; b[1] = (char)('1' + song.sel % NTRK); b[2] = 0;
     cos_tx(5, 3, b, C_BG);
     cos_tx(32, 3, CM_NAME[cz.mode], C_FG);
-    if (cz.msg[0] && fm1_ms - cz.msg_ms < 1800u)
-        cos_tx(32 + 8 * 6, 3, cz.msg, C_RED);
-    else {
+    if (cz.msg[0] && fm1_ms - cz.msg_ms < 1800u) {
+        str_cpy(b, cz.msg, 19);                           /* (a long one over the key and the tempo: 18 at most) */
+        cos_up(b);
+        cos_tx(32 + 8 * 6, 3, b, C_RED);
+        if (str_len(b) > 11u) goto tri;
+    } else {
         str_cpy(b, trk_engp(t)->name, 9);
         cos_up(b);
         cos_tx(32 + 8 * 6, 3, b, C_DIM);
@@ -478,6 +524,7 @@ static void cos_head(void)
     fmt_int(b, song.g[G_BPM]);
     cos_txr(226, 3, b, C_FG);
     cos_txr(226 - 8 * 4, 3, COS_NN[cz.key_next ? cz.key_next - 1u : cos_key()], cz.key_next ? C_RED : C_MID);
+tri:
     {                                                     /* the play triangle, red while it runs */
         int32_t i;
         for (i = 0; i < 5; i++) cv_rect(230 + i, 2 + i, 1, 10 - 2 * i, song.playing ? C_RED : C_DIM);
@@ -608,6 +655,7 @@ static void cos_body_home(void)
 }
 
 /* TRIG: a kit's eight lanes (the picked one framed), a synth's notes as a roll */
+static int32_t cz_rtop = 40;                             /* (the note roll's top: GEN's line of words above it) */
 static void cos_lk_box(void)                            /* (steps held: which, and what the knobs and REC do) */
 {
     uint64_t h = cos_held();
@@ -658,10 +706,10 @@ static void cos_body_trig1(void)
             uint32_t st = cz.bank * 16u + i, g = 1;
             const step_t *s = &t->step[st % NSTEP];
             int32_t x = 2 + (int32_t)i * 15, y;
-            if (st == now) cv_rect(x, 36, 13, 110, C_DARK);
+            if (st == now) cv_rect(x, cz_rtop - 4, 13, 150 - cz_rtop, C_DARK);
             if (st >= len || s->time != ST_NOTE || !s->n) continue;
             while (i + g < 16u && t->step[(st + g) % NSTEP].time == ST_TIE) g++;
-            y = 140 - (s->note[0] - lo) * 100 / (hi - lo);
+            y = 140 - (s->note[0] - lo) * (140 - cz_rtop) / (hi - lo);
             cv_rect(x, y, 15 * (int32_t)g - 2, (s->flags & SF_ACCENT) ? 5 : 3, (s->flags & SF_ACCENT) ? C_FG : C_MID);
             if (s->flags & SF_SLIDE) cv_rect(x + 15 * (int32_t)g - 2, y + 1, 4, 2, C_MID);
         }
@@ -802,9 +850,12 @@ static void cos_body_gen(void)
         for (i = 1; i < sizeof SCALE_MASK / sizeof SCALE_MASK[0] && SCALE_MASK[i] != key.mask; i++) {}
         if (i < sizeof SCALE_MASK / sizeof SCALE_MASK[0]) { str_cpy(b + str_len(b), " ", 2); str_cpy(b + str_len(b), N_SCALE[i], 8); }
         cos_tx(4, 38, b, C_FG);
-        cos_tx(90, 38, LK[a->lock & 3u], C_DIM);
-        if (a->ms) cos_txr(236, 38, "MUT", C_RED);
+        if (a->ms) cos_txr(236, 38, "MUTATED", C_RED);
+        else if (a->lock & 3u) cos_txr(236, 38, LK[a->lock & 3u], C_DIM);
+        else cos_txr(236, 38, "OCT+ NEW LINE", C_DIM);
+        cz_rtop = 54;
         cos_body_trig();
+        cz_rtop = 40;
     }
 }
 

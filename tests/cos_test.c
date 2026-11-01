@@ -153,6 +153,24 @@ int main(void)
         CHECK(n == 2u, "an ANALOG track's does not");
     }
 
+    /* ACID made easy: GEN from a kit goes over to an ANALOG track (one made from the last melodic one if none), an
+     * empty one gets a line at once */
+    {
+        uint32_t j, na = 0, cnt = 0;
+        for (j = 0; j < trk_live; j++) if (trk_eng(&trk[j]) == ENGI_ANALOG) set_engine_of(&trk[j], ENGI_PHASE);
+        for (j = 0; j < trk_live; j++) { uint32_t i2; for (i2 = 0; i2 < NSTEP; i2++) step_clear(&trk[j].step[i2]); }
+        set_engine_of(&trk[0], ENGI_DRUM); track_select(0);
+        cz.mode = CM_HOME; cos_mode(CM_GEN);
+        CHECK(!cos_kit() && trk_eng(TSEL) == ENGI_ANALOG, "GEN from the kit: on an ANALOG track (T%u)", song.sel + 1u);
+        for (j = 0; j < NSTEP; j++) if (TSEL->step[j].time == ST_NOTE) na++;
+        CHECK(na > 0u, "a line thrown at once (%u notes)", na);
+        for (j = 0; j < trk_live; j++) cnt += trk_eng(&trk[j]) == ENGI_ANALOG;
+        CHECK(cnt == 1u, "one ACID track");
+        track_select(0); cz.mode = CM_HOME; cos_mode(CM_GEN);
+        cnt = 0; for (j = 0; j < trk_live; j++) cnt += trk_eng(&trk[j]) == ENGI_ANALOG;
+        CHECK(cnt == 1u && trk_eng(TSEL) == ENGI_ANALOG, "again: the same track, no other made");
+    }
+
     printf("cos_test: %s (%d failures)\n", fails ? "FAILED" : "ok", fails);
     return fails != 0;
 }
