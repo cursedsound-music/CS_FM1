@@ -177,7 +177,7 @@ static const struct {
 #define TRK_PR_VOICE 9u          /* SINGER EN (eng_formant.c FORMANT_PRESETS) */
 #define TRK_PR_ANALOG 14u        /* FAT BASS (eng_analog.c) */
 static const uint8_t TRK_DEF[NPART][3] = {{ENGI_DRUM, 0, 0}, {ENGI_VOICE, TRK_PR_VOICE, 0}, {ENGI_ANIMAL, 0, 0},
-                                          {ENGI_LOFI, 0, 0}, {ENGI_ANALOG, TRK_PR_ANALOG, 0}, {ENGI_FM6, 0, 0}};
+                                          {ENGI_ACID, 0, 0},   /* (cursed-os: T4 the 303, ACID's TB CLASSIC; was LOFI) */ {ENGI_ANALOG, TRK_PR_ANALOG, 0}, {ENGI_FM6, 0, 0}};
 /* DRUM-X (DRUM's first, the factory kit), SINGER EN, CMOS BIRD, BYTEBEAT, FAT BASS, TINE EP */
 /* the parts at power-on through 0.9.8 (the same columns): what an old project's tracks it had no room for load as
  * (project.c proj_new_tracks, PROJ_DEF_SOUND: format 1's tracks 2..4, a 4-track format's T5 / T6): never change it.

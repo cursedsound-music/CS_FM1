@@ -48,7 +48,7 @@ static const cpg_t CZP_TRIG[] = {{"TRIG", CK_TRK, {P_SLEN, P_SDIV, P_SSWING, P_S
 static const cpg_t CZP_SRC[] = {{"SRC 1", CK_TRK, {P_E0, P_E1, P_E2, P_E3}}, {"SRC 2", CK_TRK, {P_E4, P_E5, P_E6, P_E7}},
                                {"VOICE", CK_TRK, {P_VOICE, P_GLIDE, P_DETUNE, P_GLMODE}}, CZ_MOD(1), CZ_MOD(2), CZ_MOD(3), CZ_MOD(4)};
 static const cpg_t CZP_SRCV[] = {{"SRC 1", CK_TRK, {P_E0, P_E1, P_E2, P_E3}}, {"SRC 2", CK_TRK, {P_E4, P_E5, P_E6, P_E7}},
-                                {"WORDS", CK_TRK, {P_VLANG, P_VLYR, P_E1, P_E2}},
+                                {"WORDS", CK_TRK, {P_VLANG, P_VLYR, X, X}},   /* (THEME, ARTIC: on the first page) */
                                 {"VOICE", CK_TRK, {P_VOICE, P_GLIDE, P_DETUNE, P_GLMODE}}, CZ_MOD(1), CZ_MOD(2), CZ_MOD(3), CZ_MOD(4)};
 static const cpg_t CZP_AMP[] = {{"AMP", CK_TRK, {P_ATK, P_DEC, P_SUS, P_REL}}, {"FLTR", CK_TRK, {P_FCUT, P_FRES, P_FTYPE, P_ED_FLT}},
                                {"ENV MOD", CK_TRK, {P_ED_FLT, P_ED_PIT, P_ED_SHP, X}},
@@ -696,7 +696,7 @@ static void cos_body_home(void)
             if (st == now) cv_rect(x, y + 10, 9, 1, C_RED);
         }
     }
-    cos_tx(4, 144, "WHITE:TRACK  BLACK:MUTE", C_DIM);
+    cos_tx(4, 144, "ARP:ACID WHITE:TRK BLACK:MUTE", C_DIM);
 }
 
 /* TRIG: a kit's eight lanes (the picked one framed), a synth's notes as a roll */
