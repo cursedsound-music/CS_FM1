@@ -12,6 +12,15 @@ static track_t *tsel_p(void) { return &trk[song.sel]; }
 static uint32_t trk_eng(const track_t *t) { return t->eng_req % NENGINES; }   /* (0.9.7, flash) a track's engine */
 static const engine_t *trk_engp(const track_t *t) { return ENGINES[trk_eng(t)]; }   /* .. its engine's table */
 static int project_save(uint32_t slot);
+/* (cursedsound) cursed-os (cos.c): while it is on it has the input, the screen and the LEDs; HOME + GLO switches */
+#ifndef COS_DEFAULT
+#define COS_DEFAULT 1
+#endif
+static int cos_active(void);
+static int cos_switch(void);
+static void cos_input(void);
+static void cos_draw(void);
+static void cos_leds(void);
 static void panel_setup(void);
 static void project_load(uint32_t slot);
 static int section_jump(uint32_t s);    /* (song_main.c: 0.6.80, channel 16's PROGRAM CHANGE) */

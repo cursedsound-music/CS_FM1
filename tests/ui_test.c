@@ -1,3 +1,4 @@
+#define COS_DEFAULT 0   /* (cursedsound) the UI tests are JIANT's interface's: cursed-os off */
 /* SPDX-License-Identifier: GPL-3.0-only
  * Copyright (C) 2026 Leo Kuroshita (@kurogedelic), Hügelton Instruments */
 /* Host test of the UI (firmware/src/ui*.c with the sound sources of hostsim.c;
@@ -158,6 +159,7 @@ static int32_t ut_cv_w(void) { return (int32_t)cv_w; }
 #include "../firmware/src/ui_menu.c"
 #include "../firmware/src/ui_input.c"
 #include "../firmware/src/ui_layer.c"
+#include "../firmware/src/cos.c"
 #include "../firmware/src/upreset.c"
 #include "../firmware/src/project.c"
 

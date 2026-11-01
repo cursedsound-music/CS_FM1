@@ -2353,6 +2353,10 @@ static void ui_draw_page(uint32_t counting);
 static void ui_draw(void)
 {
     static uint8_t counting;
+    if (cos_active()) {                                 /* (cursedsound) cursed-os draws the screen */
+        cos_draw();
+        return;
+    }
     style_apply();
     ui.frame++;
     if (!ANIM_OFF())                                    /* (0.9.9-beta4) the animation's frame (ui.c anim_fr): this one, */

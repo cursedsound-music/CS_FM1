@@ -337,7 +337,16 @@ static uint32_t key_leds(uint32_t *br)                 /* (*br: a layer's keys t
  * rest: the root's keys lit, the scale's at the mid level, the others glowing; the keys held and playing as ever
  * (lit, INV dark). Each picture is built off-line and copied one byte per column, the
  * glow first: an LED going from lit to dim never has a dark frame */
+static void ui_leds_jiant(void);
 static void ui_leds(void)
+{
+    if (cos_active()) {                                 /* (cursedsound) cursed-os's LEDs */
+        cos_leds();
+        return;
+    }
+    ui_leds_jiant();
+}
+static void ui_leds_jiant(void)
 {
     uint8_t nl[FM1_NCOL] = {0}, nd[FM1_NCOL] = {0}, own[FM1_NCOL] = {0}, og[FM1_NCOL] = {0}, nb[FM1_NCOL] = {0};
     uint8_t nm[FM1_NCOL] = {0}, sg[FM1_NCOL] = {0}, sm[FM1_NCOL] = {0};
@@ -2169,6 +2178,15 @@ static void scale_link(void)
 static void ui_input_frame(void);
 static void ui_input(void)
 {
+    if (cos_switch())                                   /* (cursedsound) HOME + GLO: cursed-os <-> this interface */
+        return;
+    if (cos_active()) {
+        cos_input();
+        eu_tick();
+        ac_tick();
+        scale_link();
+        return;
+    }
     ui_input_frame();
     eu_tick();
     ac_tick();                                          /* (cursedsound) ACID's mutations, on the bar */                                          /* (V10.16) EUCLID's MUTATE, on the bar */
