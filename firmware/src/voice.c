@@ -12,9 +12,12 @@
  * declicks it); one of the part's own is restarted in place, as before. Extra UNISON
  * voices only start when there is room. */
 static uint32_t vage;                                   /* voice ages: one clock for every part */
-static int32_t lfo_wave(track_t *t, uint32_t ph)
+/* an LFO's shape w at phase ph, Q15; rnd / prev: its S&H value now and the one before (SMOOTH glides between them).
+ * (cursed-os) after JIANT's five: RAMP (down), PULSE (a quarter high), SMOOTH (S&H glided), STEPS (four), EXP (a
+ * plucked decay each cycle), BOUNCE (a ball's hops) */
+static int32_t lfo_shape(uint32_t w, uint32_t ph, uint32_t rnd, uint32_t prev)
 {
-    switch (t->p[P_LWAVE]) {
+    switch (w) {
     case 1:
         return osc_tri(ph);
     case 2:
@@ -22,11 +25,31 @@ static int32_t lfo_wave(track_t *t, uint32_t ph)
     case 3:
         return ph < 0x80000000u ? 32767 : -32767;
     case 4:
-        return (int32_t)(t->lfo_rnd >> 16) - 32768;
+        return (int32_t)(rnd >> 16) - 32768;
+    case 5:
+        return 32767 - (int32_t)(ph >> 16);
+    case 6:
+        return ph < 0x40000000u ? 32767 : -32767;
+    case 7: {
+        int32_t a = (int32_t)(prev >> 16) - 32768, b = (int32_t)(rnd >> 16) - 32768, f = (int32_t)(ph >> 17);   /* Q15 */
+        f = (f * f >> 15) * (98304 - 2 * f) >> 15;     /* (smoothstep) */
+        return a + (((b - a) * f) >> 15);
+    }
+    case 8:
+        return (int32_t)(ph >> 30) * 21844 - 32766;
+    case 9: {
+        int32_t d = 65535 - (int32_t)(ph >> 16);
+        return ((d >> 1) * (d >> 1) >> 14) - 32768;   /* ((1 - ph)^2: up at once, down fast then slow) */
+    }
+    case 10: {
+        int32_t s = osc_sine(ph >> 1);
+        return (s < 0 ? -s : s) * 2 - 32767;
+    }
     default:
         return osc_sine(ph);
     }
 }
+static int32_t lfo_wave(track_t *t, uint32_t ph) { return lfo_shape((uint32_t)t->p[P_LWAVE], ph, t->lfo_rnd, t->lfo_prev); }
 
 /* the S&H value of a new LFO cycle. Parts 1..3 draw it from the shared generator (rng); part 4 has its
  * own xorshift, so the shared sequence, which also seeds the engines' noise (PHYS, VOICE, ..), does not
@@ -334,6 +357,89 @@ static __attribute__((noinline)) void track_post(track_t *t, const engine_t *e, 
 }
 
 static uint32_t beat_samples(void);                     /* (fx.c) */
+/* (cursed-os) LFO 2 (params.c trk_x2): RATE as LFO's (below 0 in time, on the transport's grid while it plays), WAVE
+ * any shape; free running (no note restarts it); its own random stream (the shared one stays as it was) */
+static __attribute__((noinline)) void lfo2_tick(track_t *t)
+{
+    const volatile int8_t *x = trk_x2[(uint32_t)(t - trk) % NTRK];
+    uint32_t old = t->lfo2_ph;
+    int32_t r = x[X2_RATE];
+    if (r < 0) {
+        static const uint16_t U2[12] = {384, 192, 96, 48, 24, 18, 16, 12, 8, 6, 4, 3};
+        uint32_t len = beat_samples() * U2[(uint32_t)(-r - 1) % 12u] / 24u;
+        if (len < 64u)
+            len = 64u;
+        if (song.playing)
+            t->lfo2_ph = (uint32_t)(((uint64_t)(ms_clock % len) << 32) / len);
+        else
+            t->lfo2_ph += (uint32_t)(((uint64_t)CTL << 32) / len);
+    } else
+        t->lfo2_ph += LFO_INC[r & 127];
+    if (t->lfo2_ph < old) {
+        uint32_t s = t->lfo2_rnd ? t->lfo2_rnd : 0x2545F491u + (uint32_t)(t - trk);
+        s ^= s << 13;
+        s ^= s >> 17;
+        s ^= s << 5;
+        t->lfo2_prev = t->lfo2_rnd;
+        t->lfo2_rnd = s;
+    }
+    t->lfo2_val = lfo_shape((uint32_t)x[X2_WAVE], t->lfo2_ph, t->lfo2_rnd, t->lfo2_prev);
+}
+
+/* (cursed-os) FILTER 2 on the part, after FILTER: an SVF, TYPE LP HP BP NOTCH at CUT, RES, moved by the loudest voice's
+ * envelope (ENV) and LFO 2 (its amount); going in or out of the chain, or from one TYPE to another, crossfaded over the
+ * block (the state taken from the input on the way in). OFF and settled: not run */
+static int32_t f2_ic1[NTRK], f2_ic2[NTRK];
+static uint8_t f2_on[NTRK], f2_ty[NTRK];
+static __attribute__((noinline)) void track_f2(track_t *t, int32_t *out, uint32_t n)
+{
+    uint32_t ti = (uint32_t)(t - trk) % NTRK, i, ty = (uint32_t)trk_x2[ti][X2_F2T] % 5u, was = f2_on[ti], fo = f2_ty[ti];
+    const volatile int8_t *x = trk_x2[ti];
+    int32_t ic1 = f2_ic1[ti], ic2 = f2_ic2[ti], envq = 0, cut, res = clamp(x[X2_F2R], 0, 127), k;
+    tsvf_t c;
+    if (!ty && !was)
+        return;
+    if (t->engine == ENGI_DRUM)
+        envq = (uint16_t)drum_env(t) + 1;
+    else
+        for (i = 0; i < NVOICE; i++)
+            if (t->v[i].active && t->v[i].stage && t->v[i].stage < 4u && (t->v[i].env >> 9) > envq)
+                envq = t->v[i].env >> 9;
+    cut = (clamp(x[X2_F2C], 0, 127) << 8) + ((t->lfo2_val * x[X2_F2L]) >> 7) + ((envq * x[X2_F2E]) >> 7);
+    cut = clamp(cut, 0, 127 << 8);
+    if (!was) {
+        ic1 = 0;
+        ic2 = out[0];
+        fo = ty;
+    }
+    if (!ty)
+        ty = fo;                                        /* (out: the TYPE that played, faded to dry) */
+    tsvf_coef(&c, cut, res);
+    k = 8192 - res * 7600 / 127;
+    for (i = 0; i < n; i++) {
+        int32_t xi = out[i], y, y0, w = (int32_t)((i + 1u) << (12 - CTL_LOG2));
+        int32_t v3 = xi - ic2, v1 = (c.a1 * ic1 + c.a2 * v3) >> 13, v2 = ic2 + ((c.a2 * ic1 + c.a3 * v3) >> 13), bp;
+        ic1 = clamp(2 * v1 - ic1, -150000, 150000);
+        ic2 = clamp(2 * v2 - ic2, -150000, 150000);
+        bp = (k * v1) >> 12;
+        y = ty == 2u ? xi - v2 - bp : ty == 3u ? bp : ty == 4u ? xi - bp : v2;
+        if (fo != ty) {
+            y0 = fo == 2u ? xi - v2 - bp : fo == 3u ? bp : fo == 4u ? xi - bp : v2;
+            y = y0 + (((y - y0) * w) >> 12);
+        }
+        y = soft_knee(y, 30000);
+        if (!was)
+            y = xi + (((y - xi) * w) >> 12);            /* in */
+        else if (!x[X2_F2T])
+            y = y + (((xi - y) * w) >> 12);             /* out */
+        out[i] = y;
+    }
+    f2_on[ti] = (uint8_t)(x[X2_F2T] != 0);
+    f2_ty[ti] = (uint8_t)ty;
+    f2_ic1[ti] = ic1;
+    f2_ic2[ti] = ic2;
+}
+
 static void track_lfo_tick(track_t *t)
 {
     uint32_t old = t->lfo_ph;
@@ -352,9 +458,12 @@ static void track_lfo_tick(track_t *t)
             t->lfo_ph += (uint32_t)(((uint64_t)CTL << 32) / len);
     } else
         t->lfo_ph += LFO_INC[r & 127];
-    if (t->lfo_ph < old)
+    if (t->lfo_ph < old) {
+        t->lfo_prev = t->lfo_rnd;
         t->lfo_rnd = lfo_rand(t);
+    }
     t->lfo_val = lfo_wave(t, t->lfo_ph);
+    lfo2_tick(t);
     if (t->lfo_fade < 32767) {
         int32_t step = (int32_t)(ENV_LIN[t->p[P_LFADE] & 127] >> 9);
         t->lfo_fade = t->p[P_LFADE] ? clamp(t->lfo_fade + (step ? step : 1), 0, 32767) : 32767;
@@ -1615,6 +1724,8 @@ static uint32_t track_render(track_t *t, int32_t *out, uint32_t n)
                tf_xb[(uint32_t)(t - trk) % NTRK] || tf_cmb[(uint32_t)(t - trk) % NTRK]))
         /* (JIANT 0.5) the FILTER (track_post); 0.6.8: and a block more to leave the chain (track_filter's fade) */
         track_post(t, e, out, n);
+    if (nr && (trk_x2[(uint32_t)(t - trk) % NTRK][X2_F2T] || f2_on[(uint32_t)(t - trk) % NTRK]))
+        track_f2(t, out, n);                            /* (cursed-os) FILTER 2 */
     if (snap)
         memcpy(t->p, p_new, sizeof p_new);
     else if (fade)

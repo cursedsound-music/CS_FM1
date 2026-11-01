@@ -37,7 +37,8 @@
 
 enum { CM_HOME, CM_TRIG, CM_SRC, CM_AMP, CM_DRONE, CM_FX, CM_GEN, CM_MIX, CM_KEY, CM_PROJ, CM_N };
 enum { CK_NONE, CK_TRK, CK_GLO, CK_AC, CK_EU, CK_COS };
-enum { CC_OUTCH, CC_MOUT, CC_CLOCK, CC_SLOT, CC_TRKS, CC_LOAD, CC_COMP, CC_CATK, CC_CREL, CC_LIM, CC_PF0, CC_PF3 = CC_PF0 + 3 };   /* (CK_COS: cursed-os's own knobs) */
+enum { CC_OUTCH, CC_MOUT, CC_CLOCK, CC_SLOT, CC_TRKS, CC_LOAD, CC_COMP, CC_CATK, CC_CREL, CC_LIM, CC_PF0, CC_PF3 = CC_PF0 + 3,
+       CC_X2, CC_X2E = CC_X2 + 6 };   /* (CC_X2 + X2_*: params.c trk_x2, LFO 2 and FILTER 2) */   /* (CK_COS: cursed-os's own knobs) */
 typedef struct { const char *tab; uint8_t kind, id[4]; } cpg_t;
 #define X 0xFFu
 static const cpg_t CZP_HOME[] = {{"PERFORM", CK_GLO, {G_BPM, G_SWING, G_DJF, X}}};
@@ -50,9 +51,21 @@ static const cpg_t CZP_SRC[] = {{"SRC 1", CK_TRK, {P_E0, P_E1, P_E2, P_E3}}, {"S
 static const cpg_t CZP_SRCV[] = {{"SRC 1", CK_TRK, {P_E0, P_E1, P_E2, P_E3}}, {"SRC 2", CK_TRK, {P_E4, P_E5, P_E6, P_E7}},
                                 {"WORDS", CK_TRK, {P_VLANG, P_VLYR, X, X}},   /* (THEME, ARTIC: on the first page) */
                                 {"VOICE", CK_TRK, {P_VOICE, P_GLIDE, P_DETUNE, P_GLMODE}}, CZ_MOD(1), CZ_MOD(2), CZ_MOD(3), CZ_MOD(4)};
-static const cpg_t CZP_AMP[] = {{"AMP", CK_TRK, {P_ATK, P_DEC, P_SUS, P_REL}}, {"FLTR", CK_TRK, {P_FCUT, P_FRES, P_FTYPE, P_ED_FLT}},
+static const cpg_t CZP_AMP[] = {{"AMP", CK_TRK, {P_ATK, P_DEC, P_SUS, P_REL}},
+                               {"FILTER 1", CK_TRK, {P_FTYPE, P_FCUT, P_FRES, P_ED_FLT}},
+                               {"FILTER 2", CK_COS, {CC_X2 + X2_F2T, CC_X2 + X2_F2C, CC_X2 + X2_F2R, CC_X2 + X2_F2E}},
                                {"ENV MOD", CK_TRK, {P_ED_FLT, P_ED_PIT, P_ED_SHP, X}},
-                               {"LFO", CK_TRK, {P_LRATE, P_LWAVE, P_LD_PIT, P_LD_FLT}}, {"LFO 2", CK_TRK, {P_LFADE, P_LD_SHP, P_LD_AMP, P_LPHASE}}};
+                               {"LFO 1", CK_TRK, {P_LRATE, P_LWAVE, P_LD_FLT, P_LD_PIT}},
+                               {"LFO 1+", CK_TRK, {P_LFADE, P_LD_SHP, P_LD_AMP, P_LPHASE}},
+                               {"LFO 2", CK_COS, {CC_X2 + X2_RATE, CC_X2 + X2_WAVE, CC_X2 + X2_F2L, X}}};
+/* (ANALOG filters its notes itself: its FILTER 1 is its CUT and RES, E4 E5) */
+static const cpg_t CZP_AMPA[] = {{"AMP", CK_TRK, {P_ATK, P_DEC, P_SUS, P_REL}},
+                                {"FILTER 1", CK_TRK, {P_FTYPE, P_E4, P_E5, P_ED_FLT}},
+                                {"FILTER 2", CK_COS, {CC_X2 + X2_F2T, CC_X2 + X2_F2C, CC_X2 + X2_F2R, CC_X2 + X2_F2E}},
+                                {"ENV MOD", CK_TRK, {P_ED_FLT, P_ED_PIT, P_ED_SHP, X}},
+                                {"LFO 1", CK_TRK, {P_LRATE, P_LWAVE, P_LD_FLT, P_LD_PIT}},
+                                {"LFO 1+", CK_TRK, {P_LFADE, P_LD_SHP, P_LD_AMP, P_LPHASE}},
+                                {"LFO 2", CK_COS, {CC_X2 + X2_RATE, CC_X2 + X2_WAVE, CC_X2 + X2_F2L, X}}};
 static const cpg_t CZP_DRONE[] = {{"DRONE", CK_TRK, {P_LEVEL, P_FCUT, P_LRATE, P_LD_FLT}}, {"SPACE", CK_TRK, {P_ATK, P_REL, P_DLY, P_REV}}};
 static const cpg_t CZP_FX[] = {{"SEND", CK_TRK, {P_DIST, P_CHOR, P_DLY, P_REV}}, {"DIST", CK_TRK, {P_DTYPE, P_DTONE, X, X}},
                               {"DELAY", CK_GLO, {G_DTIME, G_DFDBK, G_DCOLOR, G_DPING}},    /* (the buses: every track's) */
@@ -86,7 +99,7 @@ static struct {
     uint32_t tg_down, notes0;                           /* TRIG: the white keys down since their press; the keys a frame ago */
     uint8_t ly_prev;                                    /* WORDS: the lyric before OCT+ */
     int8_t dr_oct;
-    int16_t cc_v[14];                                   /* (CK_COS: the knobs' views) */
+    int16_t cc_v[15];                                   /* (CK_COS: the knobs' views) */
     uint8_t fx_down, fx_used;                           /* FX held: the pad (keys: perform.c's effects, knobs its macros) */
     uint8_t ed_down, ed_used;                           /* EDIT held (+ PRESETS: the next engine); its tap acts let go */
     uint32_t set_ms;                                    /* a setting turned (MASTER): saved 2 s after, not every detent */
@@ -99,9 +112,9 @@ static int cos_kit(void) { return drum_track(TSEL) != 0; }
 static void cos_pages(uint32_t m, const cpg_t **p, uint32_t *n)
 {
     static const cpg_t *const P[CM_N] = {CZP_HOME, CZP_TRIG, CZP_SRC, CZP_AMP, CZP_DRONE, CZP_FX, CZP_GENA, CZP_MIX, CZP_KEY, CZP_PROJ};
-    static const uint8_t N[CM_N] = {1, 1, 7, 5, 2, 4, 3, 4, 1, 1};
+    static const uint8_t N[CM_N] = {1, 1, 7, 7, 2, 4, 3, 4, 1, 1};
     int vo = m == CM_SRC && trk_engp(TSEL) == &ENG_FORMANT;
-    *p = m == CM_GEN && cos_kit() ? CZP_GENE : vo ? CZP_SRCV : P[m % CM_N];
+    *p = m == CM_GEN && cos_kit() ? CZP_GENE : vo ? CZP_SRCV : m == CM_AMP && trk_engp(TSEL) == &ENG_ANALOG ? CZP_AMPA : P[m % CM_N];
     *n = N[m % CM_N] + (uint32_t)vo;                                      /* (VOICE: WORDS too) */
 }
 static const cpg_t *cos_page(void)
@@ -220,6 +233,12 @@ static const param_desc_t *cos_cdesc(uint32_t id, int16_t **vp)
     if (id == CC_SLOT) { cz.cc_v[3] = (int16_t)(cz.slot + 1u); *vp = &cz.cc_v[3]; return &DS; }
     if (id == CC_TRKS) { cz.cc_v[4] = (int16_t)trk_live; *vp = &cz.cc_v[4]; return &DT; }
     if (id == CC_LOAD) { cz.cc_v[5] = (int16_t)load_get(); *vp = &cz.cc_v[5]; return &DL; }
+    if (id >= CC_X2 && id <= CC_X2E) {                   /* LFO 2, FILTER 2: the track's (params.c trk_x2) */
+        uint32_t i = id - CC_X2;
+        cz.cc_v[14] = trk_x2[song.sel % NTRK][i];
+        *vp = &cz.cc_v[14];
+        return &X2_DESC[i];
+    }
     if (id >= CC_PF0 && id <= CC_PF3) {                  /* the FX pad's macros (perform.c perf_k): FILTER - LP + HP, CRUSH,
                                                          * THROW (into the delay and reverb), DEPTH (the repeats' level) */
         static const param_desc_t DP[4] = {{"FILTER", F_INT, -100, 100, 0, 0, 0}, {"CRUSH", F_INT, 0, 100, 0, 0, "%"},
@@ -269,6 +288,9 @@ static void cos_cput(uint32_t id, int32_t v)
     } else if (id == CC_LOAD) {
         load_put((uint32_t)clamp(v, 0, 2));
         settings_save();
+    } else if (id >= CC_X2 && id <= CC_X2E) {
+        uint32_t i = id - CC_X2;
+        trk_x2[song.sel % NTRK][i] = (int8_t)clamp(v, X2_DESC[i].min, X2_DESC[i].max);
     } else if (id >= CC_PF0 && id <= CC_PF3) {
         uint32_t i = id - CC_PF0;
         cz.fx_used = 1;
@@ -949,7 +971,42 @@ static void cos_body_sound(void)
         cos_txc(120, 114, CZ_LBL, "(EACH TRACK ITS OWN)", C_DIM);
         return;
     }
-    if (trk_engp(t)->ownenv && cz.mode == CM_AMP && (cz.tab[CM_AMP] == 0u || cz.tab[CM_AMP] == 2u)) {
+    if (cz.mode == CM_AMP && cos_page()->tab[0] == 'L') {   /* LFO 1, LFO 1+, LFO 2: two cycles of the shape, where it is */
+        int lf2 = cos_page()->tab[4] == '2';
+        uint32_t w = lf2 ? (uint32_t)trk_x2[song.sel % NTRK][X2_WAVE] : (uint32_t)t->p[P_LWAVE], ph = lf2 ? t->lfo2_ph : t->lfo_ph;
+        int32_t x, y0 = 0;
+        cv_rect(20, 92, 200, 1, C_DARK);
+        for (x = 0; x < 200; x++) {
+            uint32_t q = ((uint32_t)x % 100u) * (0xFFFFFFFFu / 100u), cyc = (uint32_t)x / 100u;
+            int32_t y = 92 - (lfo_shape(w, q, (cyc + 3u) * 2654435761u, (cyc + 2u) * 2654435761u) * 40 >> 15);
+            if (x) cv_line(19 + x, y0, 20 + x, y, C_FG);
+            y0 = y;
+        }
+        x = (int32_t)(ph >> 25);                          /* (0 .. 127 of a cycle: the first one) */
+        cv_rect(20 + x * 100 / 128 - 1, 92 - (lfo_shape(w, ph, 3u * 2654435761u, 2u * 2654435761u) * 40 >> 15) - 1, 3, 3, C_RED);
+        cos_txc(120, 140, CZ_LBL, N_LWAVE[w % (sizeof N_LWAVE / sizeof N_LWAVE[0])], C_MID);
+        return;
+    }
+    if (cz.mode == CM_AMP && cos_page()->tab[0] == 'F') {   /* FILTER 1, FILTER 2: the curve, CUT where it bends */
+        int f2 = cos_page()->tab[7] == '2';
+        const volatile int8_t *x2 = trk_x2[song.sel % NTRK];
+        int32_t ty = f2 ? x2[X2_F2T] : t->p[P_FTYPE] + 1, cut = f2 ? x2[X2_F2C] : (trk_engp(t) == &ENG_ANALOG ? t->p[P_E4] : t->p[P_FCUT]),
+                res = f2 ? x2[X2_F2R] : (trk_engp(t) == &ENG_ANALOG ? t->p[P_E5] : t->p[P_FRES]), x, y0 = 0, xc = 20 + cut * 200 / 127;
+        static const char *const FT1[] = {"LP", "HP", "BP", "COMB", "COMB-", "MS20"};
+        for (x = 20; x < 220; x++) {
+            int32_t d = x - xc, a = d < 0 ? -d : d, pk = res * 30 / 127, y;
+            int32_t lp = d < 0 ? 0 : d * 2, hp = d > 0 ? 0 : -d * 2;
+            y = ty == 2 ? hp : ty == 3 ? a * 2 : ty == 4 ? (a < 12 ? 40 - a * 3 : 0) : ty >= 5 ? ((x / 8) & 1) * 10 : ty == 0 ? 0 : lp;
+            if (ty && ty != 4 && ty < 5) y -= a < 12 ? pk * (12 - a) / 12 : 0;   /* (the resonance's peak at CUT) */
+            y = 74 + clamp(y, -30, 60);
+            if (x > 20) cv_line(x - 1, y0, x, y, ty ? C_FG : C_DIM);
+            y0 = y;
+        }
+        if (ty) cv_rect(xc, 140, 1, 4, C_RED);
+        cos_txc(120, 140, CZ_LBL, f2 ? N_F2TYPE[ty % 5] : FT1[(ty - 1) % 6], C_MID);
+        return;
+    }
+    if (trk_engp(t)->ownenv && cz.mode == CM_AMP && (cz.tab[CM_AMP] == 0u || cos_page()->id[1] == P_ED_PIT)) {
         str_cpy(b, trk_engp(t)->name, 16);
         cos_up(b);
         cos_txc(120, 64, CZ_TALL, b, C_FG);

@@ -235,6 +235,60 @@ int main(void)
         cz.fx_down = 0; perf_k[1] = perf_k[3] = 0;
     }
 
+    /* LFO shapes: every one within Q15 over a cycle; LFO 2 runs at its RATE, the matrix reads it (LFO2) */
+    {
+        uint32_t w, q, bad = 0;
+        int32_t lo = 0, hi = 0, v;
+        for (w = 0; w < 11u; w++)
+            for (q = 0; q < 4096u; q++) {
+                v = lfo_shape(w, q << 20, 0x12345678u, 0x9ABCDEF0u);
+                bad += v < -32768 || v > 32767;
+                if (w == 9u) { lo = v < lo ? v : lo; hi = v > hi ? v : hi; }
+            }
+        CHECK(!bad, "the eleven shapes stay within Q15 (%u out)", bad);
+        CHECK(hi > 30000 && lo < -30000, "EXP spans the range (%d .. %d)", lo, hi);
+        trk_x2[2][X2_RATE] = 100; trk_x2[2][X2_WAVE] = 2; trk[2].lfo2_ph = 0;
+        for (q = 0; q < 10u; q++) lfo2_tick(&trk[2]);
+        CHECK(trk[2].lfo2_ph != 0 && trk[2].lfo2_val > -32768, "LFO 2 moves (%u)", trk[2].lfo2_ph);
+        CHECK(mod_tsrc(&trk[2], MS_LFO2, 0) == trk[2].lfo2_val, "the matrix's LFO2 is LFO 2");
+        x2_defaults(2);
+    }
+    /* FILTER 2: LP at a low CUT takes a fast square down; OFF leaves it as it was; HP the other way */
+    {
+        int32_t buf[CTL], b2;
+        uint32_t i, j;
+        int64_t e_dry = 0, e_lp = 0;
+        track_t *t2 = &trk[2];
+        for (i = 0; i < NVOICE; i++) t2->v[i].active = 0;
+        trk_x2[2][X2_F2T] = 1; trk_x2[2][X2_F2C] = 20; trk_x2[2][X2_F2R] = 0; f2_on[2] = 0;
+        for (j = 0; j < 8u; j++) {
+            for (i = 0; i < CTL; i++) buf[i] = (i & 2u) ? 8000 : -8000;
+            track_f2(t2, buf, CTL);
+        }
+        for (i = 0; i < CTL; i++) { e_dry += 8000LL * 8000LL; e_lp += (int64_t)buf[i] * buf[i]; }
+        CHECK(e_lp * 20 < e_dry, "LP at CUT 20: the fast square down by more than 13 dB");
+        trk_x2[2][X2_F2T] = 0;
+        for (j = 0; j < 2u; j++) { for (i = 0; i < CTL; i++) buf[i] = (i & 2u) ? 8000 : -8000; track_f2(t2, buf, CTL); }
+        for (i = 0, b2 = 0; i < CTL; i++) b2 |= buf[i] != ((i & 2u) ? 8000 : -8000);
+        CHECK(!b2 && !f2_on[2], "OFF: faded out, then the input untouched");
+        x2_defaults(2);
+    }
+    /* projects keep LFO 2 and FILTER 2 ('X2'), and a slot read for its name leaves the live ones alone */
+    {
+        char nm[16];
+        song.playing = 0;
+        trk_x2[3][X2_F2T] = 3; trk_x2[3][X2_F2C] = 90; trk_x2[3][X2_RATE] = -5; trk_x2[3][X2_F2E] = -20;
+        set_engine_of(&trk[0], ENGI_DRUM); grid_hit(&trk[0], 0, 0, 1);
+        project_save(1);
+        x2_defaults(3);
+        proj_slot_name(1, nm);
+        CHECK(trk_x2[3][X2_F2T] == 0, "reading slot B's name: the live FILTER 2 kept (OFF)");
+        project_load(1);
+        CHECK(trk_x2[3][X2_F2T] == 3 && trk_x2[3][X2_F2C] == 90 && trk_x2[3][X2_RATE] == -5 && trk_x2[3][X2_F2E] == -20,
+              "loaded: T4's BP at 90, LFO 2 in time, ENV -20 (%d %d %d %d)", trk_x2[3][X2_F2T], trk_x2[3][X2_F2C], trk_x2[3][X2_RATE], trk_x2[3][X2_F2E]);
+        x2_defaults(3);
+    }
+
     printf("cos_test: %s (%d failures)\n", fails ? "FAILED" : "ok", fails);
     return fails != 0;
 }

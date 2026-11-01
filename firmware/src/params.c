@@ -1,7 +1,9 @@
 /* SPDX-License-Identifier: GPL-3.0-only
  * Copyright (C) 2026 Leo Kuroshita (@kurogedelic), Hügelton Instruments */
 /* Parameter descriptors, formatting and the page table. */
-static const char *const N_LWAVE[] = {"SIN", "TRI", "SAW", "SQR", "S&H"};
+static const char *const N_LWAVE[] = {"SIN", "TRI", "SAW", "SQR", "S&H",
+                                      "RAMP", "PULSE", "SMOOTH", "STEPS", "EXP", "BOUNCE"};   /* (cursed-os: 5 ..; voice.c lfo_shape) */
+static const char *const N_APWAVE[] = {"SIN", "TRI", "SAW", "SQR", "S&H"};   /* (the AUTO-PAN's: fx.c, the first five) */
 /* (JIANT 0.6.51) the LFO's RATE below 0: in time with the tempo, -1 the slowest (next to the slowest free rate) */
 static const char *const N_LSYNC[12] = {"4BAR", "2BAR", "1BAR", "1/2", "1/4", "1/8D", "1/4T", "1/8", "1/8T", "1/16",
                                         "1/16T", "1/32"};
@@ -69,7 +71,7 @@ static const char *const N_APSYNC[] = {"FREE", "BEAT"};                  /* (JIA
 static const char *const N_APDIV[] = {"4BAR", "2BAR", "1BAR", "1/2", "1/4", "1/8", "1/16", "1/32"};   /* .. BEAT (fx.c AP_SIXT) */
 /* modulation matrix (mod.c): sources, destinations (E1..E8 = P_E0..P_E7: shown with the engine's labels) */
 static const char *const N_MSRC[] = {"OFF", "LFO", "ENV", "VEL", "KEY", "RAND", "MODW", "AT", "EXPR",
-                                     "M1", "M2", "M3", "M4", "STEP", "NOISE", "PROX"};   /* (0.7.8) NOISE; (V10.14) PROX */   /* (JIANT: the macros, LFO held; the modulation sequence) */
+                                     "M1", "M2", "M3", "M4", "STEP", "NOISE", "PROX", "LFO2"};   /* (0.7.8) NOISE; (V10.14) PROX */   /* (JIANT: the macros, LFO held; the modulation sequence) */
 static const char *const N_MDST[] = {"OFF", "PITCH", "CUT", "SHP", "AMP", "PAN", "DIST", "CHO", "DLY", "REV", "RATE",
                                      "VIB", "E1", "E2", "E3", "E4", "E5", "E6", "E7", "E8",
                                      "CLIP", "PNCH",   /* (JIANT: the master, FX > MASTER) */
@@ -83,6 +85,25 @@ static const char *const N_ENGNAME[] = {"ANALOG", FELUCCA_FM4 ? "DIGITAL" : "-",
 #define PD(l, f, mn, mx, df) {l, f, mn, mx, df, 0, 0}
 #define PE(l, n, df) {l, F_ENUM, 0, (int16_t)(sizeof(n) / sizeof(n[0]) - 1), df, n, 0}
 
+/* (cursed-os) each track's second LFO and second filter: kept apart from p[] (the stores' parameter count is full),
+ * in a project's 'X2' block (project.c proj_x2), edited on cursed-os's ENV pages (cos.c). LFO 2: RATE (as LFO's: below
+ * 0 in time), WAVE; FILTER 2 on the part after FILTER (voice.c track_f2): TYPE (OFF: out of the chain) CUT RES, ENV
+ * (the loudest voice's envelope) and LFO 2's amounts */
+enum { X2_RATE, X2_WAVE, X2_F2T, X2_F2C, X2_F2R, X2_F2E, X2_F2L, X2_N };
+static const char *const N_F2TYPE[] = {"OFF", "LP", "HP", "BP", "NOTCH"};
+static const param_desc_t X2_DESC[X2_N] = {
+    {"RATE", F_LFOHZ, -12, 127, 40, 0, 0}, {"WAVE", F_ENUM, 0, (int16_t)(sizeof N_LWAVE / sizeof N_LWAVE[0] - 1), 0, N_LWAVE, 0},
+    {"TYPE", F_ENUM, 0, 4, 0, N_F2TYPE, 0}, {"CUT", F_CUTOFF, 0, 127, 64, 0, 0}, {"RES", F_PCT, 0, 127, 0, 0, 0},
+    {"ENV", F_BIPCT, -64, 63, 0, 0, 0}, {"FILT 2", F_BIPCT, -64, 63, 0, 0, 0}};   /* (FILT 2: LFO 2 on FILTER 2) */
+static volatile int8_t trk_x2[NTRK][X2_N] = {{40, 0, 0, 64, 0, 0, 0}, {40, 0, 0, 64, 0, 0, 0}, {40, 0, 0, 64, 0, 0, 0},
+                                            {40, 0, 0, 64, 0, 0, 0}, {40, 0, 0, 64, 0, 0, 0}, {40, 0, 0, 64, 0, 0, 0}};
+_Static_assert(NTRK == 6, "trk_x2's defaults: six tracks");
+static void x2_defaults(uint32_t k)
+{
+    uint32_t i;
+    for (i = 0; i < X2_N; i++)
+        trk_x2[k % NTRK][i] = (int8_t)X2_DESC[i].def;
+}
 static const param_desc_t TP[P_COUNT] = {
     [P_LEVEL] = PD("LEVEL", F_DB, 0, 127, 104),
     [P_ATK] = PD("ATK", F_TIME, 0, 127, 10),
@@ -132,7 +153,7 @@ static const param_desc_t TP[P_COUNT] = {
     [P_MUTE] = PE("MUTE", N_ONOFF, 0),
     [P_APDEP] = PD("DEPTH", F_PCT, 0, 127, 0),       /* (JIANT 0.6.9) AUTO PAN (core.h: the old SLICER's slots) */
     [P_APRATE] = PD("RATE", F_LFOHZ, 0, 127, 2),    /* (BEAT: 0..7, page_desc AP_BEAT) */
-    [P_APWAVE] = PE("WAVE", N_LWAVE, 1),
+    [P_APWAVE] = PE("WAVE", N_APWAVE, 1),
     [P_APSYNC] = PE("SYNC", N_APSYNC, 1),
 #define MSLOT(k) [P_M##k##SRC] = PE("SRC" #k, N_MSRC, 0), [P_M##k##DST] = PE("DEST" #k, N_MDST, 0), \
                  [P_M##k##AMT] = PD("AMT" #k, F_BIPCT, -64, 63, 0)

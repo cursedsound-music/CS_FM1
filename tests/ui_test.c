@@ -2777,7 +2777,7 @@ static int test_menu_tabs(void)
         memset(&favorites.factory[6][22], 0, 10);
         memset(&bp, 0, sizeof bp);
         mod_prox = 0;
-        ok = MS_PROX == 15 && MS_N == 16 && str_eq(N_MSRC[MS_PROX], "PROX") && !MS_BIPOLAR(MS_PROX);
+        ok = MS_PROX == 15 && MS_N == 17 && str_eq(N_MSRC[MS_LFO2], "LFO2") && str_eq(N_MSRC[MS_PROX], "PROX") && !MS_BIPOLAR(MS_PROX);
         for (k = 0; k < 40u; k++)
             w[k] = LV(80u);
         bt_prox_step(w, 8, 1, t);

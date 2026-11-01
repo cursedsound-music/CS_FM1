@@ -695,6 +695,9 @@ typedef struct track {
     int32_t lfo_val;             /* Q15 */
     int32_t lfo_fade;            /* Q15 ramp after note-on */
     uint32_t lfo_rnd;
+    uint32_t lfo_prev;           /* (cursed-os) the S&H value before (SMOOTH glides from it) */
+    uint32_t lfo2_ph, lfo2_rnd, lfo2_prev;   /* (cursed-os) LFO 2 (params.c trk_x2): phase, its random values */
+    int32_t lfo2_val;            /* .. Q15 */
     /* keyboard / arp input: held notes in press order */
     uint8_t held[16];
     uint8_t nheld;

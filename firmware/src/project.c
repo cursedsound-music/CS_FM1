@@ -279,6 +279,36 @@ static __attribute__((noinline)) uint32_t proj_tp(const project_t *q, const uint
     return 4u;
 }
 
+/* (cursed-os) the tracks' LFO 2 and FILTER 2 (params.c trk_x2): 'X' '2' and NTRK x X2_N bytes (the signed ones
+ * biased by 64), when any is not its default; a project without it opens with the defaults (as proj_tp) */
+static __attribute__((noinline)) uint32_t proj_x2(const uint8_t *bc, uint32_t pos, uint32_t room)
+{
+    uint8_t *b = (uint8_t *)(uintptr_t)bc;
+    uint32_t k, i, any = 0;
+    if (!room) {
+        for (k = 0; k < NTRK; k++)
+            for (i = 0; i < X2_N; i++)
+                any |= trk_x2[k][i] != X2_DESC[i].def;
+        if (!any) return 0;
+        if (b) {
+            b[pos] = 'X'; b[pos + 1u] = '2';
+            for (k = 0; k < NTRK; k++)
+                for (i = 0; i < X2_N; i++)
+                    b[pos + 2u + k * X2_N + i] = (uint8_t)(trk_x2[k][i] + 64);
+        }
+        return 2u + NTRK * X2_N;
+    }
+    if (pos + 2u + NTRK * X2_N > room || b[pos] != 'X' || b[pos + 1u] != '2') {
+        for (k = 0; k < NTRK; k++)
+            x2_defaults(k);
+        return 0;
+    }
+    for (k = 0; k < NTRK; k++)
+        for (i = 0; i < X2_N; i++)
+            trk_x2[k][i] = (int8_t)clamp((int32_t)b[pos + 2u + k * X2_N + i] - 64, X2_DESC[i].min, X2_DESC[i].max);
+    return 2u + NTRK * X2_N;
+}
+
 /* (p9) the master's EQ: 'E' 'Q' and its four gains (-12 .. 12, a byte each), when any is set; a project without it
  * opens flat (as proj_tp) */
 static __attribute__((noinline)) uint32_t proj_eq(const uint8_t *bc, uint32_t pos, uint32_t room)
@@ -892,6 +922,7 @@ static uint32_t proj_packed_size(const project_t *q)
         n += 3u;
     n += proj_tp(q, 0, 0, 0);                           /* (snd8) the master's TAPE, when on */
     n += proj_eq(0, 0, 0);                              /* (p9) its EQ, when set */
+    n += proj_x2(0, 0, 0);                              /* (cursed-os) LFO 2 and FILTER 2, when set */
     if (q->g[G_DMOD] != GP[G_DMOD].def)                 /* (0.6.86) the delay's MOD's, when not the default */
         n += 3u;
     if (q->g[G_DTYPE] || q->g[G_DPING])                 /* (0.6.90) its TYPE and PING-PONG's */
@@ -1067,6 +1098,7 @@ static int proj_pack(project_store_t *out, const project_t *q)
     pos += proj_tp(q, b, pos, 0);                       /* (0.9.9-snd8) the master's TAPE, when on (after DRIVE's) */
     pos += proj_eq(b, pos, 0);
     if(q->dx_acoustic) { b[pos++]='D';b[pos++]='A';b[pos++]=q->dx_acoustic&127u; }                          /* (p9) its EQ, when set */
+    pos += proj_x2(b, pos, 0);                          /* (cursed-os) LFO 2 and FILTER 2, when set (after DA's) */
     memcpy(b + PROJC_PFX_OFF, q->pfx_lane, sizeof q->pfx_lane);
     b[PROJC_PFX_OFF + sizeof q->pfx_lane] = q->pfx_ltgt > 2u ? 0u : q->pfx_ltgt;
     for (i = 0; i < 4u; i++)
@@ -1354,7 +1386,8 @@ static int proj_unpack_c(project_t *q, const uint8_t *b)
     }
     pos += proj_tp(q, b, pos, room);                    /* (0.9.9-snd8) the master's TAPE (else 0) */
     pos += proj_eq(b, pos, room);
-    if(pos+3u<=room && b[pos]=='D' && b[pos+1u]=='A') q->dx_acoustic=b[pos+2u]&127u;                       /* (p9) its EQ (else flat) */
+    if(pos+3u<=room && b[pos]=='D' && b[pos+1u]=='A') { q->dx_acoustic=b[pos+2u]&127u; pos += 3u; }        /* (p9) its EQ (else flat) */
+    pos += proj_x2(b, pos, room);                       /* (cursed-os) LFO 2 and FILTER 2 (else the defaults) */
     proj_new_tracks(q, nt);                             /* (a FUNC of fewer tracks: the rest at power-on) */
     for (t = nt; t < NTRK; t++)
         memcpy(q->fm6[t], FM6_INIT, FM6_PACKED);
@@ -2092,8 +2125,19 @@ static int project_used(uint32_t slot) { return proj_import(&proj_scratch, &proj
 /* (cursedsound) cos.c's SAVE page: slot's name into b (13 bytes; "" empty, UNTITLED unnamed); the slot open, 4: none */
 static void proj_slot_name(uint32_t slot, char *b)
 {
+    int16_t tv[2], ev[4];                               /* (reading a slot unpacks its TAPE, EQ, LFO 2 / FILTER 2 into the
+                                                         * live ones: the music's own kept) */
+    int8_t xv[NTRK][X2_N];
+    int used;
+    memcpy(tv, tape_v, sizeof tv);
+    memcpy(ev, eq_v, sizeof ev);
+    memcpy(xv, (const void *)trk_x2, sizeof xv);
     b[0] = 0;
-    if (!project_used(slot)) return;
+    used = project_used(slot);
+    memcpy(tape_v, tv, sizeof tv);
+    memcpy(eq_v, ev, sizeof ev);
+    memcpy((void *)trk_x2, xv, sizeof xv);
+    if (!used) return;
     proj_name_get(b, (const uint8_t *)proj_scratch.name);
     if (!b[0]) str_cpy(b, "UNTITLED", PROJ_NAME_LEN + 1u);
 }
