@@ -6,8 +6,9 @@ cursed-os is an Elektron-style interface built on [JIANT FM](https://github.com/
 sequencer. One button per mode, its pages as tabs, the 16 white keys as trigs, four knobs per page. The screen is black and
 white; red is kept for what is live: the playhead, the knob being turned, REC, a key change waiting for the bar.
 
-**[Try it in your browser](https://cursedsound-music.github.io/cursed-os/)**: the real firmware compiled to WebAssembly,
-with sound, played with your computer keyboard and mouse (Chrome or Edge).
+**The browser preview**: the real firmware compiled to WebAssembly, with sound, played with your computer keyboard and
+mouse. Every push to `main` builds it (Actions, the run's "cursed-os-site" download: unzip, then
+`python3 -m http.server -d cursed-os-site` and open <http://localhost:8000>).
 
 > **Status: early and untested on hardware.** Everything here has been built and run in the host tests and the browser
 > emulator, not yet on a real FM-1. Back up your FM-1 before installing, and keep the web installer's
@@ -56,8 +57,9 @@ See [BUILDING.md](BUILDING.md) (JIANT's): `tools/get_toolchain.sh` for JieLi's t
 (`tests/cos_test.c`, `tests/acid_test.c`). The browser preview: `web/emu/build.sh` (Emscripten) or
 `web/emu/build_clang.sh` (plain clang and a WASI libc), then `python3 -m http.server -d build/emu`.
 
-Every push to `main` rebuilds the preview on GitHub Pages (`.github/workflows/site.yml`, after JIANT's); when JieLi's
-toolchain downloads on the runner, the firmware file and the web installer go up beside it.
+Every push to `main` runs `.github/workflows/site.yml` (after JIANT's): the tests, the preview and, when JieLi's toolchain
+downloads on the runner, the firmware file and the web installer, as a private download on the run's page. Publishing
+them on GitHub Pages is a separate, manual step (Run workflow, "publish"): a Pages site is public.
 
 ## Credits
 

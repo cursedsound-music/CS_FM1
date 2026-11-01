@@ -1,12 +1,19 @@
 # SPDX-License-Identifier: GPL-3.0-only
-# cursed-os's site on GitHub Pages, on every push to main: the browser preview (web/emu: the firmware's sources compiled to
-# WebAssembly) at the root, and, when JieLi's toolchain downloads, the firmware package and the web installer next to it.
-# Needs Settings > Pages > Source: "GitHub Actions" once. After JIANT FM's emulator workflow.
+# cursed-os's builds, on every push to main: the tests, the browser preview (web/emu: the firmware's sources compiled to
+# WebAssembly) and, when JieLi's toolchain downloads, the firmware package and the web installer. They stay private: a
+# download on the run's page (Actions, "cursed-os-site"), for whoever can see the repository. GitHub Pages only when run by
+# hand with "publish" ticked (Actions > site > Run workflow; Settings > Pages > Source: "GitHub Actions" first): a Pages
+# site can be seen by anyone, even from a private repository. After JIANT FM's emulator workflow.
 name: site
 on:
   push:
     branches: [main]
   workflow_dispatch:
+    inputs:
+      publish:
+        description: "Publish the preview and the firmware on GitHub Pages (anyone can see it)"
+        type: boolean
+        default: false
 permissions:
   contents: read
   pages: write
@@ -69,11 +76,19 @@ jobs:
           python3 web/make_site.py build/felucca.fwsc "cursed-os-${GITHUB_SHA::7}" build/site
           cp -r build/site/webapp build/site/firmware build/emu/
           cp build/felucca.fwsc build/emu/cursed-os.fwsc
-      - uses: actions/upload-pages-artifact@v3
+      - name: the private download (the preview, the firmware file and the installer when built)
+        uses: actions/upload-artifact@v4
+        with:
+          name: cursed-os-site
+          path: build/emu
+          retention-days: 30
+      - if: github.event_name == 'workflow_dispatch' && inputs.publish
+        uses: actions/upload-pages-artifact@v3
         with:
           path: build/emu
   deploy:
     needs: build
+    if: github.event_name == 'workflow_dispatch' && inputs.publish
     runs-on: ubuntu-24.04
     environment:
       name: github-pages
