@@ -186,7 +186,7 @@ static int cos_keys_ui(void)
            ((fm1_in.buttons >> panel.btn[B_SCL]) & 1u);
 }
 
-static void cos_input(void)
+static __attribute__((noinline)) void cos_input(void)
 {
     uint32_t released = 0, pressed = fm1_input_edges(&released), notes = fm1_input_note_edges(), k, b;
     int scl_held = (int)((fm1_in.buttons >> panel.btn[B_SCL]) & 1u);
@@ -560,7 +560,7 @@ static void cos_scene(void)
 }
 
 /* six strips of 40 rows: each drawn whole, sent only when its pixels changed (the panel takes ~77 ms a screen) */
-static void cos_draw(void)
+static __attribute__((noinline)) void cos_draw(void)
 {
     uint32_t s, i, h;
     ui.frame++;
@@ -581,7 +581,7 @@ static void cos_draw(void)
     scr_shown();
 }
 
-static void cos_leds(void)
+static __attribute__((noinline)) void cos_leds(void)
 {
     uint8_t nl[FM1_NCOL] = {0}, nd[FM1_NCOL] = {0};
     const track_t *t = TSEL;
@@ -615,7 +615,7 @@ static void cos_leds(void)
 }
 
 /* HOME + GLO held together: cursed-os <-> JIANT's interface (checked before either runs; the edge once) */
-static int cos_switch(void)
+static __attribute__((noinline)) int cos_switch(void)
 {
     uint32_t both = (1u << panel.btn[B_HOME]) | (1u << panel.btn[B_GLO]), held = (fm1_in.buttons & both) == both;
     if (held && !cz.combo) {

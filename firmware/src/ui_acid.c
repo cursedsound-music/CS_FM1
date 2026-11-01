@@ -150,7 +150,7 @@ static void ac_gen(uint32_t k, uint32_t hand)
 /* the knob views (params.c page_desc: ids ID_AC0 + AK_*, ID_AC1 + AK_* - 8) */
 static int16_t ac_v[AK_N] COS_RAM;
 static param_desc_t ac_d COS_RAM;
-static const param_desc_t *ac_desc(uint32_t k, int16_t **valp)
+static __attribute__((noinline)) const param_desc_t *ac_desc(uint32_t k, int16_t **valp)
 {
     static const char *const LB[AK_N] = {"DENSITY", "SLIDE", "ACCENT", "OCTAVE", "STEPS", "NOTES", "TIE", "LOCK", "EVERY",
                                          "AMOUNT", "ROOT", "SCALE"};
@@ -180,7 +180,7 @@ static const param_desc_t *ac_desc(uint32_t k, int16_t **valp)
 }
 
 /* knob k turned to v: the setting, then (not LOCK, EVERY, AMOUNT) the line again */
-static void ac_put(uint32_t k, int32_t v)
+static __attribute__((noinline)) void ac_put(uint32_t k, int32_t v)
 {
     ac_t *a = ac_of(song.sel);
     uint8_t *f[AK_N] = {&a->dens, &a->slide, &a->acc, &a->oct, &a->steps, &a->notes, &a->tie, &a->lock, &a->every,
@@ -226,7 +226,7 @@ static void ac_mutate(uint32_t k, uint32_t hand)
     a->ms = (uint16_t)(ac_h(fm1_ms, k, a->ms) | 1u);
     ac_gen(k, hand);
 }
-static void ac_oct(int up, int mu)
+static __attribute__((noinline)) void ac_oct(int up, int mu)
 {
     ac_t *a = ac_of(song.sel);
     if (drum_track(TSEL)) { ui_message("ACID: PICK A MELODIC TRACK"); return; }
@@ -236,7 +236,7 @@ static void ac_oct(int up, int mu)
     else { a->ms = 0; ac_gen(song.sel, 1); ui_message("ANCHOR"); }
 }
 /* every UI frame: playing (not a song's chain), each track with EVERY on mutates in the last beat of every EVERY bars */
-static void ac_tick(void)
+static __attribute__((noinline)) void ac_tick(void)
 {
     uint32_t k, b = bar_n;
     for (k = 0; !song.playing && k < NTRK; k++) ac[k].bar = 0;
@@ -253,7 +253,7 @@ static void ac_tick(void)
 /* ------------------------------------------------------------- the graph --- */
 /* the line as a 303 would show it: a lane of steps (a note: its name and octave; an accent bright, a slide joined to the
  * next, a tie a bar on), the key, LOCK and the mutation on top */
-static void graph_acid(const track_t *t)
+static __attribute__((noinline)) void graph_acid(const track_t *t)
 {
     static const char *const NN[12] = {"C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"};
     static const char *const LK[4] = {"", "LOCK R", "LOCK N", "LOCK R+N"};
