@@ -26,6 +26,7 @@ static int cos_active(void);
 static int cos_switch(void);
 static void cos_input(void);
 static void cos_draw(void);
+static void cos_splash(uint32_t ms, int whole);
 static void cos_leds(void);
 static void panel_setup(void);
 static void project_load(uint32_t slot);

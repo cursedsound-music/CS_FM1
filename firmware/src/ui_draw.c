@@ -1853,11 +1853,23 @@ static void draw_columns(void)
  * ended, the pen's tip a white point while it writes; under it, small, the version and "by Juan Jiant". Written over
  * SPL_WRITE ms (splash_write, main.c's splash loop; MENU > ANIM OFF: whole at once). Lines only, the canvas
  * redrawn a step (~700 short lines). In the saved palette (settings_init before it) */
+#if !COS_SLIM
 #include "ui_signature.h"
+#endif
 #define SPL_WRITE 800u                              /* ms: the signature written (was 900; 0.6.51: 600 -> 800) */
 #define SPL_HOLD 900u                               /* .. then shown whole, before the UI (was 1100; 0.6.51: 500 -> 900) */
 #define SPL_SY 40                                   /* the signature's canvas on the screen (240 x SIG_H + 12) */
 #define SPL_TY 186                                  /* the two lines under it */
+#if COS_SLIM                                        /* (cursedsound) cursed-os's own: cos.c cos_splash */
+static uint8_t spl_anim;
+static void draw_splash(void) { cos_splash(spl_anim && !(ui_prefs & PREF_ANIM_OFF) ? 0u : 0xFFFFu, 1); }
+static void splash_write(uint32_t ms)
+{
+    if (!spl_anim || (ui_prefs & PREF_ANIM_OFF))
+        return;
+    cos_splash(ms, 0);
+}
+#else
 static const char *const SPLASH_LINES[] = {FELUCCA_VERSION, "by Juan Jiant"};
 static uint8_t spl_anim;                            /* main.c: 1 = the signature to be written (splash_write) */
 static int32_t sig_seg(uint32_t i)                  /* segment i -> i + 1's length, px (0: a stroke starts at i + 1) */
@@ -2003,6 +2015,7 @@ static void splash_write(uint32_t ms)
     splash_sig(ms >= SPL_WRITE ? 0x7FFFFFFF : (int32_t)((int64_t)sig_len() * ms / SPL_WRITE), ms);
     lcd_sync();
 }
+#endif
 
 /* UPDATE MODE countdown (main.c: OCT- + OCT+ held): over everything, the menu and the dialogs too */
 static void draw_uboot(void)

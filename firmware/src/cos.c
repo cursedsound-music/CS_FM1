@@ -832,6 +832,61 @@ static void cos_scene(void)
 }
 
 /* six strips of 40 rows: each drawn whole, sent only when its pixels changed (the panel takes ~77 ms a screen) */
+/* ------------------------------------------------------------ power-on --- */
+/* the splash (ui_draw.c draw_splash / splash_write under COS_SLIM; main.c's boot loop calls it every ~4 ms for
+ * SPL_WRITE + SPL_HOLD ms): black, a few still stars, the name 2x, the version, a 16-block bar filling like a pattern
+ * (the block being filled red), READY. Drawn whole once, then only the bar's strip when a block fills */
+#define COS_VERSION "0.4"
+static void cos_px2(int32_t x, int32_t y, const char *s, uint16_t c)      /* (the face 2 x 2) */
+{
+    int32_t r, b, b0;
+    for (; *s; s++, x += 16) {
+        uint32_t ch = (uint32_t)(uint8_t)*s;
+        const uint8_t *g;
+        if (ch < 32u || ch > 95u) ch = '?';
+        g = COS_FONT[ch - 32u];
+        for (r = 0; r < 8; r++)
+            for (b = 0; b < 8;) {
+                if (!((g[r] << b) & 0x80u)) { b++; continue; }
+                for (b0 = b; b < 8 && ((g[r] << b) & 0x80u); b++) {}
+                cv_rect(x + b0 * 2, y + r * 2, (b - b0) * 2, 2, c);
+            }
+    }
+}
+static void cos_splash_scene(uint32_t n)
+{
+    uint32_t k;
+    for (k = 0; k < 30u; k++) {                          /* the stars: still, away from the words */
+        uint32_t h = (k + 7u) * 2654435761u;
+        int32_t x = (int32_t)((h >> 4) % 236u) + 2, y = (int32_t)((h >> 14) % 236u) + 2;
+        if (x > 30 && x < 210 && y > 64 && y < 196) continue;
+        cv_rect(x, y, (h >> 30) == 3u ? 2 : 1, (h >> 30) == 3u ? 2 : 1, (h >> 28) & 1u ? C_MID : C_DIM);
+    }
+    cos_px2(120 - 72, 82, "CURSED-OS", C_FG);
+    cv_rect(48, 104, 144, 1, C_DIM);
+    cos_txc(120, 112, CZ_LBL, "FM-1  V" COS_VERSION, C_MID);
+    for (k = 0; k < 16u; k++)                            /* the bar: 16 steps */
+        cv_rect(25 + (int32_t)k * 12, 160, 9, 6, k < n ? C_FG : k == n ? C_RED : C_DARK);
+    cos_txc(120, 174, CZ_LBL, n >= 16u ? "READY" : "BOOT", n >= 16u ? C_FG : C_DIM);
+    cos_txc(120, 222, CZ_LBL, "ON JIANT " FELUCCA_VERSION, C_DARK);
+}
+static __attribute__((noinline)) void cos_splash(uint32_t ms, int whole)
+{
+    static uint8_t shown COS_RAM;
+    uint32_t n = ms * 16u / (SPL_WRITE + SPL_HOLD - 350u), s;
+    if (n > 16u) n = 16u;
+    if (!whole && n == shown) return;
+    for (s = whole ? 0u : 4u; s < (whole ? 6u : 5u); s++) {   /* (the bar and READY: strip 4, 160..199) */
+        cv_begin(240, 40, C_BG);
+        cv_oy = -(int32_t)s * 40;
+        cos_splash_scene(n);
+        cv_oy = 0;
+        cv_blit(0, s * 40u);
+    }
+    shown = (uint8_t)n;
+    lcd_sync();
+}
+
 static __attribute__((noinline)) void cos_draw(void)
 {
     uint32_t s, i, h;
