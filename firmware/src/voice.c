@@ -473,7 +473,8 @@ static __attribute__((noinline)) void track_f2(track_t *t, int32_t *out, uint32_
     f2_ic2[ti] = ic2;
 }
 
-static void track_lfo_tick(track_t *t)
+static __attribute__((noinline)) void track_lfo_tick(track_t *t)   /* (cursed-os) out of line, in the image: the RAM
+                                                                   * code's room (called through a register) */
 {
     uint32_t old = t->lfo_ph;
     int32_t r = t->p[P_LRATE];
@@ -496,11 +497,7 @@ static void track_lfo_tick(track_t *t)
         t->lfo_rnd = lfo_rand(t);
     }
     t->lfo_val = lfo_wave(t, t->lfo_ph);
-    {
-        void (*f)(track_t *) = lfo2_tick;               /* (cursed-os: as track_f2, out of the RAM code's reach) */
-        FM1_OPAQUE(f);
-        f(t);
-    }
+    lfo2_tick(t);
     if (t->lfo_fade < 32767) {
         int32_t step = (int32_t)(ENV_LIN[t->p[P_LFADE] & 127] >> 9);
         t->lfo_fade = t->p[P_LFADE] ? clamp(t->lfo_fade + (step ? step : 1), 0, 32767) : 32767;
@@ -1701,7 +1698,11 @@ static uint32_t track_render(track_t *t, int32_t *out, uint32_t n)
             pe_new[i] = t->p[P_E0 + i];
             t->p[P_E0 + i] = t->pe_old[i];
         }
-    track_lfo_tick(t);
+    {
+        void (*f)(track_t *) = track_lfo_tick;
+        FM1_OPAQUE(f);
+        f(t);
+    }
     {   /* (0.6.50) MORPH slewed (at most 3 of the knob's steps a block) and ramped by the engines across the block */
         int32_t g = clamp(p[P_MORPH], 0, 127) << 8, c = t->mo_cur, ms = (3 * (int32_t)CTL / 32) << 8;   /* (3 a block of 32) */
         t->mo_prev = (uint16_t)c;
