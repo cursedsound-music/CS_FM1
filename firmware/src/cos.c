@@ -36,7 +36,7 @@
 #define C_DARK 0x2965u                          /* (45, 45, 45): empty cells, the arcs' tracks */
 
 enum { CM_HOME, CM_TRIG, CM_SRC, CM_AMP, CM_DRONE, CM_FX, CM_GEN, CM_MIX, CM_KEY, CM_PROJ, CM_N };
-enum { CK_NONE, CK_TRK, CK_GLO, CK_AC, CK_EU, CK_COS };
+enum { CK_NONE, CK_TRK, CK_GLO, CK_AC, CK_EU, CK_COS, CK_DB };
 enum { CC_OUTCH, CC_MOUT, CC_CLOCK, CC_SLOT, CC_TRKS, CC_LOAD, CC_COMP, CC_CATK, CC_CREL, CC_LIM, CC_PF0, CC_PF3 = CC_PF0 + 3,
        CC_X2, CC_X2E = CC_X2 + 15, CC_OCT, CC_KICK, CC_KICKE = CC_KICK + 4, CC_LN0, CC_LNE = CC_LN0 + 7, CC_KDRV, CC_BT,
        CC_L1SYNC, CC_L1RATE, CC_L1WAVE, CC_L1MODE, CC_L1PH, CC_L1FADE, CC_L2SYNC, CC_L2RATE, CC_BPM,
@@ -52,10 +52,14 @@ static const cpg_t CZP_TRIG[] = {{"TRIG", CK_TRK, {P_SLEN, P_SDIV, P_SSWING, P_S
  * third. ENV: the amp, the filter, the envelope's modulation, the two LFO pages */
 #define CZ_MOD(n) {"MOD " #n, CK_TRK, {P_M##n##SRC, P_M##n##DST, P_M##n##AMT, X}}
 static const cpg_t CZP_SRC[] = {{"SRC 1", CK_TRK, {P_E0, P_E1, P_E2, P_E3}}, {"SRC 2", CK_TRK, {P_E4, P_E5, P_E6, P_E7}},
-                               {"VOICE", CK_TRK, {P_VOICE, P_GLIDE, P_DETUNE, ID_OCT}}, CZ_MOD(1), CZ_MOD(2), CZ_MOD(3), CZ_MOD(4)};
+                               {"VOICE", CK_TRK, {P_VOICE, P_GLIDE, P_DETUNE, ID_OCT}},
+                               {"CHORD", CK_TRK, {P_CHRD, P_CVOI, P_CSTR, X}},   /* (a key plays a chord: seq.c chord_build) */
+                               CZ_MOD(1), CZ_MOD(2), CZ_MOD(3), CZ_MOD(4)};
 static const cpg_t CZP_SRCV[] = {{"SRC 1", CK_TRK, {P_E0, P_E1, P_E2, P_E3}}, {"SRC 2", CK_TRK, {P_E4, P_E5, P_E6, P_E7}},
                                 {"WORDS", CK_TRK, {P_VLANG, P_VLYR, X, X}},   /* (THEME, ARTIC: on the first page) */
-                                {"VOICE", CK_TRK, {P_VOICE, P_GLIDE, P_DETUNE, ID_OCT}}, CZ_MOD(1), CZ_MOD(2), CZ_MOD(3), CZ_MOD(4)};
+                                {"VOICE", CK_TRK, {P_VOICE, P_GLIDE, P_DETUNE, ID_OCT}},
+                                {"CHORD", CK_TRK, {P_CHRD, P_CVOI, P_CSTR, X}},
+                                CZ_MOD(1), CZ_MOD(2), CZ_MOD(3), CZ_MOD(4)};
 /* a DRUM track's EDIT: the KICK (DRUM-X's lane 1, both its MORPH ends moved together), the eight sounds' levels, then
  * the kit's (SRC 1, SRC 2: the engine's E1 .. E8), the matrix */
 static const cpg_t CZP_SRCD[] = {{"KICK", CK_COS, {CC_KICK + DXP_PITCH, CC_KICK + DXP_PMOD, CC_KICK + DXP_DECAY, CC_LN0}},
@@ -88,6 +92,11 @@ static const cpg_t CZP_FX[] = {{"SEND", CK_TRK, {P_DIST, P_CHOR, P_DLY, P_REV}},
                               {"DELAY", CK_GLO, {G_DTIME, G_DFDBK, G_DCOLOR, G_DPING}},    /* (the buses: every track's) */
                               {"REVERB", CK_GLO, {G_RSIZE, G_RDAMP, G_RPRE, G_RTYPE}}};
 static const cpg_t CZP_GENA[] = {{"ACID", CK_AC, {AK_DENS, AK_SLIDE, AK_ACC, ID_OCT}}, {"ACID 2", CK_AC, {AK_STEPS, AK_NOTES, AK_TIE, AK_OCT}},
+                                {"ACID 3", CK_AC, {AK_EVERY, AK_AMT, AK_ROOT, AK_SCALE}}, {"ACID 4", CK_AC, {AK_LOCK, X, X, X}}};
+/* (a synth track that is not ACID: DUB's chord stabs first, ACID's lines after them) */
+static const cpg_t CZP_GENS[] = {{"DUB", CK_DB, {DK_SHAPE, DK_DENS, DK_MOVE, DK_LEN}}, {"DUB 2", CK_DB, {DK_BARS, DK_VOIC, DK_ECHO, ID_OCT}},
+                                {"DUB 3", CK_DB, {DK_ROOT, X, X, X}},
+                                {"ACID", CK_AC, {AK_DENS, AK_SLIDE, AK_ACC, ID_OCT}}, {"ACID 2", CK_AC, {AK_STEPS, AK_NOTES, AK_TIE, AK_OCT}},
                                 {"ACID 3", CK_AC, {AK_EVERY, AK_AMT, AK_ROOT, AK_SCALE}}, {"ACID 4", CK_AC, {AK_LOCK, X, X, X}}};
 static const cpg_t CZP_GENE[] = {{"EUCLID", CK_EU, {EK_HITS, EK_STEPS, EK_ROT, EK_K4}}, {"MODES", CK_EU, {EK_M0, EK_M0 + 1u, EK_M0 + 2u, EK_M0 + 3u}},
                                 {"MUTATE", CK_EU, {EK_U0, EK_U0 + 1u, EK_U0 + 2u, EK_U0 + 3u}}};
@@ -136,10 +145,11 @@ static int cos_kit(void) { return drum_track(TSEL) != 0; }
 static void cos_pages(uint32_t m, const cpg_t **p, uint32_t *n)
 {
     static const cpg_t *const P[CM_N] = {CZP_HOME, CZP_TRIG, CZP_SRC, CZP_AMP, CZP_DRONE, CZP_FX, CZP_GENA, CZP_MIX, CZP_KEY, CZP_PROJ};
-    static const uint8_t N[CM_N] = {1, 1, 7, 9, 2, 4, 4, 7, 1, 1};
+    static const uint8_t N[CM_N] = {1, 1, 8, 9, 2, 4, 4, 7, 1, 1};
     int vo = m == CM_SRC && trk_engp(TSEL) == &ENG_FORMANT;
     if (m == CM_SRC && cos_kit()) { *p = CZP_SRCD; *n = NELEM(CZP_SRCD); return; }   /* (a kit: KICK, LEVELS, its own ..) */
     if (m == CM_GEN && cos_kit()) { *p = CZP_GENE; *n = 3; return; }
+    if (m == CM_GEN && trk_eng(TSEL) != ENGI_ACID) { *p = CZP_GENS; *n = NELEM(CZP_GENS); return; }
     *p = vo ? CZP_SRCV : m == CM_AMP && trk_engp(TSEL) == &ENG_ANALOG ? CZP_AMPA : P[m % CM_N];
     *n = N[m % CM_N] + (uint32_t)vo;                                      /* (VOICE: WORDS too) */
 }
@@ -470,6 +480,7 @@ static const param_desc_t *cos_knob(const cpg_t *p, uint32_t k, int16_t **vp)
             return song.g[G_RTYPE] == 2 || song.g[G_RTYPE] == 4 ? &REV_AIR : &REV_PRE;
         return &GP[id];
     case CK_AC: return ac_desc(id, vp);
+    case CK_DB: return db_desc(id, vp);
     case CK_EU: return eu_desc(id, vp);
     case CK_COS: return cos_cdesc(id, vp);
     }
@@ -546,6 +557,7 @@ static void cos_turn(uint32_t k, int32_t s)
     cz.hot_ms = fm1_ms;
     if (p->id[k] == ID_OCT) cos_cput(CC_OCT, v);
     else if (p->kind == CK_AC) ac_put(p->id[k], v);
+    else if (p->kind == CK_DB) db_put(p->id[k], v);
     else if (p->kind == CK_EU) eu_put(p->id[k], v);
     else if (p->kind == CK_COS) cos_cput(p->id[k], v);
     else *vp = (int16_t)v;
@@ -603,7 +615,15 @@ static void cos_gen_enter(void)
     uint32_t made = 0;
     if (cos_kit()) { track_select(cos_acid_trk(&made)); cz.bank = 0; }
     cz.tab[CM_GEN] = 0;
-    if (cos_empty(TSEL) && !chain_busy()) ac_throw(song.sel, 1);
+    if (cos_empty(TSEL) && !chain_busy()) {
+        if (trk_eng(TSEL) == ENGI_ACID) ac_throw(song.sel, 1);
+        else {                                           /* (any other synth: dub chord stabs, on DUB STAB) */
+            undo_mark();
+            db_sound(song.sel);
+            db_throw(song.sel, 1);
+            if (!made) cos_say("DUB CHORDS");
+        }
+    }
     if (made) ui.msg_t = 0;                              /* (what it said: the track's new sound, not NEW LINE) */
 }
 
@@ -717,7 +737,8 @@ static __attribute__((noinline)) void cos_input(void)
             } else if (cos_on_words()) cos_words(up);
             else if (cz.mode == CM_PROJ) cos_proj_oct(up);
             else if (cz.mode == CM_GEN && cos_kit()) eu_oct(up, cz.tab[CM_GEN] == 2u);
-            else if (cz.mode == CM_GEN) ac_oct(up, cz.tab[CM_GEN] == 2u);
+            else if (cz.mode == CM_GEN && cos_page()->kind == CK_DB) db_oct(up);
+            else if (cz.mode == CM_GEN) ac_oct(up, cos_page()->id[0] == AK_EVERY);
             else if (cz.mode == CM_DRONE) cz.dr_oct = (int8_t)clamp(cz.dr_oct + (up ? 1 : -1), -2, 2);
             else song.octave = (int8_t)clamp(song.octave + (up ? 1 : -1), -3, 3);
         } else
@@ -1305,6 +1326,23 @@ static void cos_body_midi(void)
 static void cos_body_gen(void)
 {
     if (cos_kit()) { cos_body_trig(); return; }
+    if (cos_page()->kind == CK_DB) {                     /* DUB: the chord, its key, the move */
+        static const char *const NN[12] = {"C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"};
+        static const char *const MV[3] = {"STATIC", "2 CHORDS", "4 CHORDS"};
+        const db_t *a = db_of(song.sel);
+        char b[24];
+        str_cpy(b, NN[db_root(song.sel, a)], sizeof b);
+        str_cpy(b + str_len(b), " ", 2);
+        str_cpy(b + str_len(b), DB_SHN[a->shape % 7u], 8);
+        str_cpy(b + str_len(b), "  ", 3);
+        str_cpy(b + str_len(b), MV[a->move % 3u], 10);
+        cos_tx(4, 38, b, C_FG);
+        cos_txr(236, 38, "OCT+ NEW GROOVE", C_DIM);
+        cz_rtop = 54;
+        cos_body_trig();
+        cz_rtop = 40;
+        return;
+    }
     {
         const ac_t *a = ac_of(song.sel);
         eu_t key;

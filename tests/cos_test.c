@@ -148,9 +148,9 @@ int main(void)
     {
         const cpg_t *pp; uint32_t n;
         cos_pages(CM_SRC, &pp, &n);
-        CHECK(n == 8u && !strcmp(pp[2].tab, "WORDS"), "a VOICE track's SRC has WORDS");
+        CHECK(n == 9u && !strcmp(pp[2].tab, "WORDS") && !strcmp(pp[4].tab, "CHORD"), "a VOICE track's SRC has WORDS, CHORD");
         song.sel = 4; cos_pages(CM_SRC, &pp, &n);
-        CHECK(n == 7u && strcmp(pp[2].tab, "WORDS"), "an ANALOG track's does not");
+        CHECK(n == 8u && strcmp(pp[2].tab, "WORDS") && !strcmp(pp[3].tab, "CHORD"), "an ANALOG track's: no WORDS, CHORD after VOICE");
     }
 
     /* ACID made easy: GEN from a kit goes over to an ANALOG track (one made from the last melodic one if none), an
@@ -550,6 +550,53 @@ int main(void)
         CHECK(lim_in > 60000 && lim_in < 70000 && lim_rs == 8u && lev_off, "LIMIT: DRIVE +6 dB, RELEASE 5 MS, AUTO LV OFF (%d)", lim_in);
         memset(&favorites.factory[6][8], 0, 10); favorites.factory[15][4] = 0; ui_polls();
         CHECK(!mc_amt && lim_in == 32768 && lim_rs == 11u && !lev_off && mc.thr == -12 && mc.rat == 3, "0s: the defaults");
+    }
+
+
+    /* DUB: GEN on an empty synth track: DUB STAB and offbeat four-note stabs in the key; MOVE, VOICING, a new groove */
+    {
+        uint32_t j, ns = 0, off = 0, bar[4] = {0, 0, 0, 0}, ok = 1;
+        const cpg_t *pp; uint32_t n;
+        track_t *t3 = &trk[3];
+        for (j = 0; j < NSTEP; j++) step_clear(&t3->step[j]);
+        set_engine_of(t3, ENGI_ANALOG); t3->p[P_ROOT] = 9;   /* (A) */
+        track_select(3); cz.mode = CM_HOME; cos_mode(CM_GEN);
+        cos_pages(CM_GEN, &pp, &n);
+        CHECK(n == 7u && pp[0].kind == CK_DB && pp[3].kind == CK_AC, "a synth track's GEN: DUB, then ACID");
+        CHECK(trk_eng(t3) == ENGI_ANALOG && t3->p[P_VOICE] == V_POLY && t3->p[P_DLY] > 0, "DUB STAB, poly, echo on it");
+        for (j = 0; j < (uint32_t)t3->p[P_SLEN]; j++) {
+            const step_t *st = &t3->step[j];
+            if (st->time != ST_NOTE || !st->n) continue;
+            ns++; off += (j & 3u) == 2u; bar[j / 16u]++;
+            ok &= st->n == 4u && st->note[0] % 12u == 9u && st->note[1] == st->note[0] + 3u && st->note[2] == st->note[0] + 7u
+                  && st->note[3] == st->note[0] + 10u && st->note[0] >= 36u && st->note[0] <= 55u;
+        }
+        CHECK(t3->p[P_SLEN] == 32 && bar[0] && bar[1], "2 bars, stabs in each (%d)", t3->p[P_SLEN]);
+        CHECK(ok, "A MIN7 every stab, root low (C3 .. G3 or an octave below)");
+        CHECK(ns >= 4u && off * 2u >= ns, "mostly on the offbeat eighths (%u of %u)", off, ns);
+        db_put(DK_MOVE, 1);
+        {
+            int32_t r0 = -1, r1 = -1;
+            for (j = 0; j < 32u; j++) if (t3->step[j].time == ST_NOTE && t3->step[j].n) { if (j < 16u && r0 < 0) r0 = t3->step[j].note[0]; if (j >= 16u && r1 < 0) r1 = t3->step[j].note[0]; }
+            CHECK(r0 >= 0 && r1 >= 0 && r0 != r1, "MOVE 2 CHORDS: the second bar moved (%d -> %d)", r0, r1);
+        }
+        db_put(DK_SHAPE, 2); db_put(DK_VOIC, 3);
+        for (j = 0; j < 32u && !(t3->step[j].time == ST_NOTE && t3->step[j].n); j++) {}
+        CHECK(j < 32u && t3->step[j].note[3] - t3->step[j].note[0] > 15u, "MIN11 OPEN: spread wider than the shape");
+        {
+            uint8_t before[32];
+            for (j = 0; j < 32u; j++) before[j] = t3->step[j].time == ST_NOTE && t3->step[j].n;
+            fm1_ms += 3000u; db_oct(1);
+            for (ns = 0, j = 0; j < 32u; j++) ns += before[j] != (t3->step[j].time == ST_NOTE && t3->step[j].n);
+            CHECK(ns > 0u, "OCT+: a new groove (%u steps changed)", ns);
+            db_oct(0);
+            for (ns = 0, j = 0; j < 32u; j++) ns += before[j] != (t3->step[j].time == ST_NOTE && t3->step[j].n);
+            CHECK(ns == 0u, "OCT-: the one before");
+        }
+        db_put(DK_DENS, 0);
+        for (ns = 0, j = 0; j < 32u; j++) ns += t3->step[j].time == ST_NOTE && t3->step[j].n;
+        CHECK(ns == 0u, "DENSITY 0: silence");
+        cz.mode = CM_HOME;
     }
 
     printf("cos_test: %s (%d failures)\n", fails ? "FAILED" : "ok", fails);

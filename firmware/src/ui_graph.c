@@ -64,6 +64,7 @@ static int32_t graph_ht = 100;
 #include "ui_organic.c"                              /* JIANT FM's organic line art (drawn by code) */
 #include "ui_euclid.c"                               /* (V10.6) SEQ > EUCLID / MODES: the generator, its graph */
 #include "ui_acid.c"                                 /* (cursedsound) SEQ > ACID: the 303 line generator, its graph */
+#include "ui_dub.c"                                  /* (cursedsound) GEN > DUB: dub techno chord stabs */
 #include "ui_fm6op.c"                                /* (0.6.10, from Felucca 1.5) EDIT > OPERATOR, OP ENV, OPERATOR 2 */
 static uint16_t heat_col(int32_t v);
 /* (0.9.5, as the 0.6.36) JIANT (thermal): a card's colour its value as heat (ratio 0..1000, -1 none); bipolar (its range
