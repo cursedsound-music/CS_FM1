@@ -262,15 +262,19 @@ static __attribute__((noinline)) void clip_block(uint32_t n)
         wet[i] = 0;
     }
 }
-/* (cursed-os) the master COMPRESSOR (GLO > MASTER): COMP 0..100 the amount (0: out of the chain, not run), ATTACK
- * 0..100 (0.1 .. 30 ms), RELEASE 0..100 (30 .. 600 ms). Feed-forward on the mix (dry + wet, before the leveler and
- * the MASTER knob), the two sides linked: the peak every 16 samples followed by the envelope, its level in octaves
- * (log2, Q8; the mix's scale: about 34000 full, lev_block's LEV_T), over the THRESHOLD (-3 dBFS .. -33 with COMP) brought down by the RATIO
- * (1.5:1 .. 6:1 with COMP), half the reduction at the threshold given back (MAKEUP); the gain ramped across the 16.
- * mc_*: the settings' bytes, ui_input.c ui_polls copies them; comp_gr the gain reduction for the meter (Q8 octaves) */
-static volatile uint8_t mc_amt, mc_atk, mc_rel;
+/* (cursed-os) the master COMPRESSOR (GLO > COMP, COMP 2, COMP 3): ON (0: out of the chain, not run), INPUT -12 .. +12 dB
+ * (into it, and on through the chain), THRESHOLD 0 .. -40 dBFS, RATIO 1.5:1 .. 20:1, MAKEUP 0 .. +18 dB, ATTACK 0..100
+ * (0.1 .. 30 ms), RELEASE 0..100 (30 .. 600 ms), KNEE 0 .. 12 dB (soft: the ratio comes in across it), SC HPF (the
+ * detector deaf to the lows: OFF, 40 .. 200 Hz, two poles, so the kick does not pump the rest), MIX 0..100 % (parallel:
+ * the dry, at INPUT, under the compressed). Feed-forward on the mix (dry + wet, before the leveler and the MASTER knob),
+ * the two sides linked: the detector's peak every 16 samples followed by the envelope, its level in octaves (log2, Q8;
+ * the mix's 0 dBFS at 32768); the gain ramped across the 16. mc: the settings (ui_input.c ui_polls copies them);
+ * comp_gr the gain reduction for the meter (Q8 octaves) */
+static volatile uint8_t mc_amt, mc_atk, mc_rel;          /* ON, ATTACK, RELEASE */
+static volatile struct { int8_t in, thr, mk; uint8_t rat, knee, sc, mix; } mc = {0, -12, 0, 3, 6, 0, 100};
 static volatile int32_t comp_gr;
-static int32_t comp_env, comp_g = 32768;
+static int32_t comp_env, comp_g = 32768, comp_sz[4];
+#define DB_Q8(db) ((db) * 425 / 10)                     /* dB -> octaves, Q8 (6.02 dB an octave) */
 static int32_t comp_lg2(uint32_t x)                     /* log2(x), Q8 (the mantissa linear: within ~0.09 octave) */
 {
     int32_t e = 31 - (int32_t)__builtin_clz(x | 1u);
@@ -282,19 +286,37 @@ static int32_t comp_ex2(int32_t q)                      /* 2^(q / 256) * 32768, 
     int32_t e = q >> 8, f = q & 255, m = 32768 + ((32768 * f) >> 8) - ((f * (256 - f) * 43) >> 8);   /* (a bent line) */
     return e >= 0 ? (e > 6 ? m << 6 : m << e) : (-e > 30 ? 0 : m >> -e);
 }
+static const uint16_t COMP_RQ[8] = {384, 512, 768, 1024, 1536, 2048, 3072, 5120};   /* RATIO 1.5 2 3 4 6 8 12 20, Q8 */
+static const int16_t COMP_SCA[7] = {0, 16290, 16244, 16174, 16104, 16034, 15918};    /* SC HPF OFF 40 60 90 120 150 200 Hz:
+                                                                                     * a one-pole's pole, Q14 */
 static __attribute__((noinline)) void comp_block(uint32_t n)
 {
-    uint32_t i, j, amt = mc_amt > 100u ? 100u : mc_amt;
-    int32_t thr = comp_lg2(24000u) - (int32_t)(amt * 256u * 5u / 100u),   /* (0 .. -5 octaves: -30 dB) */
-            rq = 384 + (int32_t)(amt * 1152u / 100u),                  /* the ratio, Q8: 1.5 .. 6 */
-            slope = 256 - (65536 / rq),                                /* 1 - 1 / ratio, Q8 */
-            mk = (((comp_lg2(24000u) - thr) * slope) >> 8) / 3,        /* the makeup: a third of the reduction at the threshold */
+    uint32_t i, j;
+    int32_t thr = 3840 + DB_Q8(mc.thr),                           /* (0 dBFS: log2 32768 = 15 octaves) */
+            rq = COMP_RQ[mc.rat & 7u], slope = 256 - (65536 / rq),  /* 1 - 1 / ratio, Q8 */
+            kw = DB_Q8((int32_t)(mc.knee > 12u ? 12u : mc.knee)), mk = DB_Q8(mc.mk),
+            gi = comp_ex2(DB_Q8(mc.in)), mix = (int32_t)(mc.mix > 100u ? 100u : mc.mix) * 32768 / 100,
+            sca = COMP_SCA[mc.sc < 7u ? mc.sc : 0u],
             ka = 65536 / (1 + (int32_t)(mc_atk > 100u ? 100u : mc_atk) * 4),     /* the followers a 16, Q16 */
             kr = 65536 / (8 + (int32_t)(mc_rel > 100u ? 100u : mc_rel) * 8);
     for (j = 0; j < n; j += 16u) {
-        int32_t pk = 0, g1, g0 = comp_g, over, dg;
-        for (i = j; i < j + 16u && i < n; i++) {
-            int32_t l = mix_l[i] + wet[i], r = mix_r[i] + wet[i];
+        int32_t pk = 0, g1, g0 = comp_g, over, dg, gr;
+        for (i = j; i < j + 16u && i < n; i++) {        /* INPUT, folded (the mix and the buses' return, as CLIP) */
+            int32_t l = clamp(mix_l[i] + wet[i], -(1 << 21) + 1, (1 << 21) - 1), r = clamp(mix_r[i] + wet[i], -(1 << 21) + 1, (1 << 21) - 1);
+            l = clamp(((l >> 4) * (gi >> 4)) >> 7, -(1 << 21) + 1, (1 << 21) - 1);
+            r = clamp(((r >> 4) * (gi >> 4)) >> 7, -(1 << 21) + 1, (1 << 21) - 1);
+            mix_l[i] = l;
+            mix_r[i] = r;
+            wet[i] = 0;
+            if (sca) {                                  /* SC HPF: the detector's copy (L + R) through two one-poles */
+                int32_t x = (l + r) >> 8, y1, y2;   /* (the mean >> 7: room for the products) */
+                y1 = (sca * (comp_sz[1] + x - comp_sz[0])) >> 14;
+                y2 = (sca * (comp_sz[2] + y1 - comp_sz[1])) >> 14;
+                comp_sz[0] = x;
+                comp_sz[1] = y1;
+                comp_sz[2] = y2;
+                l = r = y2 << 7;
+            }
             l = l < 0 ? -l : l;
             r = r < 0 ? -r : r;
             pk = l > pk ? l : pk;
@@ -304,18 +326,43 @@ static __attribute__((noinline)) void comp_block(uint32_t n)
         comp_env += pk > comp_env ? (((pk - comp_env) >> 8) * ka) >> 8 : -((((comp_env - pk) >> 8) * kr) >> 8) - 1;
         comp_env = comp_env < 0 ? 0 : comp_env;
         over = comp_lg2((uint32_t)(comp_env > 0 ? comp_env : 1)) - thr;
-        comp_gr = over > 0 ? (over * slope) >> 8 : 0;
-        g1 = comp_ex2(mk - comp_gr);
-        g1 = g1 > 2 * 32768 ? 2 * 32768 : g1;             /* (+6 dB at most) */
+        if (2 * over <= -kw)
+            gr = 0;
+        else if (2 * over >= kw)
+            gr = (over * slope) >> 8;
+        else {                                          /* (in the KNEE: the ratio comes in on a curve) */
+            int32_t t = over + kw / 2;
+            gr = ((t * t / (2 * kw)) * slope) >> 8;
+        }
+        comp_gr = gr;
+        g1 = comp_ex2(mk - gr);
+        g1 = g1 > 262143 ? 262143 : g1;                 /* (+18 dB at most) */
         comp_g = g1;
         dg = (g1 - g0) / 16;
-        for (i = j; i < j + 16u && i < n; i++) {        /* (the mix and the buses' return, folded: as CLIP) */
-            int32_t l = clamp(mix_l[i] + wet[i], -(1 << 21), 1 << 21), r = clamp(mix_r[i] + wet[i], -(1 << 21), 1 << 21);
-            mix_l[i] = ((l >> 4) * (g0 >> 4)) >> 7;
-            mix_r[i] = ((r >> 4) * (g0 >> 4)) >> 7;
-            wet[i] = 0;
+        for (i = j; i < j + 16u && i < n; i++) {
+            int32_t l = mix_l[i], r = mix_r[i], cl = ((l >> 4) * (g0 >> 4)) >> 7, cr = ((r >> 4) * (g0 >> 4)) >> 7;
+            if (mix < 32768) {                          /* MIX: the dry under it (parallel) */
+                cl = l + ((((cl - l) >> 6) * (mix >> 3)) >> 6);
+                cr = r + ((((cr - r) >> 6) * (mix >> 3)) >> 6);
+            }
+            mix_l[i] = cl;
+            mix_r[i] = cr;
             g0 += dg;
         }
+    }
+}
+/* (cursed-os) GLO > LIMIT: DRIVE 0 .. +12 dB into the limiter (after the leveler's reading, so it does not undo it),
+ * AUTO LEVEL OFF (JIANT's leveler, lev_block, held at unity: the compressor's MAKEUP and DRIVE stay as set) */
+static volatile int32_t lim_in = 32768;                 /* Q15 */
+static volatile uint8_t lev_off, lim_rs = 11;           /* .. the limiter's RELEASE, a shift (master_out): 8 .. 13 */
+static __attribute__((noinline)) void lim_drive(uint32_t n)
+{
+    uint32_t i;
+    int32_t g = lim_in >> 4;
+    for (i = 0; i < n; i++) {
+        mix_l[i] = ((clamp(mix_l[i] + wet[i], -(1 << 21) + 1, (1 << 21) - 1) >> 4) * g) >> 7;
+        mix_r[i] = ((clamp(mix_r[i] + wet[i], -(1 << 21) + 1, (1 << 21) - 1) >> 4) * g) >> 7;
+        wet[i] = 0;
     }
 }
 
@@ -599,8 +646,12 @@ static __attribute__((noinline)) void lev_block(uint32_t n)
         lev_g += (g1 - lev_g) >> (lev_env > LEV_GATE && pk > LEV_GATE ? 8 : 5);   /* (smoothed: ~190 ms; gated, under
                                                          * -38 dB: ~25 ms back to unity, no gain left on a tail's offset) */
     }
+    if (lev_off)                                        /* (cursed-os) AUTO LEVEL OFF: back to unity and held there */
+        lev_g = g0 + ((32768 - g0) >> 3);
     lev_cur = g0;                                       /* (master_out ramps it across the block, after the DC block) */
     lev_dg = (lev_g - g0) / (int32_t)n;
+    if (lim_in != 32768)
+        lim_drive(n);                                   /* (cursed-os) the limiter's DRIVE */
     cfx_run(n);                                         /* (cursed-os) after the leveler has read the mix */
 }
 /* DUCK (G_DUCK 0..100, G_DREL its release 40 .. 600 ms): a kick (eng_drum.c duck_hit) takes the parts that are not
@@ -728,7 +779,7 @@ static inline void master_out(int32_t *l, int32_t *r)
     if (a > lim_env)
         lim_env += (a - lim_env) >> 2;
     else if (lim_env > LIM_T)
-        lim_env -= ((lim_env - LIM_T) >> 11) + 1;   /* (0.5.1: ~45 ms back, was ~90) */
+        lim_env -= ((lim_env - LIM_T) >> lim_rs) + 1;   /* (0.5.1: ~45 ms back, was ~90; cursed-os: its RELEASE) */
     if (lim_env > LIM_T) {
         int32_t g = (int32_t)(((uint32_t)LIM_T << 15) / (uint32_t)lim_env);   /* < 32768 */
         *l = ((*l >> 4) * g) >> 11;                      /* >> 4 first: |l| may be far above Q15 */

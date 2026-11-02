@@ -2202,6 +2202,20 @@ static __attribute__((noinline)) void ui_polls(void)
         mc_rel = (uint8_t)(m[2] && m[2] <= 101u ? m[2] - 1u : 40u);
         lim_t = LIM[m[3] <= 12u ? m[3] : 0u];
     }
+    {                                                   /* (cursed-os) the rest of COMP and LIMIT: bytes 8 .. 17 of TRIO's
+                                                         * retired row (6; never read before: 0 there is each default) */
+        const uint8_t *x = &favorites.factory[6][8];
+        mc.in = (int8_t)(x[0] && x[0] <= 25u ? (int32_t)x[0] - 13 : 0);
+        mc.thr = (int8_t)(x[1] && x[1] <= 41u ? -((int32_t)x[1] - 1) : -12);
+        mc.rat = (uint8_t)(x[2] && x[2] <= 8u ? x[2] - 1u : 3u);
+        mc.mk = (int8_t)(x[3] <= 18u ? x[3] : 0u);
+        mc.knee = (uint8_t)(x[4] && x[4] <= 13u ? x[4] - 1u : 6u);
+        mc.sc = (uint8_t)(x[5] <= 6u ? x[5] : 0u);
+        mc.mix = (uint8_t)(x[6] && x[6] <= 101u ? x[6] - 1u : 100u);
+        lim_in = comp_ex2(DB_Q8((int32_t)(x[7] <= 12u ? x[7] : 0u)));
+        lim_rs = (uint8_t)(8u + (x[8] && x[8] <= 6u ? x[8] - 1u : 3u));
+        lev_off = (uint8_t)(x[9] == 1u);
+    }
 }
 /* every frame, whichever interface (cursed-os: COS_SLIM has only its own): MOMENTARY's glide, the reverb's shared
  * slots, retired engines' sounds converted, FX LATCH, USB LEVEL, FM6's patch, MIDI OUT, PROGRAM CHANGE, CLICK, USB SERIAL */

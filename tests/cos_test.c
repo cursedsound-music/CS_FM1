@@ -510,6 +510,48 @@ int main(void)
         CHECK(bpm_frac == 0u, "a project without it: a whole BPM");
     }
 
+
+    /* the master COMP (THRESH RATIO KNEE MAKEUP INPUT MIX SC HPF) and LIMIT (DRIVE RELEASE AUTO LV), from the knobs */
+    {
+        uint32_t b, i2, ph = 0;
+        int32_t gr_full, gr_sc, pk;
+        int16_t *vp;
+        memset(&favorites.factory[6][8], 0, 10);
+        cos_cput(CC_COMP, 1); cos_cput(CC_CTHR, -20); cos_cput(CC_CRAT, 7); cos_cput(CC_CKNEE, 0);
+        ui_polls();
+        CHECK(mc_amt && mc.thr == -20 && mc.rat == 7 && mc.knee == 0 && mc.mix == 100 && mc.in == 0, "COMP ON, -20 dB, 20:1, hard knee");
+        CHECK(cos_cdesc(CC_CRAT, &vp) && *vp == 7 && cos_cdesc(CC_CTHR, &vp) && *vp == -20, "the knobs read back");
+        comp_env = 0; comp_g = 32768;
+        for (b = 0; b < 400u; b++) {                     /* a 1 kHz sine at -6 dBFS: 14 dB over, at 20:1 ~13 dB down */
+            for (i2 = 0; i2 < 64u; i2++) { mix_l[i2] = mix_r[i2] = og_sin(ph >> 16) / 2; ph += 1000u * 97391u; wet[i2] = 0; }
+            comp_block(64);
+        }
+        gr_full = comp_gr;
+        CHECK(gr_full * 6 / 256 >= 11 && gr_full * 6 / 256 <= 15, "20:1 at -20: about 13 dB (%d)", gr_full * 6 / 256);
+        pk = 0; for (i2 = 0; i2 < 64u; i2++) if (mix_l[i2] > pk) pk = mix_l[i2];
+        CHECK(pk < 5000, "the peak down to near the threshold (%d)", pk);
+        cos_cput(CC_CMK, 12); ui_polls();
+        for (b = 0; b < 400u; b++) { for (i2 = 0; i2 < 64u; i2++) { mix_l[i2] = mix_r[i2] = og_sin(ph >> 16) / 2; ph += 1000u * 97391u; wet[i2] = 0; } comp_block(64); }
+        { int32_t p2 = 0; for (i2 = 0; i2 < 64u; i2++) if (mix_l[i2] > p2) p2 = mix_l[i2]; CHECK(p2 > 3 * pk, "MAKEUP +12 dB (%d -> %d)", pk, p2); }
+        cos_cput(CC_CMK, 0); cos_cput(CC_CMIX, 50); ui_polls();
+        for (b = 0; b < 400u; b++) { for (i2 = 0; i2 < 64u; i2++) { mix_l[i2] = mix_r[i2] = og_sin(ph >> 16) / 2; ph += 1000u * 97391u; wet[i2] = 0; } comp_block(64); }
+        { int32_t p2 = 0; for (i2 = 0; i2 < 64u; i2++) if (mix_l[i2] > p2) p2 = mix_l[i2]; CHECK(p2 > 2 * pk && p2 < 16384, "MIX 50: the dry under it (%d)", p2); }
+        cos_cput(CC_CMIX, 100); cos_cput(CC_CSC, 4); ui_polls();   /* SC HPF 120 Hz: a 50 Hz kick hardly reaches the detector */
+        comp_env = 0;
+        for (b = 0; b < 600u; b++) { for (i2 = 0; i2 < 64u; i2++) { mix_l[i2] = mix_r[i2] = og_sin(ph >> 16) / 2; ph += 50u * 97391u; wet[i2] = 0; } comp_block(64); }
+        gr_sc = comp_gr;
+        cos_cput(CC_CSC, 0); ui_polls(); comp_env = 0;
+        for (b = 0; b < 600u; b++) { for (i2 = 0; i2 < 64u; i2++) { mix_l[i2] = mix_r[i2] = og_sin(ph >> 16) / 2; ph += 50u * 97391u; wet[i2] = 0; } comp_block(64); }
+        CHECK(gr_sc + 256 < comp_gr, "SC HPF: 50 Hz squeezed less (%d dB vs %d)", gr_sc * 6 / 256, comp_gr * 6 / 256);
+        cos_cput(CC_CIN, -12); cos_cput(CC_CRAT, 0); ui_polls(); comp_env = 0;
+        for (b = 0; b < 400u; b++) { for (i2 = 0; i2 < 64u; i2++) { mix_l[i2] = mix_r[i2] = og_sin(ph >> 16) / 2; ph += 1000u * 97391u; wet[i2] = 0; } comp_block(64); }
+        CHECK(comp_gr * 6 / 256 <= 2, "INPUT -12: under the threshold, little reduction (%d)", comp_gr * 6 / 256);
+        cos_cput(CC_LIN, 6); cos_cput(CC_LREL, 0); cos_cput(CC_LVL, 1); ui_polls();
+        CHECK(lim_in > 60000 && lim_in < 70000 && lim_rs == 8u && lev_off, "LIMIT: DRIVE +6 dB, RELEASE 5 MS, AUTO LV OFF (%d)", lim_in);
+        memset(&favorites.factory[6][8], 0, 10); favorites.factory[15][4] = 0; ui_polls();
+        CHECK(!mc_amt && lim_in == 32768 && lim_rs == 11u && !lev_off && mc.thr == -12 && mc.rat == 3, "0s: the defaults");
+    }
+
     printf("cos_test: %s (%d failures)\n", fails ? "FAILED" : "ok", fails);
     return fails != 0;
 }

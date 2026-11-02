@@ -39,7 +39,8 @@ enum { CM_HOME, CM_TRIG, CM_SRC, CM_AMP, CM_DRONE, CM_FX, CM_GEN, CM_MIX, CM_KEY
 enum { CK_NONE, CK_TRK, CK_GLO, CK_AC, CK_EU, CK_COS };
 enum { CC_OUTCH, CC_MOUT, CC_CLOCK, CC_SLOT, CC_TRKS, CC_LOAD, CC_COMP, CC_CATK, CC_CREL, CC_LIM, CC_PF0, CC_PF3 = CC_PF0 + 3,
        CC_X2, CC_X2E = CC_X2 + 15, CC_OCT, CC_KICK, CC_KICKE = CC_KICK + 4, CC_LN0, CC_LNE = CC_LN0 + 7, CC_KDRV, CC_BT,
-       CC_L1SYNC, CC_L1RATE, CC_L1WAVE, CC_L1MODE, CC_L1PH, CC_L1FADE, CC_L2SYNC, CC_L2RATE, CC_BPM };
+       CC_L1SYNC, CC_L1RATE, CC_L1WAVE, CC_L1MODE, CC_L1PH, CC_L1FADE, CC_L2SYNC, CC_L2RATE, CC_BPM,
+       CC_CIN, CC_CTHR, CC_CRAT, CC_CMK, CC_CKNEE, CC_CSC, CC_CMIX, CC_LIN, CC_LREL, CC_LVL };
 _Static_assert(X2_N <= 16u, "CC_X2 .. CC_X2E: room for every trk_x2 field");
 #define ID_BPM 0xFDu                            /* (HOME's: BPM in tenths, cos_knob) */
 #define ID_OCT 0xFEu                            /* (any page's knob: the track's OCTAVE, cos_knob) */   /* (CC_X2 + X2_*: params.c trk_x2, LFO 2 and FILTER 2) */   /* (CK_COS: cursed-os's own knobs) */
@@ -91,7 +92,10 @@ static const cpg_t CZP_GENA[] = {{"ACID", CK_AC, {AK_DENS, AK_SLIDE, AK_ACC, ID_
 static const cpg_t CZP_GENE[] = {{"EUCLID", CK_EU, {EK_HITS, EK_STEPS, EK_ROT, EK_K4}}, {"MODES", CK_EU, {EK_M0, EK_M0 + 1u, EK_M0 + 2u, EK_M0 + 3u}},
                                 {"MUTATE", CK_EU, {EK_U0, EK_U0 + 1u, EK_U0 + 2u, EK_U0 + 3u}}};
 static const cpg_t CZP_MIX[] = {{"MIX", CK_TRK, {P_LEVEL, P_PAN, P_GLIDE, P_MUTE}},
-                               {"MASTER", CK_COS, {CC_COMP, CC_CATK, CC_CREL, CC_LIM}},
+                               {"COMP", CK_COS, {CC_COMP, CC_CTHR, CC_CRAT, CC_CMK}},
+                               {"COMP 2", CK_COS, {CC_CIN, CC_CATK, CC_CREL, CC_CKNEE}},
+                               {"COMP 3", CK_COS, {CC_CSC, CC_CMIX, X, X}},
+                               {"LIMIT", CK_COS, {CC_LIN, CC_LIM, CC_LREL, CC_LVL}},
                                {"MIDI", CK_COS, {CC_OUTCH, CC_MOUT, CC_CLOCK, X}},
                                {"SYSTEM", CK_COS, {CC_TRKS, CC_LOAD, CC_BT, X}}};
 static const cpg_t CZP_KEY[] = {{"KEY", CK_TRK, {P_SCALE, P_QUANT, 0xFFu, 0xFFu}}};   /* (the root: the keys) */
@@ -132,7 +136,7 @@ static int cos_kit(void) { return drum_track(TSEL) != 0; }
 static void cos_pages(uint32_t m, const cpg_t **p, uint32_t *n)
 {
     static const cpg_t *const P[CM_N] = {CZP_HOME, CZP_TRIG, CZP_SRC, CZP_AMP, CZP_DRONE, CZP_FX, CZP_GENA, CZP_MIX, CZP_KEY, CZP_PROJ};
-    static const uint8_t N[CM_N] = {1, 1, 7, 9, 2, 4, 4, 4, 1, 1};
+    static const uint8_t N[CM_N] = {1, 1, 7, 9, 2, 4, 4, 7, 1, 1};
     int vo = m == CM_SRC && trk_engp(TSEL) == &ENG_FORMANT;
     if (m == CM_SRC && cos_kit()) { *p = CZP_SRCD; *n = NELEM(CZP_SRCD); return; }   /* (a kit: KICK, LEVELS, its own ..) */
     if (m == CM_GEN && cos_kit()) { *p = CZP_GENE; *n = 3; return; }
@@ -322,12 +326,35 @@ static const param_desc_t *cos_cdesc(uint32_t id, int16_t **vp)
         *vp = &cz.cc_v[10 + i];
         return &DP[i];
     }
-    if (id >= CC_COMP && id <= CC_LIM) {                 /* GLO > MASTER: the settings' bytes 4 .. 7 (ui_input.c ui_polls) */
-        static const param_desc_t DM[4] = {{"COMP", F_INT, 0, 100, 0, 0, "%"}, {"ATTACK", F_INT, 0, 100, 20, 0, 0},
-                                           {"RELEASE", F_INT, 0, 100, 40, 0, 0}, {"LIMIT", F_INT, -12, 0, 0, 0, "dB"}};
+    if (id >= CC_CIN && id <= CC_LVL) {                  /* GLO > COMP, LIMIT: TRIO's retired row's bytes 8 .. 17 (ui_input.c
+                                                         * ui_polls; 0: each default) */
+        static const char *const RAT[8] = {"1.5:1", "2:1", "3:1", "4:1", "6:1", "8:1", "12:1", "20:1"};
+        static const char *const SCN[7] = {"OFF", "40HZ", "60HZ", "90HZ", "120HZ", "150HZ", "200HZ"};
+        static const char *const LRN[6] = {"5MS", "10MS", "25MS", "45MS", "90MS", "180MS"};
+        static const char *const ONO[2] = {"ON", "OFF"};
+        static const param_desc_t DX[10] = {{"INPUT", F_INT, -12, 12, 0, 0, "dB"}, {"THRESH", F_INT, -40, 0, -12, 0, "dB"},
+                                            {"RATIO", F_ENUM, 0, 7, 3, RAT, 0}, {"MAKEUP", F_INT, 0, 18, 0, 0, "dB"},
+                                            {"KNEE", F_INT, 0, 12, 6, 0, "dB"}, {"SC HPF", F_ENUM, 0, 6, 0, SCN, 0},
+                                            {"MIX", F_INT, 0, 100, 100, 0, "%"}, {"DRIVE", F_INT, 0, 12, 0, 0, "dB"},
+                                            {"RELEASE", F_ENUM, 0, 5, 3, LRN, 0}, {"AUTO LV", F_ENUM, 0, 1, 0, ONO, 0}};
+        const uint8_t *x = &favorites.factory[6][8];
+        uint32_t i = id - CC_CIN;
+        cz.cc_v[14] = (int16_t)(i == 0u ? (x[0] && x[0] <= 25u ? x[0] - 13 : 0) : i == 1u ? (x[1] && x[1] <= 41u ? -(x[1] - 1) : -12)
+                              : i == 2u ? (x[2] && x[2] <= 8u ? x[2] - 1 : 3) : i == 3u ? (x[3] <= 18u ? x[3] : 0)
+                              : i == 4u ? (x[4] && x[4] <= 13u ? x[4] - 1 : 6) : i == 5u ? (x[5] <= 6u ? x[5] : 0)
+                              : i == 6u ? (x[6] && x[6] <= 101u ? x[6] - 1 : 100) : i == 7u ? (x[7] <= 12u ? x[7] : 0)
+                              : i == 8u ? (x[8] && x[8] <= 6u ? x[8] - 1 : 3) : x[9] == 1u);
+        *vp = &cz.cc_v[14];
+        return &DX[i];
+    }
+    if (id >= CC_COMP && id <= CC_LIM) {                 /* GLO > COMP's ON, ATTACK, RELEASE, LIMIT's CEILING: the settings'
+                                                         * bytes 4 .. 7 (ui_input.c ui_polls) */
+        static const char *const OF[2] = {"OFF", "ON"};
+        static const param_desc_t DM[4] = {{"COMP", F_ENUM, 0, 1, 0, OF, 0}, {"ATTACK", F_INT, 0, 100, 20, 0, 0},
+                                           {"RELEASE", F_INT, 0, 100, 40, 0, 0}, {"CEILING", F_INT, -12, 0, 0, 0, "dB"}};
         const uint8_t *m = &favorites.factory[15][4];
         uint32_t i = id - CC_COMP;
-        cz.cc_v[6 + i] = (int16_t)(i == 0u ? m[0] : i == 3u ? -(int32_t)m[3] : i == 1u ? (m[1] ? m[1] - 1 : 20) : (m[2] ? m[2] - 1 : 40));
+        cz.cc_v[6 + i] = (int16_t)(i == 0u ? m[0] != 0u : i == 3u ? -(int32_t)m[3] : i == 1u ? (m[1] ? m[1] - 1 : 20) : (m[2] ? m[2] - 1 : 40));
         *vp = &cz.cc_v[6 + i];
         return &DM[i];
     }
@@ -409,10 +436,17 @@ static void cos_cput(uint32_t id, int32_t v)
         uint32_t i = id - CC_PF0;
         cz.fx_used = 1;
         perf_k[i] = (int8_t)(i == 0u ? clamp(v, -100, 100) : i == 3u ? 100 - clamp(v, 0, 100) : clamp(v, 0, 100));
+    } else if (id >= CC_CIN && id <= CC_LVL) {
+        uint8_t *x = &favorites.factory[6][8];
+        uint32_t i = id - CC_CIN;
+        x[i] = (uint8_t)(i == 0u ? clamp(v, -12, 12) + 13 : i == 1u ? -clamp(v, -40, 0) + 1 : i == 2u ? clamp(v, 0, 7) + 1
+                       : i == 3u ? clamp(v, 0, 18) : i == 4u ? clamp(v, 0, 12) + 1 : i == 5u ? clamp(v, 0, 6)
+                       : i == 6u ? clamp(v, 0, 100) + 1 : i == 7u ? clamp(v, 0, 12) : i == 8u ? clamp(v, 0, 5) + 1 : clamp(v, 0, 1));
+        cz.set_ms = fm1_ms;                              /* (saved when the knob rests: cos_input) */
     } else if (id >= CC_COMP && id <= CC_LIM) {
         uint8_t *m = &favorites.factory[15][4];
         uint32_t i = id - CC_COMP;
-        m[i] = (uint8_t)(i == 0u ? clamp(v, 0, 100) : i == 3u ? -clamp(v, -12, 0) : clamp(v, 0, 100) + 1);
+        m[i] = (uint8_t)(i == 0u ? (v ? 100 : 0) : i == 3u ? -clamp(v, -12, 0) : clamp(v, 0, 100) + 1);
         cz.set_ms = fm1_ms;                              /* (saved when the knob rests: cos_input) */
     } else
         song.g[G_CLOCK] = (int16_t)clamp(v, GP[G_CLOCK].min, GP[G_CLOCK].max);
@@ -1339,32 +1373,54 @@ static void cos_body_fxpad(void)
         cos_tx(x, 132, b, act ? C_BG : C_MID);
     }
     cos_tx(x + 2, 132, "MUTE", C_DIM);
-    for (i = 0, x = 2; i < 5u; i++) {
-        int act = cos_fx_on(CFX_B[6u + i]);
-        char n[12];
-        n[0] = (char)(i + 7u >= 10u ? '1' : ' '); n[1] = (char)('0' + (i + 7u) % 10u); n[2] = 0;
-        str_cpy(n + 2, BN[i], 8);
-        if (act) cv_rect(x - 1, 141, cos_w(n) + 2, 11, C_RED);
-        cos_tx(x, 143, n, act ? C_BG : C_FG);
-        x += cos_w(n) + 5;
+    {                                                    /* (7 .. 11 after it, on to the next line when the row is full) */
+        int32_t y = 132;
+        x += 2 + cos_w("MUTE") + 8;
+        for (i = 0; i < 5u; i++) {
+            int act = cos_fx_on(CFX_B[6u + i]);
+            char n[12];
+            n[0] = (char)(i + 7u >= 10u ? '1' : '0' + i + 7u);
+            n[1] = (char)(i + 7u >= 10u ? '0' + (i + 7u) % 10u : 0); n[2] = 0;
+            str_cpy(n + str_len(n), BN[i], 8);
+            if (x + cos_w(n) > 238) { x = 2; y += 11; }
+            if (act) cv_rect(x - 1, y - 2, cos_w(n) + 2, 11, C_RED);
+            cos_tx(x, y, n, act ? C_BG : C_FG);
+            x += cos_w(n) + 6;
+        }
     }
 }
 
-/* GLO > MASTER: the chain and the compressor's gain reduction now (a bar, dB) */
+/* a gain reduction meter: a bar and its dB (gr: Q8 octaves) */
+static void cos_gr_meter(int32_t y, const char *what, int32_t gr, int on)
+{
+    int32_t db = gr * 6 / 256, w = clamp(gr * 160 / (256 * 4), 0, 160);   /* (Q8 octaves -> dB: ~6 an octave; full: 24 dB) */
+    char b[16];
+    cos_tx(8, y, what, C_DIM);
+    cv_frame(8, y + 12, 164, 12, C_DIM);
+    if (w) cv_rect(10, y + 14, w, 8, on ? C_RED : C_DIM);
+    b[0] = db ? '-' : 0; b[1] = 0;
+    fmt_int(b + (db ? 1 : 0), db);
+    str_cpy(b + str_len(b), " DB", 4);
+    cos_tx(180, y + 14, on ? b : "OFF", on ? C_FG : C_DIM);
+}
+/* GLO > COMP: the chain and the compressor's gain reduction now */
 static void cos_body_master(void)
 {
-    int32_t gr = comp_gr * 6 / 256, w = clamp(gr * 8, 0, 160);   /* (Q8 octaves -> dB: ~6 an octave) */
-    char b[16];
-    cos_tx(8, 40, "MIX > COMP > LIMIT > OUT", C_MID);
-    cos_tx(8, 64, "GAIN REDUCTION", C_DIM);
-    cv_frame(8, 78, 164, 12, C_DIM);
-    if (w) cv_rect(10, 80, w, 8, mc_amt ? C_FG : C_DIM);
-    b[0] = '-'; b[1] = 0;
-    fmt_int(b + 1, gr);
-    str_cpy(b + str_len(b), " DB", 4);
-    cos_tx(180, 80, mc_amt ? b : "OFF", mc_amt ? C_FG : C_DIM);
-    cos_tx(8, 108, "COMP 0: OFF. LIMIT: CEILING", C_DIM);
-    cos_tx(8, 122, "(0 DB: AS LOUD AS IT GOES)", C_DIM);
+    cos_tx(8, 40, "IN>COMP>LEVEL>DRIVE>LIMIT", C_MID);
+    cos_gr_meter(58, "COMP GAIN REDUCTION", comp_gr, mc_amt != 0u);
+    cos_tx(8, 100, "SC HPF: NO KICK PUMPING", C_DIM);
+    cos_tx(8, 112, "MIX UNDER 100: PARALLEL", C_DIM);
+    cos_tx(8, 124, mc_amt ? "MAKEUP: AUTO LV OFF (LIMIT)" : "COMP OFF: NOT IN THE CHAIN", C_DIM);
+}
+/* GLO > LIMIT: its gain reduction now (the envelope over the ceiling) */
+static void cos_body_lim(void)
+{
+    int32_t gr = lim_env > lim_t ? comp_lg2((uint32_t)lim_env) - comp_lg2((uint32_t)lim_t) : 0;
+    cos_tx(8, 40, "DRIVE>LIMIT>CLIP>OUT", C_MID);
+    cos_gr_meter(58, "LIMIT GAIN REDUCTION", gr, 1);
+    cos_tx(8, 100, "DRIVE: HARDER INTO CEILING", C_DIM);
+    cos_tx(8, 112, "AUTO LV ON: THE LEVELER", C_DIM);
+    cos_tx(8, 124, "RIDES THE LOUDNESS. OFF: NOT", C_DIM);
 }
 
 /* GLO > SYSTEM: what TRACKS and LOAD do */
@@ -1410,7 +1466,8 @@ static void cos_scene(void)
         const cpg_t *pg = cos_page();
         if (pg->kind == CK_COS && pg->id[0] == CC_OUTCH) cos_body_midi();
         else if (pg->kind == CK_COS && pg->id[0] == CC_TRKS) cos_body_sys();
-        else if (pg->kind == CK_COS && pg->id[0] == CC_COMP) cos_body_master();
+        else if (pg->kind == CK_COS && (pg->id[0] == CC_COMP || pg->id[0] == CC_CIN || pg->id[0] == CC_CSC)) cos_body_master();
+        else if (pg->kind == CK_COS && pg->id[0] == CC_LIN) cos_body_lim();
         else cos_body_sound();
         break;
     }
