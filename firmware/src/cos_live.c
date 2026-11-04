@@ -1,0 +1,116 @@
+/* SPDX-License-Identifier: GPL-3.0-only
+ * Copyright (C) 2026 cursedsound */
+/* (cursedsound) cursed-os's live layer, the ISR's part (included at the end of seq.c; cosfx.c's cfx_run calls live_tick
+ * each block). Everything lands on the grid: the next block that starts a beat (or a bar) is where it goes in, so a
+ * mute let go on the bar plays the bar's first note.
+ *   MUTES, SOLO   HOME's black keys 1..6 (HOME held: SOLO) asked for (live_qmute, live_qsolo): in NOW, on the next beat
+ *                 or on the next bar (MUTE Q)
+ *   FILL          HOME's black key 7: the drum tracks' last half bar rolled (snare eighths, then sixteenths, the clap
+ *                 on the last two, the kit's own hits kept), the bar after back as it was; held: every bar. Steps with
+ *                 a FILL condition play in it too (seq_fill)
+ *   BREAKDOWN     HOME's black key 8: on the next bar the BREAK (KICK KILL and LOW KILL, the FX pad's), again: the
+ *                 BUILD on the next bar (four bars of KICK KILL, HP RISER, NOISE RISER, a fill in the last), then the
+ *                 DROP on the bar after them (pressed during the build: on the next bar) */
+enum { BD_OFF, BD_ARM_BREAK, BD_BREAK, BD_ARM_BUILD, BD_BUILD, BD_ARM_DROP };
+static volatile uint8_t cos_mq = 2;           /* main: MUTE Q, 0 NOW 1 BEAT 2 BAR (ui_polls: the settings') */
+static volatile uint8_t live_qmute;           /* main: the tracks whose mute turns over next (bit k) */
+static volatile uint8_t live_qsolo, live_qsolo_on;   /* main: the solo asked for (live_qsolo_on: asked) */
+static volatile uint8_t fill_req, fill_on;    /* main: a FILL asked for; ISR: the fill bar running */
+static volatile uint8_t bd_req, bd_kill, bd_state, bd_bars;   /* main: a press, everything off; ISR: where it is */
+#define FILL_N 8u
+static step_t fill_keep[NTRK][FILL_N];        /* the steps the fill wrote over, back after it */
+static uint8_t fill_idx[NTRK][FILL_N], fill_trk;
+
+/* the fill written over the drum tracks' next eight sixteenths (the bar's second half), the steps kept */
+static __attribute__((noinline)) void fill_write(void)
+{
+    uint32_t k, j;
+    fill_trk = 0;
+    for (k = 0; k < trk_live && k < NTRK; k++) {
+        track_t *t = &trk[k];
+        uint32_t len = (uint32_t)clamp(t->p[P_SLEN], 1, NSTEP);
+        if (!drum_track(t) || t->p[P_SDIV] != 2 || t->p[P_MUTE] || len < FILL_N)
+            continue;
+        fill_trk |= (uint8_t)(1u << k);
+        for (j = 0; j < FILL_N; j++) {
+            uint32_t i = seq_src(t, (t->seq_idx + 1u + j) % len);   /* (where the step it plays is read: SHIFT's offset) */
+            step_t *s = &t->step[i];
+            uint8_t add = (uint8_t)(j >= 4u || !(j & 1u) ? 1u << 1 : 0u);   /* SD: eighths, then sixteenths */
+            if (j >= 6u) add |= 1u << 2;                                    /* CP on the last two */
+            fill_idx[k][j] = (uint8_t)i;
+            fill_keep[k][j] = *s;
+            if (s->time != ST_NOTE) {                    /* (an empty step: a hit of its own) */
+                memset(s, 0, sizeof *s);
+                s->vel = 100;
+            }
+            s->time = ST_NOTE;
+            s->hit |= add;
+            if (j >= 6u) s->acc |= add;
+        }
+    }
+    fill_on = 1;
+    seq_fill = 1;
+}
+static __attribute__((noinline)) void fill_undo(void)
+{
+    uint32_t k, j;
+    for (k = 0; k < NTRK; k++)
+        if ((fill_trk >> k) & 1u)
+            for (j = 0; j < FILL_N; j++)
+                trk[k].step[fill_idx[k][j]] = fill_keep[k][j];
+    fill_trk = 0;
+    fill_on = 0;
+    seq_fill = 0;
+}
+
+/* the BREAKDOWN's effects (cosfx.c cfx_auto) as its state has them */
+static uint32_t bd_bits(uint32_t s)
+{
+    return s == BD_BREAK || s == BD_ARM_BUILD ? CX_BIT(CX_KICK) | CX_BIT(CX_LOWK)
+         : s == BD_BUILD || s == BD_ARM_DROP ? CX_BIT(CX_KICK) | CX_BIT(CX_HPR) | CX_BIT(CX_NOISE) : 0u;
+}
+static void bd_step(uint32_t bar)                 /* a press (bar: 0 stopped, at once) or a bar line */
+{
+    if (bar) {
+        if (bd_state == BD_ARM_BREAK) bd_state = BD_BREAK;
+        else if (bd_state == BD_ARM_BUILD) { bd_state = BD_BUILD; bd_bars = 4; }
+        else if (bd_state == BD_ARM_DROP) bd_state = BD_OFF;
+        else if (bd_state == BD_BUILD && bd_bars && !--bd_bars) bd_state = BD_OFF;   /* (the four bars: the DROP) */
+        if (bd_state == BD_BUILD && bd_bars == 1u) fill_req = 1;                       /* (a roll into it) */
+        return;
+    }
+    if (bd_state == BD_OFF) bd_state = BD_ARM_BREAK;
+    else if (bd_state == BD_BREAK) bd_state = BD_ARM_BUILD;
+    else if (bd_state == BD_BUILD) bd_state = BD_ARM_DROP;
+}
+
+/* each block (cosfx.c cfx_run), at its end: does the next block start a beat, a bar? */
+static __attribute__((noinline)) void live_tick(uint32_t n)
+{
+    uint32_t b = beat_samples(), beat = song.playing && beat_pos + n >= b, bar = beat && beat_n == 3u,
+             half = beat && beat_n == 1u, now = !song.playing;
+    if (bd_kill) { bd_kill = 0; bd_state = BD_OFF; bd_req = 0; }
+    if (bd_req) {
+        bd_req = 0;
+        bd_step(0);
+        if (now) bd_step(1);                          /* (stopped: at once) */
+    }
+    if (bar) bd_step(1);
+    cfx_auto = bd_bits(bd_state);
+    if (live_qmute && (now || cos_mq == 0u || (cos_mq == 1u ? beat : bar))) {
+        uint32_t k, m = live_qmute;
+        live_qmute = 0;
+        for (k = 0; k < NTRK; k++)
+            if ((m >> k) & 1u) trk[k].p[P_MUTE] = (int16_t)!trk[k].p[P_MUTE];
+    }
+    if (live_qsolo_on && (now || cos_mq == 0u || (cos_mq == 1u ? beat : bar))) {
+        live_qsolo_on = 0;
+        perf_solo = live_qsolo;
+    }
+    if (fill_on && (bar || now))
+        fill_undo();
+    else if (fill_req && half && !fill_on) {          /* (the bar's second half from the next block) */
+        fill_req = 0;
+        fill_write();
+    }
+}

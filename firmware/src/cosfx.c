@@ -25,6 +25,7 @@ static const uint8_t CFX_B[11] = {PF_M1, PF_M1 + 1, PF_M1 + 2, PF_M1 + 3, PF_M1 
 _Static_assert(NTRK == 6, "the black keys 1..6: the six tracks");
 static volatile uint32_t cfx_held;            /* keys (seq.c): the effects held, CX_BIT */
 static volatile uint32_t cfx_latched;         /* .. latched (FX LATCH; main clears it: FX + OCT-) */
+static volatile uint32_t cfx_auto;            /* ISR: the BREAKDOWN's (cos_live.c live_tick) */
 #define CX_SLOPE 256                          /* a share's step a sample: 0 .. full in 2.9 ms */
 #define CX_TAPE_MAX 30000u                    /* TAPE STOP's longest halt (samples): its lag stays inside sl_buf */
 
@@ -69,7 +70,7 @@ static void cfx_press(uint32_t c, int down)
         cfx_held &= ~CX_BIT(c);
 }
 /* the effects on (the pad's map) */
-static uint32_t cfx_now(void) { return cfx_held | cfx_latched; }
+static uint32_t cfx_now(void) { return cfx_held | cfx_latched | cfx_auto; }
 
 /* 2^(x / 256), Q16 (x: octaves, Q8, under 15) */
 static uint32_t cx_exp2(uint32_t x)
@@ -183,7 +184,7 @@ static __attribute__((noinline)) void cfx_tape(int32_t *pl, int32_t *pr)
 /* fx.c lev_block, each block while an effect is at work or a share is still on: the mix (mix_l, mix_r, wet) in place */
 static __attribute__((noinline)) void cfx_block(int32_t *ml, int32_t *mr, int32_t *wt, int32_t *sd, int32_t *sr, uint32_t n)
 {
-    uint32_t on = perf_kill ? 0u : cfx_held | cfx_latched, was = cx.on, i, base, P, gp, bar4, hp, np, f2;
+    uint32_t on = perf_kill ? 0u : cfx_held | cfx_latched | cfx_auto, was = cx.on, i, base, P, gp, bar4, hp, np, f2;
     int32_t hf = 0, hd = 0, nf = 0, ng = 0, duck;
     if (on != was)
         cfx_edges(on, was);
@@ -304,8 +305,10 @@ static __attribute__((noinline)) void cfx_block(int32_t *ml, int32_t *mr, int32_
 }
 
 /* fx.c lev_block: the pad's effects, when any is on or still sounding */
+static void live_tick(uint32_t n);             /* (cos_live.c, the end of seq.c) */
 static void cfx_run(uint32_t n)
 {
-    if (cfx_held | cfx_latched | cx.busy | cx.on)
+    live_tick(n);                                 /* (cursed-os) the live layer: mutes, fills, the BREAKDOWN on the grid */
+    if (cfx_held | cfx_latched | cfx_auto | cx.busy | cx.on)
         cfx_block(mix_l, mix_r, wet, fxq_d, fxq_r, n);
 }

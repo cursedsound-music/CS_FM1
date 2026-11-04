@@ -599,6 +599,58 @@ int main(void)
         cz.mode = CM_HOME;
     }
 
+
+    /* the live layer (cos_live.c): mutes and solo on the bar, FILL in the bar's second half, BREAKDOWN -> BUILD -> DROP */
+    {
+        uint32_t b = beat_samples(), j, sd = 0;
+        track_t *t0 = &trk[0];
+        song.playing = 1; cos_mq = 2; beat_n = 0; beat_pos = 0;
+        trk[2].p[P_MUTE] = 0; live_qmute = 1u << 2;
+        live_tick(64);
+        CHECK(!trk[2].p[P_MUTE] && live_qmute, "MUTE Q BAR: not yet in the bar");
+        beat_n = 3; beat_pos = b - 10u; live_tick(64);
+        CHECK(trk[2].p[P_MUTE] && !live_qmute, "the next block starts the bar: muted");
+        cos_mq = 1; beat_n = 1; beat_pos = b - 10u; live_qmute = 1u << 2; live_tick(64);
+        CHECK(!trk[2].p[P_MUTE], "MUTE Q BEAT: on the next beat");
+        perf_solo = 0; live_qsolo = 1u; live_qsolo_on = 1; beat_pos = 0; live_tick(64);
+        CHECK(!perf_solo, "SOLO waits for the beat");
+        beat_pos = b - 1u; live_tick(64);
+        CHECK(perf_solo == 1u, "SOLO T1 on the beat");
+        perf_solo = 0; cos_mq = 2;
+        /* BREAKDOWN */
+        bd_state = BD_OFF; bd_req = 1; beat_n = 0; beat_pos = 0; live_tick(64);
+        CHECK(bd_state == BD_ARM_BREAK && !cfx_auto, "BREAK asked: on the next bar");
+        beat_n = 3; beat_pos = b - 5u; live_tick(64);
+        CHECK(bd_state == BD_BREAK && cfx_auto == (CX_BIT(CX_KICK) | CX_BIT(CX_LOWK)), "the bar: BREAK (kick and lows out)");
+        bd_req = 1; beat_n = 1; beat_pos = 0; live_tick(64);
+        CHECK(bd_state == BD_ARM_BUILD && (cfx_auto & CX_BIT(CX_LOWK)), "BUILD asked: the break holds till the bar");
+        beat_n = 3; beat_pos = b - 5u; live_tick(64);
+        CHECK(bd_state == BD_BUILD && bd_bars == 4u && (cfx_auto & CX_BIT(CX_HPR)) && (cfx_auto & CX_BIT(CX_NOISE)), "BUILD: four bars of risers");
+        fill_req = 0;
+        for (j = 0; j < 3u; j++) live_tick(64);           /* (three bar lines) */
+        CHECK(bd_state == BD_BUILD && bd_bars == 1u && fill_req, "the last bar of the build: a fill asked for");
+        live_tick(64);
+        CHECK(bd_state == BD_OFF && !cfx_auto, "the DROP: all back on the bar");
+        fill_req = 0;
+        song.playing = 0; bd_req = 1; live_tick(64);
+        CHECK(bd_state == BD_BREAK, "stopped: at once");
+        bd_kill = 1; live_tick(64);
+        CHECK(bd_state == BD_OFF && !cfx_auto, "FX + OCT-: off");
+        song.playing = 1;
+        /* FILL: T1 a kit on 1/16, step 7 playing; the second half rolled, the bar after as it was */
+        set_engine_of(t0, ENGI_DRUM);
+        for (j = 0; j < NSTEP; j++) step_clear(&t0->step[j]);
+        t0->p[P_SLEN] = 16; t0->p[P_SDIV] = 2; t0->p[P_MUTE] = 0; t0->p[P_SOFS] = 0; t0->seq_idx = 7;
+        t0->step[8].time = ST_NOTE; t0->step[8].hit = 1u;   /* (the kick on the third beat, kept) */
+        fill_req = 1; beat_n = 1; beat_pos = b - 5u; live_tick(64);
+        for (j = 8; j < 16u; j++) sd += (t0->step[j].hit >> 1) & 1u;
+        CHECK(fill_on && seq_fill && sd == 6u && (t0->step[8].hit & 1u) && (t0->step[15].hit & 4u), "FILL: the snare roll (%u), the kick kept, a clap last", sd);
+        CHECK(t0->step[0].time != ST_NOTE, "the bar's first half untouched");
+        beat_n = 3; beat_pos = b - 5u; live_tick(64);
+        CHECK(!fill_on && !seq_fill && t0->step[8].hit == 1u && t0->step[15].time != ST_NOTE, "the bar after: back as it was");
+        song.playing = 0;
+    }
+
     printf("cos_test: %s (%d failures)\n", fails ? "FAILED" : "ok", fails);
     return fails != 0;
 }

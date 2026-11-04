@@ -2910,4 +2910,5 @@ static void events_block(uint32_t n)
 }
 
 #include "song_play.c"                           /* the song: the ISR's part (song_chain.c) */
+#include "cos_live.c"                            /* (cursedsound) cursed-os's live layer: the ISR's part */
 

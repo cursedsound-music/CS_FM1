@@ -2215,6 +2215,7 @@ static __attribute__((noinline)) void ui_polls(void)
         lim_in = comp_ex2(DB_Q8((int32_t)(x[7] <= 12u ? x[7] : 0u)));
         lim_rs = (uint8_t)(8u + (x[8] && x[8] <= 6u ? x[8] - 1u : 3u));
         lev_off = (uint8_t)(x[9] == 1u);
+        cos_mq = (uint8_t)(x[10] && x[10] <= 3u ? x[10] - 1u : 2u);   /* (MUTE Q: byte 18; 0 there, BAR) */
     }
 }
 /* every frame, whichever interface (cursed-os: COS_SLIM has only its own): MOMENTARY's glide, the reverb's shared

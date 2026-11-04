@@ -40,13 +40,15 @@ enum { CK_NONE, CK_TRK, CK_GLO, CK_AC, CK_EU, CK_COS, CK_DB };
 enum { CC_OUTCH, CC_MOUT, CC_CLOCK, CC_SLOT, CC_TRKS, CC_LOAD, CC_COMP, CC_CATK, CC_CREL, CC_LIM, CC_PF0, CC_PF3 = CC_PF0 + 3,
        CC_X2, CC_X2E = CC_X2 + 15, CC_OCT, CC_KICK, CC_KICKE = CC_KICK + 4, CC_LN0, CC_LNE = CC_LN0 + 7, CC_KDRV, CC_BT,
        CC_L1SYNC, CC_L1RATE, CC_L1WAVE, CC_L1MODE, CC_L1PH, CC_L1FADE, CC_L2SYNC, CC_L2RATE, CC_BPM,
-       CC_CIN, CC_CTHR, CC_CRAT, CC_CMK, CC_CKNEE, CC_CSC, CC_CMIX, CC_LIN, CC_LREL, CC_LVL };
+       CC_CIN, CC_CTHR, CC_CRAT, CC_CMK, CC_CKNEE, CC_CSC, CC_CMIX, CC_LIN, CC_LREL, CC_LVL, CC_MUTEQ };
 _Static_assert(X2_N <= 16u, "CC_X2 .. CC_X2E: room for every trk_x2 field");
+#define ID_MUTEQ 0xFCu                          /* (HOME 2's: MUTE Q, cos_knob) */
 #define ID_BPM 0xFDu                            /* (HOME's: BPM in tenths, cos_knob) */
 #define ID_OCT 0xFEu                            /* (any page's knob: the track's OCTAVE, cos_knob) */   /* (CC_X2 + X2_*: params.c trk_x2, LFO 2 and FILTER 2) */   /* (CK_COS: cursed-os's own knobs) */
 typedef struct { const char *tab; uint8_t kind, id[4]; } cpg_t;
 #define X 0xFFu
-static const cpg_t CZP_HOME[] = {{"PERFORM", CK_GLO, {ID_BPM, G_SWING, G_DJF, ID_OCT}}};
+static const cpg_t CZP_HOME[] = {{"PERFORM", CK_GLO, {ID_BPM, G_SWING, G_DJF, ID_OCT}},
+                                {"PERFORM 2", CK_GLO, {G_DUCK, G_DREL, ID_MUTEQ, X}}};   /* (DUCK: the kick pumps the rest) */
 static const cpg_t CZP_TRIG[] = {{"TRIG", CK_TRK, {P_SLEN, P_SDIV, P_SSWING, P_SGATE}}};
 /* EDIT: the engine's eight (its own page names: cos_tabs), the voice, the matrix's four slots; a VOICE track WORDS
  * third. ENV: the amp, the filter, the envelope's modulation, the two LFO pages */
@@ -145,7 +147,7 @@ static int cos_kit(void) { return drum_track(TSEL) != 0; }
 static void cos_pages(uint32_t m, const cpg_t **p, uint32_t *n)
 {
     static const cpg_t *const P[CM_N] = {CZP_HOME, CZP_TRIG, CZP_SRC, CZP_AMP, CZP_DRONE, CZP_FX, CZP_GENA, CZP_MIX, CZP_KEY, CZP_PROJ};
-    static const uint8_t N[CM_N] = {1, 1, 8, 9, 2, 4, 4, 7, 1, 1};
+    static const uint8_t N[CM_N] = {2, 1, 8, 9, 2, 4, 4, 7, 1, 1};
     int vo = m == CM_SRC && trk_engp(TSEL) == &ENG_FORMANT;
     if (m == CM_SRC && cos_kit()) { *p = CZP_SRCD; *n = NELEM(CZP_SRCD); return; }   /* (a kit: KICK, LEVELS, its own ..) */
     if (m == CM_GEN && cos_kit()) { *p = CZP_GENE; *n = 3; return; }
@@ -294,6 +296,13 @@ static const param_desc_t *cos_cdesc(uint32_t id, int16_t **vp)
         default: *vp = &TSEL->p[P_LFADE]; return track_desc(TSEL, P_LFADE);
         }
     }
+    if (id == CC_MUTEQ) {                                /* HOME 2: when a mute or a solo goes in (cos_live.c) */
+        static const char *const QN[3] = {"NOW", "BEAT", "BAR"};
+        static const param_desc_t DQ = {"MUTE Q", F_ENUM, 0, 2, 2, QN, 0};
+        cz.cc_v[14] = (int16_t)(cos_mq % 3u);
+        *vp = &cz.cc_v[14];
+        return &DQ;
+    }
     if (id == CC_BPM) {                                  /* BPM in tenths: HOME held, a knob's step is a tenth */
         static const param_desc_t DB = {"BPM", F_INT, 400, 2400, 1200, 0, 0};
         cz.cc_v[14] = (int16_t)(song.g[G_BPM] * 10 + bpm_frac % 10u);
@@ -426,6 +435,10 @@ static void cos_cput(uint32_t id, int32_t v)
         } else {
             t->p[P_LFADE] = (int16_t)clamp(v, TP[P_LFADE].min, TP[P_LFADE].max);
         }
+    } else if (id == CC_MUTEQ) {
+        favorites.factory[6][18] = (uint8_t)(clamp(v, 0, 2) + 1);   /* (TRIO's retired row: 0 there, BAR) */
+        cos_mq = (uint8_t)clamp(v, 0, 2);
+        cz.set_ms = fm1_ms;
     } else if (id == CC_OCT) {
         int32_t tr = TSEL->p[P_TRANS], o = tr >= 0 ? (tr + 6) / 12 : -((-tr + 5) / 12);
         TSEL->p[P_TRANS] = (int16_t)clamp(tr + (clamp(v, -2, 2) - o) * 12, -24, 24);
@@ -470,6 +483,7 @@ static const param_desc_t *cos_knob(const cpg_t *p, uint32_t k, int16_t **vp)
     if (id == 0xFFu) return 0;
     if (id == ID_OCT) return cos_cdesc(CC_OCT, vp);     /* (any page's: the track's OCTAVE) */
     if (id == ID_BPM) return cos_cdesc(CC_BPM, vp);
+    if (id == ID_MUTEQ) return cos_cdesc(CC_MUTEQ, vp);
     switch (p->kind) {
     case CK_TRK: *vp = &TSEL->p[id]; return track_desc(TSEL, id);
     case CK_GLO:
@@ -556,6 +570,7 @@ static void cos_turn(uint32_t k, int32_t s)
     cz.hot = (uint8_t)(k + 1u);
     cz.hot_ms = fm1_ms;
     if (p->id[k] == ID_OCT) cos_cput(CC_OCT, v);
+    else if (p->id[k] == ID_MUTEQ) cos_cput(CC_MUTEQ, v);
     else if (p->kind == CK_AC) ac_put(p->id[k], v);
     else if (p->kind == CK_DB) db_put(p->id[k], v);
     else if (p->kind == CK_EU) eu_put(p->id[k], v);
@@ -635,10 +650,14 @@ static __attribute__((noinline)) void cos_proj_scan(void)
     for (i = 0; i < 4u; i++) proj_slot_name(i, cz.pn[i]);
     cz.pn_ok = 1;
 }
+static int section_jump(uint32_t s);                     /* (song_main.c) in on the next bar (stopped: now) */
+static void section_store(uint32_t s);                   /* .. the music now into it (RAM; flash once stopped) */
 static __attribute__((noinline)) void cos_proj_oct(int up)
 {
-    if (up) project_save(cz.slot);
+    if (up && song.playing) section_store(cz.slot);      /* (playing: kept now, written once stopped) */
+    else if (up) project_save(cz.slot);
     else if (!cz.pn[cz.slot][0]) cos_say("EMPTY SLOT");
+    else if (song.playing) section_jump(cz.slot);        /* (playing: in on the next bar) */
     else { project_load(cz.slot); ui.msg_t = 0; cos_say("LOADED"); }
     cos_proj_scan();
 }
@@ -725,6 +744,7 @@ static __attribute__((noinline)) void cos_input(void)
             cz.fx_used = 1;
             perf_latched = 0;
             cfx_latched = 0;
+            bd_kill = 1;                                 /* (the BREAKDOWN too) */
             perf_k[0] = perf_k[1] = perf_k[2] = perf_k[3] = 0;
             cos_say("FX ALL OFF");
         }
@@ -809,11 +829,29 @@ static __attribute__((noinline)) void cos_input(void)
             cos_drone_key(k);
         } else if (cz.mode == CM_PROJ) {
             if (w < 4u) cz.slot = (uint8_t)w;
-        } else if (cz.mode == CM_HOME) {
+        } else if (cz.mode == CM_HOME) {                 /* white 1..6 the track, 9..12 the sections A..D on the bar; black
+                                                         * 1..6 mute (HOME held: solo), 7 FILL, 8 BREAKDOWN (cos_live.c) */
             if (w < trk_live) track_select(w);
-            else if (j < trk_live) {
+            else if (w >= 8u && w < 12u) {
+                if (!cz.pn_ok) cos_proj_scan();
+                section_jump(w - 8u);
+            }
+            else if (j < trk_live && cos_home_held()) {
+                uint8_t cur = live_qsolo_on ? live_qsolo : perf_solo;
+                live_qsolo = (uint8_t)(cur ^ (1u << j));
+                live_qsolo_on = 1;
+                if (!cos_mq) cos_say(live_qsolo ? "SOLO" : "SOLO OFF");
+            }
+            else if (j < trk_live && !cos_mq) {
                 trk[j].p[P_MUTE] = (int16_t)!trk[j].p[P_MUTE];
                 cos_say(trk[j].p[P_MUTE] ? "MUTED" : "UNMUTED");
+            }
+            else if (j < trk_live) live_qmute ^= (uint8_t)(1u << j);   /* (on the next beat / bar) */
+            else if (j == 6u) { fill_req = 1; cos_say(song.playing ? "FILL" : "FILL: PLAY FIRST"); }
+            else if (j == 7u) {
+                static const char *const BS[6] = {"BREAK NEXT BAR", "BREAK", "BUILD NEXT BAR", "BUILD", "DROP NEXT BAR", ""};
+                bd_req = 1;
+                cos_say(BS[bd_state == BD_OFF ? 0 : bd_state == BD_BREAK ? 2 : bd_state == BD_BUILD ? 4 : 5]);
             }
         } else if (cz.mode == CM_TRIG) {
             if (w < 16u) { if (!cz.tg_down) cz.lk_used = 0; cz.tg_down |= 1u << k; }   /* (the trig on release) */
@@ -822,6 +860,7 @@ static __attribute__((noinline)) void cos_input(void)
             eu_put(EK_K4, (int32_t)j + 1);                /* (EUCLID: a lane picked) */
         }
     }
+    if (cz.mode == CM_HOME && ((fm1_in.notes >> BK[6]) & 1u) && song.playing) fill_req = 1;   /* (FILL held: every bar) */
     {                                                    /* TRIG: a white key let go: its trig, unless a lock was set */
         uint32_t up = cz.tg_down & ~fm1_in.notes, w;
         for (w = 0; w < 16u && up; w++)
@@ -1055,7 +1094,9 @@ static void cos_body_home(void)
         if (cz.dr_n && cz.dr_trk == t) cv_rect(236, y + 1, 3, 7, C_FG);   /* (its drone holds) */
         cos_trk_label(tr, b);
         cos_up(b);
-        cos_tx(14, y + 1, b, mute ? C_DIM : C_FG);
+        cos_tx(14, y + 1, b, ((live_qmute >> t) & 1u) && (fm1_ms & 256u) ? C_RED : mute ? C_DIM : C_FG);   /* (a mute
+                                                         * asked for: blinking until it goes in) */
+        if ((perf_solo >> t) & 1u) cv_rect(58, y + 1, 3, 7, C_RED);   /* (soloed) */
         for (i = 0; i < 16u; i++) {
             uint32_t st = (now != ~0u ? now / 16u * 16u : 0u) + i, v = st < len ? cos_step(tr, st, NLANE) : 0u;
             int32_t x = 64 + (int32_t)i * 11;
@@ -1066,7 +1107,19 @@ static void cos_body_home(void)
             if (st == now) cv_rect(x, y + 10, 9, 1, C_RED);
         }
     }
-    cos_tx(4, 144, "ARP:ACID WHITE:TRK BLACK:MUTE", C_DIM);
+    {                                                    /* the line under them: what is coming, else what the keys do */
+        static const char *const BS[6] = {"", "BREAK NEXT BAR", "BREAKDOWN", "BUILD NEXT BAR", "BUILD", "DROP NEXT BAR"};
+        char b[32];
+        b[0] = 0;
+        if (live.req >= 0) { str_cpy(b, "A NEXT BAR", sizeof b); b[0] = (char)('A' + live.req); }
+        else if (bd_state != BD_OFF) {
+            str_cpy(b, BS[bd_state % 6u], sizeof b);
+            if (bd_state == BD_BUILD) { uint32_t l = str_len(b); b[l] = ' '; b[l + 1] = (char)('0' + bd_bars % 10u); b[l + 2] = 0; }
+        } else if (fill_on || fill_req) str_cpy(b, "FILL", sizeof b);
+        if (b[0]) cos_tx(4, 144, b, C_RED);
+        else cos_tx(4, 144, trk_live > 5u ? "W9-12 SECT  B7 FILL  B8 DROP" : "W9-12:A-D B7:FILL B8:BREAK", C_DIM);
+        if (live.cur >= 0 && !b[0]) { char c[2] = {(char)('A' + live.cur), 0}; cos_txr(236, 144, c, C_MID); }
+    }
 }
 
 /* TRIG: a kit's eight lanes (the picked one framed), a synth's notes as a roll */
@@ -1377,7 +1430,7 @@ static void cos_body_proj(void)
         cos_tx(32, y + 4, used ? cz.pn[i] : "EMPTY", used ? (pick ? C_FG : C_MID) : C_DIM);
         if (i == proj_cur_slot()) cos_txr(232, y + 4, "NOW", C_MID);
     }
-    cos_txc(120, 136, CZ_LBL, song.playing ? "OCT- LOAD  (STOP TO SAVE)" : "OCT+ SAVE  OCT- LOAD", C_DIM);
+    cos_txc(120, 136, CZ_LBL, song.playing ? "OCT+ STORE  OCT- NEXT BAR" : "OCT+ SAVE  OCT- LOAD", C_DIM);
 }
 
 /* the FX pad (FX held): the 16 white keys' effects in two columns, the black keys' under them; an effect on: red */
