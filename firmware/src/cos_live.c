@@ -90,6 +90,10 @@ static __attribute__((noinline)) void live_tick(uint32_t n)
     uint32_t b = beat_samples(), beat = song.playing && beat_pos + n >= b, bar = beat && beat_n == 3u,
              half = beat && beat_n == 1u, now = !song.playing;
     if (bd_kill) { bd_kill = 0; bd_state = BD_OFF; bd_req = 0; }
+    if (cos_pc_out_req) {                             /* (LINK: a section asked for, its PROGRAM CHANGE out) */
+        if (cos_pc_ch) mo_send(0xC0u | (cos_pc_ch - 1u), cos_pc_out_req - 1u, 0);
+        cos_pc_out_req = 0;
+    }
     if (bd_req) {
         bd_req = 0;
         bd_step(0);

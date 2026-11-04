@@ -322,8 +322,20 @@ int main(void)
         track_t *t3 = &trk[3];
         song.sel = 3; set_engine_of(t3, ENGI_ANALOG); t3->p[P_LRATE] = 60;
         cos_cput(CC_L1SYNC, 1);
-        CHECK(t3->p[P_LRATE] == -5 && cos_cdesc(CC_L1RATE, &vp)->fmt == F_ENUM && *vp == 4, "LFO 1 BPM: 1/4");
-        cos_cput(CC_L1RATE, 9);
+        CHECK(t3->p[P_LRATE] == -5 && cos_cdesc(CC_L1RATE, &vp)->fmt == F_ENUM && *vp == 7, "LFO 1 BPM: 1/4 (after the slow three)");
+        cos_cput(CC_L1RATE, 0);
+        CHECK(t3->p[P_LRATE] == -15 && cos_cdesc(CC_L1RATE, &vp) && *vp == 0, "32BAR first on the knob (%d)", t3->p[P_LRATE]);
+        cos_cput(CC_L1RATE, 2);
+        CHECK(t3->p[P_LRATE] == -13, "8BAR (%d)", t3->p[P_LRATE]);
+        {   /* 32 bars at 120 BPM: a cycle of 32 x 4 x 22050 samples */
+            uint32_t ph0, q;
+            uint64_t want = ((uint64_t)1000u * CTL << 32) / 2822400u, got;
+            song.playing = 0; song.g[G_BPM] = 120; bpm_frac = 0; bpm_nudge = 0; ph0 = t3->lfo_ph; t3->p[P_LRATE] = -15;
+            for (q = 0; q < 1000u; q++) track_lfo_tick(t3);
+            got = (uint32_t)(t3->lfo_ph - ph0);
+            CHECK(got > want * 98u / 100u && got < want * 102u / 100u, "32BAR: a cycle of 32 bars (%llu of %llu)", (unsigned long long)got, (unsigned long long)want);
+        }
+        cos_cput(CC_L1RATE, 12);
         CHECK(t3->p[P_LRATE] == -10, "1/16 (%d)", t3->p[P_LRATE]);
         cos_cput(CC_L1SYNC, 0);
         CHECK(t3->p[P_LRATE] == 60, "back to HZ");
@@ -586,12 +598,29 @@ int main(void)
         {
             uint8_t before[32];
             for (j = 0; j < 32u; j++) before[j] = t3->step[j].time == ST_NOTE && t3->step[j].n;
-            fm1_ms += 3000u; db_oct(1);
+            fm1_ms += 3000u; db_oct(1, 0);
             for (ns = 0, j = 0; j < 32u; j++) ns += before[j] != (t3->step[j].time == ST_NOTE && t3->step[j].n);
             CHECK(ns > 0u, "OCT+: a new groove (%u steps changed)", ns);
-            db_oct(0);
+            db_oct(0, 0);
             for (ns = 0, j = 0; j < 32u; j++) ns += before[j] != (t3->step[j].time == ST_NOTE && t3->step[j].n);
             CHECK(ns == 0u, "OCT-: the one before");
+        }
+        {   /* EVERY: a mutation on the bar's last beat, AMOUNT of the stabs thrown again; OCT- on DUB 3 back to the anchor */
+            uint8_t before[32];
+            uint32_t ch;
+            db_put(DK_AMT, 60); db_put(DK_EVERY, 1);
+            for (j = 0; j < 32u; j++) before[j] = t3->step[j].time == ST_NOTE && t3->step[j].n;
+            song.playing = 1; bar_n = 0; beat_n = 3; beat_pos = beat_samples() - 10u;
+            db_tick();
+            for (ch = 0, j = 0; j < 32u; j++) ch += before[j] != (t3->step[j].time == ST_NOTE && t3->step[j].n);
+            CHECK(db_of(3)->ms && ch > 0u, "EVERY 1 BAR: mutated on the bar (%u steps)", ch);
+            db_tick();
+            CHECK(db_of(3)->bar == 1u, "once a bar");
+            song.playing = 0;
+            db_oct(0, 1);
+            for (ch = 0, j = 0; j < 32u; j++) ch += before[j] != (t3->step[j].time == ST_NOTE && t3->step[j].n);
+            CHECK(!db_of(3)->ms && ch == 0u, "OCT- on DUB 3: the anchor again");
+            db_put(DK_EVERY, 0);
         }
         db_put(DK_DENS, 0);
         for (ns = 0, j = 0; j < 32u; j++) ns += t3->step[j].time == ST_NOTE && t3->step[j].n;
@@ -649,6 +678,22 @@ int main(void)
         beat_n = 3; beat_pos = b - 5u; live_tick(64);
         CHECK(!fill_on && !seq_fill && t0->step[8].hit == 1u && t0->step[15].time != ST_NOTE, "the bar after: back as it was");
         song.playing = 0;
+    }
+
+
+    /* GLO > LINK: a PROGRAM CHANGE on the link's channel picks the section (% 4); PC OUT sends a section asked for here */
+    {
+        cos_cput(CC_PCCH, 10); cos_cput(CC_PCOUT, 1);
+        CHECK(cos_pc_ch == 10u && cos_pc_out && favorites.factory[6][19] == 10u, "LINK on channel 10, PC OUT on");
+        midi_song_req = 0;
+        midi_event(0xC0u, 9u, 5u, 0);
+        CHECK(midi_song_req == 2u && cos_pc_in, "PC 5 (a Syntakt's A06): section B (%u)", midi_song_req);
+        midi_song_req = 0; cos_pc_in = 0;
+        midi_event(0xC0u, 8u, 1u, 0);
+        CHECK(midi_song_req == 0u, "another channel: not the link's");
+        cos_pc_out_req = 3; live_tick(64);
+        CHECK(!cos_pc_out_req, "PC OUT: sent with the next block");
+        cos_cput(CC_PCCH, 0); cos_cput(CC_PCOUT, 0); midi_song_req = 0;
     }
 
     printf("cos_test: %s (%d failures)\n", fails ? "FAILED" : "ok", fails);

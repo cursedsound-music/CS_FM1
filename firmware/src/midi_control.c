@@ -387,6 +387,10 @@ static volatile uint8_t midi_pc_req[NTRK];
  * (in on the next bar, as the song layer's keys), 16..23 the project 1..8 (stopped only, as SAVE > PROJECT). The UI
  * takes it between frames (ui.c midi_pc_poll). 0 none, else n + 1 */
 static volatile uint8_t midi_song_req;
+/* (cursed-os) GLO > LINK: a PROGRAM CHANGE on cos_pc_ch (1..16, 0 OFF) switches the section, the program's number % 4
+ * (a Syntakt's A01 A, A02 B, A03 C, A04 D, A05 A ..), on the next bar; cos_pc_out: a section asked for on cursed-os sends
+ * its number (0..3) there (USB / Bluetooth: cos_live.c live_tick sends it) */
+static volatile uint8_t cos_pc_ch, cos_pc_out, cos_pc_out_req, cos_pc_in;
 
 /* Keep the occasional controller/panic dispatch outside the hot rendering loop. Channel voice messages only
  * (realtime and clock are handled in events_block, SysEx never reaches here). With ROUT CH1-6 channels
@@ -394,6 +398,11 @@ static volatile uint8_t midi_song_req;
  * channel aftertouch, so they stay free for other instruments. */
 static void __attribute__((noinline)) midi_event(uint32_t st, uint32_t ch, uint32_t d1, uint32_t d2)
 {
+    if (st == 0xC0u && cos_pc_ch && ch == cos_pc_ch - 1u) {   /* (cursed-os) LINK: the other machine's pattern, a section */
+        midi_song_req = (uint8_t)(d1 % 4u + 1u);
+        cos_pc_in = 1;                                  /* (not sent back: no loop) */
+        return;
+    }
     if (st == 0xC0u && ch == 15u) {                    /* (0.6.80) channel 16's PROGRAM CHANGE: a section, a project */
         midi_song_req = (uint8_t)(d1 + 1u);
         return;

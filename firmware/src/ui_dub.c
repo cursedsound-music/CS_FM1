@@ -8,18 +8,21 @@
  *        (the track's GATE: a short stab .. held)
  * DUB 2  KNOB 1 BARS (1, 2, 4), 2 VOICING (CLOSE, INV 1, INV 2, OPEN), 3 ECHO (the track's delay and reverb sends),
  *        4 OCTAVE (the track's)
- * DUB 3  KNOB 1 ROOT (AUTO: the song's key, the track's root; or C .. B)
+ * DUB 3  KNOB 1 ROOT (AUTO: the song's key, the track's root; or C .. B), 2 EVERY (OFF, 1 .. 16 bars: a mutation on the
+ *        bar, AMOUNT % of the stabs thrown again; turned back to OFF the groove stays where it is), 3 AMOUNT
+ * OCT+ on DUB 3: a mutation now, OCT- back to the anchor (the groove as thrown).
  * OCT+ a new groove (rhythm and move), the one before onto the history; OCT- back through the last eight.
  * Every knob writes the whole groove again (the same seeds: the same groove). The settings are the session's (RAM). */
 #define DB_HIST 8u
 typedef struct { uint16_t r, m; } dbs_t;
 typedef struct {
-    uint8_t on, shape, dens, move, len, bars, voic, echo, root, nh;
+    uint8_t on, shape, dens, move, len, bars, voic, echo, root, nh, every, amt, bar;
+    uint16_t ms;                                        /* the mutation seed (0: the anchor) */
     dbs_t s, hist[DB_HIST];
 } db_t;
 static db_t db[NTRK] COS_RAM;
 static uint32_t db_ms COS_RAM;                                  /* (the last hand gesture: an UNDO point after 2 s) */
-enum { DK_SHAPE, DK_DENS, DK_MOVE, DK_LEN, DK_BARS, DK_VOIC, DK_ECHO, DK_ROOT, DK_N };
+enum { DK_SHAPE, DK_DENS, DK_MOVE, DK_LEN, DK_BARS, DK_VOIC, DK_ECHO, DK_ROOT, DK_EVERY, DK_AMT, DK_N };
 static const int8_t DB_SHP[7][4] = {{0, 3, 7, 10}, {0, 3, 10, 14}, {0, 5, 10, 15}, {0, 5, 7, 10}, {0, 2, 7, 12},
                                     {0, 3, 7, 12}, {0, 4, 7, 11}};
 static const char *const DB_SHN[] = {"MIN7", "MIN9", "MIN11", "7SUS4", "SUS2", "MIN", "MAJ7", 0};
@@ -31,7 +34,7 @@ static db_t *db_of(uint32_t k)
     db_t *a = &db[k % NTRK];
     if (!a->on) {
         a->on = 1;
-        a->shape = 0; a->dens = 45; a->move = 0; a->len = 22; a->bars = 1; a->voic = 0; a->echo = 60;
+        a->shape = 0; a->dens = 45; a->move = 0; a->len = 22; a->bars = 1; a->voic = 0; a->echo = 60; a->amt = 25;
         a->s.r = (uint16_t)(0xD0B1u + k * 7u); a->s.m = (uint16_t)(0x5EC7u + k * 11u);
     }
     return a;
@@ -73,7 +76,8 @@ static void db_gen(uint32_t k, uint32_t hand)
         static const uint8_t W[4] = {10, 24, 80, 34};
         int32_t p = (int32_t)W[i & 3u] * (int32_t)a->dens / 45;
         if (i && on[i - 1u]) p /= 2;
-        on[i] = (uint8_t)(a->dens && ac_ch(a->s.r, i, 0xD1u, clamp(p, 0, 95)));
+        uint32_t sr = a->ms && ac_ch(a->ms, i, 0xD3u, a->amt) ? a->s.r ^ a->ms : a->s.r;   /* (a mutated stab: its own roll) */
+        on[i] = (uint8_t)(a->dens && ac_ch(sr, i, 0xD1u, clamp(p, 0, 95)));
     }
     for (b = 0; a->dens && b < n; b += 16u) {            /* (every bar a stab at least: its second offbeat) */
         uint32_t any = 0;
@@ -116,7 +120,9 @@ static int16_t db_v[DK_N] COS_RAM;
 static param_desc_t db_d COS_RAM;
 static __attribute__((noinline)) const param_desc_t *db_desc(uint32_t k, int16_t **valp)
 {
-    static const char *const LB[DK_N] = {"CHORD", "DENSITY", "MOVE", "LENGTH", "BARS", "VOICING", "ECHO", "ROOT"};
+    static const char *const LB[DK_N] = {"CHORD", "DENSITY", "MOVE", "LENGTH", "BARS", "VOICING", "ECHO", "ROOT", "EVERY",
+                                         "AMOUNT"};
+    static const char *const EV[] = {"OFF", "1 BAR", "2 BARS", "4 BARS", "8 BARS", "16 BARS", 0};
     static const char *const MV[] = {"OFF", "2", "4", 0};   /* (the chords in the loop: one, two, four) */
     static const char *const BR[] = {"1", "2", "4", 0};
     static const char *const VO[] = {"CLOSE", "INV 1", "INV 2", "OPEN", 0};
@@ -132,6 +138,8 @@ static __attribute__((noinline)) const param_desc_t *db_desc(uint32_t k, int16_t
     case DK_BARS: db_d.fmt = F_ENUM; db_d.max = 2; db_d.names = BR; db_v[k] = a->bars; break;
     case DK_VOIC: db_d.fmt = F_ENUM; db_d.max = 3; db_d.names = VO; db_v[k] = a->voic; break;
     case DK_ECHO: db_v[k] = a->echo; break;
+    case DK_EVERY: db_d.fmt = F_ENUM; db_d.max = 5; db_d.names = EV; db_v[k] = a->every; break;
+    case DK_AMT: db_v[k] = a->amt; break;
     default: db_d.fmt = F_ENUM; db_d.max = 12; db_d.names = RT; db_v[k] = a->root; break;
     }
     *valp = &db_v[k];
@@ -141,8 +149,8 @@ static __attribute__((noinline)) const param_desc_t *db_desc(uint32_t k, int16_t
 static __attribute__((noinline)) void db_put(uint32_t k, int32_t v)
 {
     db_t *a = db_of(song.sel);
-    uint8_t *f[DK_N] = {&a->shape, &a->dens, &a->move, &a->len, &a->bars, &a->voic, &a->echo, &a->root};
-    static const uint8_t LO[DK_N] = {0, 0, 0, 5, 0, 0, 0, 0}, HI[DK_N] = {6, 100, 2, 100, 2, 3, 100, 12};
+    uint8_t *f[DK_N] = {&a->shape, &a->dens, &a->move, &a->len, &a->bars, &a->voic, &a->echo, &a->root, &a->every, &a->amt};
+    static const uint8_t LO[DK_N] = {0, 0, 0, 5, 0, 0, 0, 0, 0, 0}, HI[DK_N] = {6, 100, 2, 100, 2, 3, 100, 12, 5, 100};
     k %= DK_N;
     *f[k] = (uint8_t)clamp(v, LO[k], HI[k]);
     ui.force = 1;
@@ -172,11 +180,29 @@ static void db_throw(uint32_t k, int up)
     }
     db_gen(k, 1);
 }
-static __attribute__((noinline)) void db_oct(int up)
+static __attribute__((noinline)) void db_oct(int up, int mu)
 {
+    db_t *a = db_of(song.sel);
     if (drum_track(TSEL)) { ui_message("DUB: PICK A SYNTH TRACK"); return; }
     if (chain_busy()) { ui_message("SONG PLAYS: STOP IT TO EDIT"); return; }
-    db_throw(song.sel, up);
+    if (!mu) { a->ms = 0; db_throw(song.sel, up); return; }
+    if (up) { a->ms = (uint16_t)(ac_h(fm1_ms, song.sel, a->ms ^ 0xDBu) | 1u); db_gen(song.sel, 1); ui_message("MUTATED"); }
+    else { a->ms = 0; db_gen(song.sel, 1); ui_message("ANCHOR"); }
+}
+/* every UI frame: playing, each track with EVERY on mutates in the last beat of every EVERY bars (as ac_tick) */
+static __attribute__((noinline)) void db_tick(void)
+{
+    uint32_t k, b = bar_n;
+    for (k = 0; !song.playing && k < NTRK; k++) db[k].bar = 0;
+    if (!song.playing || chain_busy() || beat_n != 3u || beat_pos < beat_samples() / 2u) return;
+    for (k = 0; k < NTRK; k++) {
+        db_t *a = &db[k];
+        uint32_t ev = AC_EVERY[a->every % 6u];
+        if (!a->on || !ev || !a->amt || drum_track(&trk[k]) || a->bar == (uint8_t)(b + 1u) || (b + 1u) % ev) continue;
+        a->bar = (uint8_t)(b + 1u);
+        a->ms = (uint16_t)(ac_h(fm1_ms, k, a->ms ^ 0xDBu) | 1u);
+        db_gen(k, 0);
+    }
 }
 /* the track's sound: ANALOG's DUB STAB (a filtered saw stab, delay and reverb on it) */
 static __attribute__((noinline)) void db_sound(uint32_t k)

@@ -40,7 +40,7 @@ enum { CK_NONE, CK_TRK, CK_GLO, CK_AC, CK_EU, CK_COS, CK_DB };
 enum { CC_OUTCH, CC_MOUT, CC_CLOCK, CC_SLOT, CC_TRKS, CC_LOAD, CC_COMP, CC_CATK, CC_CREL, CC_LIM, CC_PF0, CC_PF3 = CC_PF0 + 3,
        CC_X2, CC_X2E = CC_X2 + 15, CC_OCT, CC_KICK, CC_KICKE = CC_KICK + 4, CC_LN0, CC_LNE = CC_LN0 + 7, CC_KDRV, CC_BT,
        CC_L1SYNC, CC_L1RATE, CC_L1WAVE, CC_L1MODE, CC_L1PH, CC_L1FADE, CC_L2SYNC, CC_L2RATE, CC_BPM,
-       CC_CIN, CC_CTHR, CC_CRAT, CC_CMK, CC_CKNEE, CC_CSC, CC_CMIX, CC_LIN, CC_LREL, CC_LVL, CC_MUTEQ };
+       CC_CIN, CC_CTHR, CC_CRAT, CC_CMK, CC_CKNEE, CC_CSC, CC_CMIX, CC_LIN, CC_LREL, CC_LVL, CC_MUTEQ, CC_PCCH, CC_PCOUT };
 _Static_assert(X2_N <= 16u, "CC_X2 .. CC_X2E: room for every trk_x2 field");
 #define ID_MUTEQ 0xFCu                          /* (HOME 2's: MUTE Q, cos_knob) */
 #define ID_BPM 0xFDu                            /* (HOME's: BPM in tenths, cos_knob) */
@@ -97,7 +97,7 @@ static const cpg_t CZP_GENA[] = {{"ACID", CK_AC, {AK_DENS, AK_SLIDE, AK_ACC, ID_
                                 {"ACID 3", CK_AC, {AK_EVERY, AK_AMT, AK_ROOT, AK_SCALE}}, {"ACID 4", CK_AC, {AK_LOCK, X, X, X}}};
 /* (a synth track that is not ACID: DUB's chord stabs first, ACID's lines after them) */
 static const cpg_t CZP_GENS[] = {{"DUB", CK_DB, {DK_SHAPE, DK_DENS, DK_MOVE, DK_LEN}}, {"DUB 2", CK_DB, {DK_BARS, DK_VOIC, DK_ECHO, ID_OCT}},
-                                {"DUB 3", CK_DB, {DK_ROOT, X, X, X}},
+                                {"DUB 3", CK_DB, {DK_ROOT, DK_EVERY, DK_AMT, X}},
                                 {"ACID", CK_AC, {AK_DENS, AK_SLIDE, AK_ACC, ID_OCT}}, {"ACID 2", CK_AC, {AK_STEPS, AK_NOTES, AK_TIE, AK_OCT}},
                                 {"ACID 3", CK_AC, {AK_EVERY, AK_AMT, AK_ROOT, AK_SCALE}}, {"ACID 4", CK_AC, {AK_LOCK, X, X, X}}};
 static const cpg_t CZP_GENE[] = {{"EUCLID", CK_EU, {EK_HITS, EK_STEPS, EK_ROT, EK_K4}}, {"MODES", CK_EU, {EK_M0, EK_M0 + 1u, EK_M0 + 2u, EK_M0 + 3u}},
@@ -108,6 +108,7 @@ static const cpg_t CZP_MIX[] = {{"MIX", CK_TRK, {P_LEVEL, P_PAN, P_GLIDE, P_MUTE
                                {"COMP 3", CK_COS, {CC_CSC, CC_CMIX, X, X}},
                                {"LIMIT", CK_COS, {CC_LIN, CC_LIM, CC_LREL, CC_LVL}},
                                {"MIDI", CK_COS, {CC_OUTCH, CC_MOUT, CC_CLOCK, X}},
+                               {"LINK", CK_COS, {CC_PCCH, CC_PCOUT, X, X}},   /* (a Syntakt's patterns: the sections) */
                                {"SYSTEM", CK_COS, {CC_TRKS, CC_LOAD, CC_BT, X}}};
 static const cpg_t CZP_KEY[] = {{"KEY", CK_TRK, {P_SCALE, P_QUANT, 0xFFu, 0xFFu}}};   /* (the root: the keys) */
 static const cpg_t CZP_PERF[] = {{"FX PAD", CK_COS, {CC_PF0, CC_PF0 + 1u, CC_PF0 + 2u, CC_PF3}}};   /* (FX held) */
@@ -147,7 +148,7 @@ static int cos_kit(void) { return drum_track(TSEL) != 0; }
 static void cos_pages(uint32_t m, const cpg_t **p, uint32_t *n)
 {
     static const cpg_t *const P[CM_N] = {CZP_HOME, CZP_TRIG, CZP_SRC, CZP_AMP, CZP_DRONE, CZP_FX, CZP_GENA, CZP_MIX, CZP_KEY, CZP_PROJ};
-    static const uint8_t N[CM_N] = {2, 1, 8, 9, 2, 4, 4, 7, 1, 1};
+    static const uint8_t N[CM_N] = {2, 1, 8, 9, 2, 4, 4, 8, 1, 1};
     int vo = m == CM_SRC && trk_engp(TSEL) == &ENG_FORMANT;
     if (m == CM_SRC && cos_kit()) { *p = CZP_SRCD; *n = NELEM(CZP_SRCD); return; }   /* (a kit: KICK, LEVELS, its own ..) */
     if (m == CM_GEN && cos_kit()) { *p = CZP_GENE; *n = 3; return; }
@@ -260,6 +261,12 @@ static void cos_key_poll(void)
 
 /* GLO > MIDI's knobs: the selected track's MIDI OUT channel (the settings: bytes 8 .. 13 of engine 15's, 0 its own),
  * MIDI OUT (KEYS CLOCK ALL OFF: the menu's), the clock the music follows (the project's G_CLOCK: INT USB TRS) */
+/* the LFOs' rates in time, slowest first on the knob: 32BAR 16BAR 8BAR, then JIANT's 4BAR .. 1/32 (stored: N_LSYNC's
+ * index, the slow three appended at 12 .. 14) */
+static const char *const COS_LSYNC[15] = {"32BAR", "16BAR", "8BAR", "4BAR", "2BAR", "1BAR", "1/2", "1/4", "1/8D", "1/4T",
+                                          "1/8", "1/8T", "1/16", "1/16T", "1/32"};
+static uint32_t cos_lsync_idx(uint32_t pos) { return pos < 3u ? 14u - pos : pos - 3u; }
+static uint32_t cos_lsync_pos(uint32_t idx) { return idx >= 12u ? 14u - (idx % 15u) : idx + 3u; }
 static const param_desc_t *cos_cdesc(uint32_t id, int16_t **vp)
 {
     static const char *const MO[] = {"KEYS", "CLOCK", "ALL", "OFF", 0};
@@ -281,7 +288,7 @@ static const param_desc_t *cos_cdesc(uint32_t id, int16_t **vp)
     if (id >= CC_L1SYNC && id <= CC_L2RATE) {            /* the LFOs: SYNC (HZ / BPM: RATE's sign), RATE in its kind, MODE */
         static const char *const SY[] = {"HZ", "BPM", 0}, *const MO3[] = {"FREE", "TRIG", "ONE", 0};
         static const param_desc_t DSY = {"SYNC", F_ENUM, 0, 1, 0, SY, 0}, DHZ = {"RATE", F_LFOHZ, 0, 127, 60, 0, 0},
-                                  DBP = {"RATE", F_ENUM, 0, 11, 4, N_LSYNC, 0}, DMO = {"MODE", F_ENUM, 0, 2, 0, MO3, 0},
+                                  DBP = {"RATE", F_ENUM, 0, 14, 7, COS_LSYNC, 0}, DMO = {"MODE", F_ENUM, 0, 2, 0, MO3, 0},
                                   DPH = {"PHASE", F_INT, 0, 127, 0, 0, 0};
         const track_t *t = TSEL;
         uint32_t k = song.sel % NTRK;
@@ -289,12 +296,19 @@ static const param_desc_t *cos_cdesc(uint32_t id, int16_t **vp)
         *vp = &cz.cc_v[14];
         switch (id) {
         case CC_L1SYNC: case CC_L2SYNC: cz.cc_v[14] = (int16_t)(r < 0); return &DSY;
-        case CC_L1RATE: case CC_L2RATE: cz.cc_v[14] = (int16_t)(r < 0 ? -r - 1 : r); return r < 0 ? &DBP : &DHZ;
+        case CC_L1RATE: case CC_L2RATE: cz.cc_v[14] = (int16_t)(r < 0 ? cos_lsync_pos((uint32_t)(-r - 1)) : r); return r < 0 ? &DBP : &DHZ;
         case CC_L1WAVE: *vp = &TSEL->p[P_LWAVE]; return track_desc(TSEL, P_LWAVE);
         case CC_L1MODE: cz.cc_v[14] = (int16_t)(t->p[P_LPHASE] < 0 ? LM_FREE : trk_x2[k][X2_L1ONE] ? LM_ONE : LM_TRIG); return &DMO;
         case CC_L1PH: cz.cc_v[14] = (int16_t)(t->p[P_LPHASE] < 0 ? lfo_ph_mem[k] : t->p[P_LPHASE]); return &DPH;
         default: *vp = &TSEL->p[P_LFADE]; return track_desc(TSEL, P_LFADE);
         }
+    }
+    if (id == CC_PCCH || id == CC_PCOUT) {               /* GLO > LINK (midi_control.c cos_pc_ch, cos_pc_out) */
+        static const char *const OO[2] = {"OFF", "ON"};
+        static const param_desc_t DL[2] = {{"PC CH", F_INT, 0, 16, 0, 0, 0}, {"PC OUT", F_ENUM, 0, 1, 0, OO, 0}};
+        cz.cc_v[14] = (int16_t)(id == CC_PCCH ? cos_pc_ch : cos_pc_out);
+        *vp = &cz.cc_v[14];
+        return &DL[id - CC_PCCH];
     }
     if (id == CC_MUTEQ) {                                /* HOME 2: when a mute or a solo goes in (cos_live.c) */
         static const char *const QN[3] = {"NOW", "BEAT", "BAR"};
@@ -418,7 +432,7 @@ static void cos_cput(uint32_t id, int32_t v)
         if (id == CC_L1SYNC || id == CC_L2SYNC)          /* (HZ -> BPM: 1/4; BPM -> HZ: about a beat's at 120) */
             nr = v ? (r < 0 ? r : -5) : (r < 0 ? 60 : r);
         else if (id == CC_L1RATE || id == CC_L2RATE)
-            nr = r < 0 ? -(clamp(v, 0, 11) + 1) : clamp(v, 0, 127);
+            nr = r < 0 ? -((int32_t)cos_lsync_idx((uint32_t)clamp(v, 0, 14)) + 1) : clamp(v, 0, 127);
         if (id == CC_L1SYNC || id == CC_L1RATE || id == CC_L2SYNC || id == CC_L2RATE) {
             if (lf2) trk_x2[k][X2_RATE] = (int8_t)nr;
             else t->p[P_LRATE] = (int16_t)nr;
@@ -435,6 +449,11 @@ static void cos_cput(uint32_t id, int32_t v)
         } else {
             t->p[P_LFADE] = (int16_t)clamp(v, TP[P_LFADE].min, TP[P_LFADE].max);
         }
+    } else if (id == CC_PCCH || id == CC_PCOUT) {
+        uint8_t *x = &favorites.factory[6][19];             /* (TRIO's retired row: 0 there, OFF) */
+        if (id == CC_PCCH) { x[0] = (uint8_t)clamp(v, 0, 16); cos_pc_ch = x[0]; }
+        else { x[1] = (uint8_t)clamp(v, 0, 1); cos_pc_out = x[1]; }
+        cz.set_ms = fm1_ms;
     } else if (id == CC_MUTEQ) {
         favorites.factory[6][18] = (uint8_t)(clamp(v, 0, 2) + 1);   /* (TRIO's retired row: 0 there, BAR) */
         cos_mq = (uint8_t)clamp(v, 0, 2);
@@ -652,12 +671,17 @@ static __attribute__((noinline)) void cos_proj_scan(void)
 }
 static int section_jump(uint32_t s);                     /* (song_main.c) in on the next bar (stopped: now) */
 static void section_store(uint32_t s);                   /* .. the music now into it (RAM; flash once stopped) */
+/* a section asked for here (HOME's keys, SAVE's OCT-): in on the next bar, and with LINK's PC OUT its number sent */
+static void cos_section(uint32_t s)
+{
+    if (!section_jump(s) && cos_pc_out && cos_pc_ch) cos_pc_out_req = (uint8_t)(s % 4u + 1u);
+}
 static __attribute__((noinline)) void cos_proj_oct(int up)
 {
     if (up && song.playing) section_store(cz.slot);      /* (playing: kept now, written once stopped) */
     else if (up) project_save(cz.slot);
     else if (!cz.pn[cz.slot][0]) cos_say("EMPTY SLOT");
-    else if (song.playing) section_jump(cz.slot);        /* (playing: in on the next bar) */
+    else if (song.playing) cos_section(cz.slot);         /* (playing: in on the next bar) */
     else { project_load(cz.slot); ui.msg_t = 0; cos_say("LOADED"); }
     cos_proj_scan();
 }
@@ -757,7 +781,7 @@ static __attribute__((noinline)) void cos_input(void)
             } else if (cos_on_words()) cos_words(up);
             else if (cz.mode == CM_PROJ) cos_proj_oct(up);
             else if (cz.mode == CM_GEN && cos_kit()) eu_oct(up, cz.tab[CM_GEN] == 2u);
-            else if (cz.mode == CM_GEN && cos_page()->kind == CK_DB) db_oct(up);
+            else if (cz.mode == CM_GEN && cos_page()->kind == CK_DB) db_oct(up, cos_page()->id[0] == DK_ROOT);
             else if (cz.mode == CM_GEN) ac_oct(up, cos_page()->id[0] == AK_EVERY);
             else if (cz.mode == CM_DRONE) cz.dr_oct = (int8_t)clamp(cz.dr_oct + (up ? 1 : -1), -2, 2);
             else song.octave = (int8_t)clamp(song.octave + (up ? 1 : -1), -3, 3);
@@ -834,7 +858,7 @@ static __attribute__((noinline)) void cos_input(void)
             if (w < trk_live) track_select(w);
             else if (w >= 8u && w < 12u) {
                 if (!cz.pn_ok) cos_proj_scan();
-                section_jump(w - 8u);
+                cos_section(w - 8u);
             }
             else if (j < trk_live && cos_home_held()) {
                 uint8_t cur = live_qsolo_on ? live_qsolo : perf_solo;
@@ -1514,6 +1538,18 @@ static void cos_body_lim(void)
     cos_tx(8, 124, "RIDES THE LOUDNESS. OFF: NOT", C_DIM);
 }
 
+/* GLO > LINK: what the PROGRAM CHANGEs do */
+static void cos_body_link(void)
+{
+    cos_tx(8, 40, "PC IN ON PC CH: THE SECTION", C_FG);
+    cos_tx(8, 54, "PATTERN 1 5 9 13: A", C_DIM);
+    cos_tx(8, 66, "2 6 10 14: B  3 7 11 15: C", C_DIM);
+    cos_tx(8, 78, "4 8 12 16: D. ON THE BAR", C_DIM);
+    cos_tx(8, 98, "PC OUT: A SECTION HERE", C_FG);
+    cos_tx(8, 112, "SENDS PC 0..3 (USB, BT)", C_DIM);
+    cos_tx(8, 126, cos_pc_ch ? "SET THE SYNTAKT'S PROG CH" : "PC CH 0: LINK OFF", C_DIM);
+}
+
 /* GLO > SYSTEM: what TRACKS and LOAD do */
 static void cos_body_sys(void)
 {
@@ -1559,6 +1595,7 @@ static void cos_scene(void)
         else if (pg->kind == CK_COS && pg->id[0] == CC_TRKS) cos_body_sys();
         else if (pg->kind == CK_COS && (pg->id[0] == CC_COMP || pg->id[0] == CC_CIN || pg->id[0] == CC_CSC)) cos_body_master();
         else if (pg->kind == CK_COS && pg->id[0] == CC_LIN) cos_body_lim();
+        else if (pg->kind == CK_COS && pg->id[0] == CC_PCCH) cos_body_link();
         else cos_body_sound();
         break;
     }

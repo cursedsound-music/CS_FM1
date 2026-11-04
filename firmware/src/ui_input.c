@@ -2216,6 +2216,8 @@ static __attribute__((noinline)) void ui_polls(void)
         lim_rs = (uint8_t)(8u + (x[8] && x[8] <= 6u ? x[8] - 1u : 3u));
         lev_off = (uint8_t)(x[9] == 1u);
         cos_mq = (uint8_t)(x[10] && x[10] <= 3u ? x[10] - 1u : 2u);   /* (MUTE Q: byte 18; 0 there, BAR) */
+        cos_pc_ch = (uint8_t)(x[11] <= 16u ? x[11] : 0u);          /* (LINK: byte 19 the channel, 20 PC OUT) */
+        cos_pc_out = (uint8_t)(x[12] == 1u);
     }
 }
 /* every frame, whichever interface (cursed-os: COS_SLIM has only its own): MOMENTARY's glide, the reverb's shared
@@ -2271,6 +2273,7 @@ static void ui_input(void)
     cos_input();
     eu_tick();
     ac_tick();
+    db_tick();                                          /* (cursedsound) DUB's mutations, on the bar */
     scale_link();
     return;
 #endif
@@ -2281,6 +2284,7 @@ static void ui_input(void)
         cos_input();
         eu_tick();
         ac_tick();
+        db_tick();
         scale_link();
         return;
     }
