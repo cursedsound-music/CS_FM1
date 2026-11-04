@@ -1,6 +1,6 @@
 # cursed-os: to do
 
-Planned work, roughly in order. Done items move to the commit log.
+Planned work. Done items move to the commit log.
 
 ## When the FM-1 arrives
 
@@ -8,18 +8,13 @@ Planned work, roughly in order. Done items move to the commit log.
   GLO > SYSTEM and watch CPU / PEAK / LATE while playing the worst case: all five tracks, the master COMP on with
   SC HPF and MIX, eight FX pad effects held, a BREAKDOWN building. Host figures (instructions a sample, x86):
   CPU TEST song 3072, + COMP 3267, + all eight FX 3857, + TAPE STOP 3390. One effect alone: +1 .. +6 %.
-- **Flashing and recovery guide.** Step by step: install cursed-os, go back to the stock firmware or JIANT, what to do
-  if it does not start (Felucca's loader, the safe mode). Check it against JIANT's installer.
+- **The install path.** The install guide (the "Installing cursed-os on the FM-1" doc) is checked against JIANT's
+  tools only: try it on the device, including "Return to official V15" from cursed-os.
+- **By ear.** The risers' and kills' levels, DRIVE, the gates, TAPE STOP's brake, DUB STAB in the mix.
 
-## Live
+## Follow-ups
 
-- **DJ isolator EQ.** Low / mid / high kills or knobs on JIANT's master EQ (eq_v), next to the FX pad's LOW KILL.
-- **Tap tempo.** Alongside the nudge (HOME + OCT), for matching a CDJ or vinyl by ear.
-- **Set list.** Load the next project on a bar line without a gap in the sound.
-
-## Bigger ideas
-
-- **MIDI out for visuals.** A note or CC on BREAKDOWN, BUILD, DROP and FILL, so the VJ box can cut on the drop.
-- **Performance recording.** Knob moves and FX presses recorded into a section, replayable and saved.
-- **Dub tools.** A dub delay page (tape echo, a feedback "spin", a filter in the echo path); chord stabs that follow
-  the delay's rhythm.
+- **FX lane: perform.c's effects.** REPEAT, GLITCH, LPF / HPF sweeps, the mutes and LOOPs are not recorded into the
+  FX lane yet (only cosfx.c's own effects).
+- **Set list while playing with unsaved sections.** Today a song change waits for STOP when stored sections are not
+  written yet; writing them first while playing needs flash writes during audio.
