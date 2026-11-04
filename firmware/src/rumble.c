@@ -17,7 +17,9 @@
 enum { RB_LVL, RB_DEC, RB_TONE, RB_DUCK, RB_N };
 static const uint8_t RB_DEF[RB_N] = {0, 70, 50, 80};
 static uint8_t rmb_v[RB_N] = {0, 70, 50, 80};   /* the knobs (a project's: 'RB', project.c proj_rb) */
-static int32_t rmb_in[2][CTL];                  /* the drum tracks' feed, a core each (mix_part runs on both) */
+static int32_t rmb_in[2][CTL];
+static volatile uint8_t fx_stems;               /* (fx.c's, below: tentative here) STEMS on; */
+static int32_t stem_buf[NPART + 1][CTL];        /* .. each part's stem: RUMBLE goes into the first kit's */                  /* the drum tracks' feed, a core each (mix_part runs on both) */
 static int16_t rb_line[RB_L0 + RB_L1 + RB_L2 + RB_L3];
 static struct {
     uint16_t w[4];                              /* each line's write position */
@@ -63,7 +65,7 @@ static int32_t rb_step(int32_t x, int32_t g, int32_t kd)
 static __attribute__((noinline)) void rmb_block(uint32_t n)
 {
     int32_t *f0 = rmb_in[0], *f1 = rmb_in[1];
-    int32_t g, kd, kt, kp = 830, dep, e, gt, g0, dg, lv, pk = 0;   /* (kp: ~180 Hz at 44.1 kHz) */
+    int32_t g, kd, kt, kp = 830, dep, e, gt, g0, dg, lv, pk = 0, *sb = 0;   /* (kp: ~180 Hz at 44.1 kHz) */
     uint32_t i, b;
     if (n > CTL) n = CTL;
     if (!rb.on) {                                /* (from off: an empty reverb, the feed from now) */
@@ -90,6 +92,11 @@ static __attribute__((noinline)) void rmb_block(uint32_t n)
     gt = mulq15(gt, lv);
     g0 = rb.g;
     dg = (gt - g0) >> CTL_LOG2;
+    if (fx_stems) {                              /* (STEMS: in the first kit's stem, the part it comes from) */
+        uint32_t k;
+        for (k = 0; k < NPART && ENGINES[trk[k].engine] != &ENG_DRUM; k++) {}
+        sb = k < NPART ? stem_buf[k] : 0;
+    }
     for (i = 0; i < n; i++, g0 += dg) {
         int32_t x = f0[i] + f1[i], u, o;
         f0[i] = f1[i] = 0;
@@ -109,9 +116,11 @@ static __attribute__((noinline)) void rmb_block(uint32_t n)
                                                          * LEVEL 100 ~8 dB under the kick) */
         mix_l[i] += o;
         mix_r[i] += o;
+        if (sb) sb[i] += o;
         o = o < 0 ? -o : o;
         pk = o > pk ? o : pk;
     }
     rb.g = gt;
     rb.pk = pk;
+
 }

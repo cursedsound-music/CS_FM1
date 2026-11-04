@@ -928,6 +928,28 @@ int main(void)
                (long long)lo_off[1], (long long)lo_on[1], (long long)lo_off[0], (long long)lo_on[0], pk_on);
         CHECK(lo_on[1] > 2 * lo_off[1] && lo_on[0] < 2 * lo_off[0], "RUMBLE: the kick's tail fills the offbeat, the kick itself as it was");
         CHECK(pk_on < 30000, "RUMBLE: under full scale (%d)", pk_on);
+        /* STEMS: the rumble in the kit's stem (track 1's), not lost */
+        {
+            int64_t st[2] = {0, 0};
+            for (run = 0; run < 2; run++) {
+                rmb_v[0] = run ? 100 : 0;
+                fx_stems = 1;
+                transport_req = 1; ui_input();
+                for (b = 0; b < 8u * bs / CTL; b++) {
+                    memset(o, 0, sizeof o);
+                    fx_stems = 1;                         /* (as stems_test: ui_input follows the menu) */
+                    mix_block(o, CTL);
+                    if (b * CTL < 4u * bs) continue;
+                    for (i = 0; i < CTL; i++)
+                        if ((b * CTL + i) % bs >= bs / 2u) st[run] += (int64_t)stem_buf[0][i] * stem_buf[0][i];
+                }
+                transport_req = 2; ui_input();
+                fx_stems = 0;
+                for (b = 0; b < 200u; b++) { memset(o, 0, sizeof o); mix_block(o, CTL); }
+            }
+            CHECK(st[1] > 2 * st[0], "STEMS: the rumble in the kit's stem (%lld -> %lld)", (long long)st[0], (long long)st[1]);
+            rmb_v[0] = 100;
+        }
         /* DUCK 100: just after the kick far less of it than at the offbeat */
         rmb_v[3] = 100;
         transport_req = 1; ui_input();
@@ -1087,6 +1109,42 @@ int main(void)
         memset((void *)cfx_lane, 0, sizeof cfx_lane); memset((void *)cfx_plane, 0, sizeof cfx_plane); cfx_lane_on = 0;
         song.playing = 0; (void)cfx_lane_bits(64);
         CHECK(perf_lane == 0u, "stopped: nothing played");
+    }
+
+    /* GLO > LINK 2: the macros as CCs: out when they move (one a block), in from the other machine (not sent back) */
+    {
+        uint32_t w0, i2, got = 0, gv = 0, back = 0;
+        int16_t *vp;
+        cos_cput(CC_MCCH, 2); cos_cput(CC_MCCC, 70); cos_cput(CC_MCDIR, 0);
+        CHECK(cos_mc_ch == 2u && cos_mc_cc == 70u && favorites.factory[8][24] == 2u && favorites.factory[8][25] == 71u,
+              "MAC CH 2, M1 CC 70: kept in the settings");
+        CHECK(cos_cdesc(CC_MCCC, &vp) && *vp == 70, "read back");
+        memset(favorites.factory[8] + 24, 0, 3); ui_polls();
+        CHECK(!cos_mc_ch && cos_mc_cc == 16u && !cos_mc_dir, "0 there (older settings): OFF, CC 16, BOTH");
+        cos_cput(CC_MCCH, 2); cos_cput(CC_MCCC, 70);
+        usb.config = 1;
+        macro_v[0] = macro_v[1] = macro_v[2] = macro_v[3] = 0;
+        for (i2 = 0; i2 < 8u; i2++) live_tick(64);            /* (settled) */
+        w0 = mo_w;
+        macro_v[2] = 99;
+        for (i2 = 0; i2 < 4u; i2++) live_tick(64);
+        for (i2 = w0; i2 != mo_w; i2++) {
+            uint32_t pk = midi_out_q[i2 % MQ], st = (pk >> 8) & 0xFFu, d1 = (pk >> 16) & 0xFFu, d2 = pk >> 24;
+            if (st == 0xB1u && d1 == 72u) { got++; gv = d2; }
+        }
+        CHECK(got == 1u && gv == 99u, "M3 99 out as CC 72 on channel 2, once (%u, %u)", got, gv);
+        midi_event(0xB0u, 1u, 71u, 64u);                      /* (the other machine's CC 71: M2) */
+        CHECK(macro_v[1] == 64u, "CC 71 in: M2 64");
+        w0 = mo_w;
+        for (i2 = 0; i2 < 8u; i2++) live_tick(64);
+        for (i2 = w0; i2 != mo_w; i2++) if ((((midi_out_q[i2 % MQ]) >> 8) & 0xFFu) == 0xB1u) back++;
+        CHECK(back == 0u, "not sent back (%u)", back);
+        cos_cput(CC_MCDIR, 1);
+        midi_event(0xB0u, 1u, 70u, 5u);
+        CHECK(macro_v[0] == 0u, "OUT only: the other machine's CC not taken");
+        mo_r = mo_w; usb.config = 0;
+        cos_cput(CC_MCCH, 0); cos_cput(CC_MCDIR, 0);
+        macro_v[0] = macro_v[1] = macro_v[2] = macro_v[3] = 0;
     }
 
     printf("cos_test: %s (%d failures)\n", fails ? "FAILED" : "ok", fails);

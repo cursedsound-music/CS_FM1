@@ -18,4 +18,5 @@ Planned work. Done items move to the commit log.
 
 - **Set list with unsaved sections.** A second press drops them; keeping them needs either a flash write during audio
   (it stalls the audio) or RAM for another song's four sections (15 KB). Revisit if the device has the RAM.
-- **RUMBLE in the stems.** It is mixed into the master only; a STEMS render leaves it out.
+- **LINK 2 with the Syntakt.** Check which CCs the Syntakt's track or FX parameters answer to on its auto channel and
+  set M1 CC to them; OUT needs a USB host or Bluetooth MIDI between the two (the FM-1's jack is MIDI in only).

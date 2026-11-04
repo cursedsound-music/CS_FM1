@@ -40,7 +40,7 @@ enum { CK_NONE, CK_TRK, CK_GLO, CK_AC, CK_EU, CK_COS, CK_DB };
 enum { CC_OUTCH, CC_MOUT, CC_CLOCK, CC_SLOT, CC_TRKS, CC_LOAD, CC_COMP, CC_CATK, CC_CREL, CC_LIM, CC_PF0, CC_PF3 = CC_PF0 + 3,
        CC_X2, CC_X2E = CC_X2 + 15, CC_OCT, CC_KICK, CC_KICKE = CC_KICK + 4, CC_LN0, CC_LNE = CC_LN0 + 7, CC_KDRV, CC_BT,
        CC_L1SYNC, CC_L1RATE, CC_L1WAVE, CC_L1MODE, CC_L1PH, CC_L1FADE, CC_L2SYNC, CC_L2RATE, CC_BPM,
-       CC_CIN, CC_CTHR, CC_CRAT, CC_CMK, CC_CKNEE, CC_CSC, CC_CMIX, CC_LIN, CC_LREL, CC_LVL, CC_MUTEQ, CC_PCCH, CC_PCOUT, CC_VJCH, CC_EQL, CC_EQM, CC_EQH, CC_MAC0, CC_MAC3 = CC_MAC0 + 3, CC_RB0, CC_RB3 = CC_RB0 + 3, CC_MOPOS, CC_MOBARS, CC_LVLEN, CC_LVRATE, CC_LVDN, CC_LVSH };
+       CC_CIN, CC_CTHR, CC_CRAT, CC_CMK, CC_CKNEE, CC_CSC, CC_CMIX, CC_LIN, CC_LREL, CC_LVL, CC_MUTEQ, CC_PCCH, CC_PCOUT, CC_VJCH, CC_EQL, CC_EQM, CC_EQH, CC_MAC0, CC_MAC3 = CC_MAC0 + 3, CC_RB0, CC_RB3 = CC_RB0 + 3, CC_MOPOS, CC_MOBARS, CC_LVLEN, CC_LVRATE, CC_LVDN, CC_LVSH, CC_MCCH, CC_MCCC, CC_MCDIR };
 _Static_assert(X2_N <= 16u, "CC_X2 .. CC_X2E: room for every trk_x2 field");
 #define ID_MUTEQ 0xFCu                          /* (HOME 2's: MUTE Q, cos_knob) */
 #define ID_BPM 0xFDu                            /* (HOME's: BPM in tenths, cos_knob) */
@@ -122,6 +122,7 @@ static const cpg_t CZP_MIX[] = {{"MIX", CK_TRK, {P_LEVEL, P_PAN, P_GLIDE, P_MUTE
                                {"LIMIT", CK_COS, {CC_LIN, CC_LIM, CC_LREL, CC_LVL}},
                                {"MIDI", CK_COS, {CC_OUTCH, CC_MOUT, CC_CLOCK, X}},
                                {"LINK", CK_COS, {CC_PCCH, CC_PCOUT, CC_VJCH, X}},   /* (a Syntakt's patterns: the sections) */
+                               {"LINK 2", CK_COS, {CC_MCCH, CC_MCCC, CC_MCDIR, X}},   /* (the macros as CCs, both ways) */
                                {"SYSTEM", CK_COS, {CC_TRKS, CC_LOAD, CC_BT, X}}};
 static const cpg_t CZP_KEY[] = {{"KEY", CK_TRK, {P_SCALE, P_QUANT, 0xFFu, 0xFFu}}};   /* (the root: the keys) */
 static const cpg_t CZP_PERF[] = {{"FX PAD", CK_COS, {CC_PF0, CC_PF0 + 1u, CC_PF0 + 2u, CC_PF3}}};   /* (FX held) */
@@ -163,7 +164,7 @@ static int cos_kit(void) { return drum_track(TSEL) != 0; }
 static void cos_pages(uint32_t m, const cpg_t **p, uint32_t *n)
 {
     static const cpg_t *const P[CM_N] = {CZP_HOME, CZP_TRIG, CZP_SRC, CZP_AMP, CZP_DRONE, CZP_FX, CZP_GENA, CZP_MIX, CZP_KEY, CZP_PROJ};
-    static const uint8_t N[CM_N] = {6, 1, 8, 9, 2, 6, 4, 8, 1, 1};
+    static const uint8_t N[CM_N] = {6, 1, 8, 9, 2, 6, 4, 9, 1, 1};
     int vo = m == CM_SRC && trk_engp(TSEL) == &ENG_FORMANT;
     if (m == CM_SRC && cos_kit()) { *p = CZP_SRCD; *n = NELEM(CZP_SRCD); return; }   /* (a kit: KICK, LEVELS, its own ..) */
     if (m == CM_GEN && cos_kit()) { *p = CZP_GENE; *n = 3; return; }
@@ -400,6 +401,14 @@ static const param_desc_t *cos_cdesc(uint32_t id, int16_t **vp)
         *vp = &cz.cc_v[14];
         return &DL[id - CC_PCCH];
     }
+    if (id >= CC_MCCH && id <= CC_MCDIR) {               /* GLO > LINK 2 (midi_control.c cos_mc_*) */
+        static const char *const MD[3] = {"BOTH", "OUT", "IN"};
+        static const param_desc_t DM[3] = {{"MAC CH", F_INT, 0, 16, 0, 0, 0}, {"M1 CC", F_INT, 0, 124, 16, 0, 0},
+                                           {"DIR", F_ENUM, 0, 2, 0, MD, 0}};
+        cz.cc_v[14] = (int16_t)(id == CC_MCCH ? cos_mc_ch : id == CC_MCCC ? cos_mc_cc : cos_mc_dir);
+        *vp = &cz.cc_v[14];
+        return &DM[id - CC_MCCH];
+    }
     if (id == CC_MUTEQ) {                                /* HOME 2: when a mute or a solo goes in (cos_live.c) */
         static const char *const QN[3] = {"NOW", "BEAT", "BAR"};
         static const param_desc_t DQ = {"MUTE Q", F_ENUM, 0, 2, 2, QN, 0};
@@ -564,6 +573,12 @@ static void cos_cput(uint32_t id, int32_t v)
         if (id == CC_PCCH) { x[0] = (uint8_t)clamp(v, 0, 16); cos_pc_ch = x[0]; }
         else if (id == CC_PCOUT) { x[1] = (uint8_t)clamp(v, 0, 1); cos_pc_out = x[1]; }
         else { x[2] = (uint8_t)clamp(v, 0, 16); cos_vj_ch = x[2]; }
+        cz.set_ms = fm1_ms;
+    } else if (id >= CC_MCCH && id <= CC_MCDIR) {
+        uint8_t *m = &favorites.factory[8][24];         /* (STRING's row past its stars: 0 there, OFF, CC 16, BOTH) */
+        if (id == CC_MCCH) { m[0] = (uint8_t)clamp(v, 0, 16); cos_mc_ch = m[0]; }
+        else if (id == CC_MCCC) { cos_mc_cc = (uint8_t)clamp(v, 0, 124); m[1] = (uint8_t)(cos_mc_cc + 1u); }
+        else { m[2] = (uint8_t)clamp(v, 0, 2); cos_mc_dir = m[2]; }
         cz.set_ms = fm1_ms;
     } else if (id == CC_MUTEQ) {
         favorites.factory[6][18] = (uint8_t)(clamp(v, 0, 2) + 1);   /* (TRIO's retired row: 0 there, BAR) */
@@ -1769,6 +1784,22 @@ static void cos_body_rumble(void)
     cos_tx(8, 124, "KICK KILL: THE TAIL RINGS OUT", C_DIM);
 }
 
+/* GLO > LINK 2: the macros as CCs */
+static void cos_body_link2(void)
+{
+    char b[32];
+    cos_tx(8, 40, "M1-M4 AS CONTROL CHANGES", C_FG);
+    if (cos_mc_ch) {
+        str_cpy(b, "CC ", sizeof b); fmt_int(b + 3, cos_mc_cc); str_cpy(b + str_len(b), "-", 2);
+        fmt_int(b + str_len(b), cos_mc_cc + 3); str_cpy(b + str_len(b), " CH ", 5); fmt_int(b + str_len(b), cos_mc_ch);
+        cos_tx(8, 52, b, C_MID);
+    } else cos_tx(8, 52, "MAC CH 0: OFF", C_DIM);
+    cos_tx(8, 70, "OUT: MACROS AND MORPH MOVE", C_DIM);
+    cos_tx(8, 82, "THE OTHER MACHINE (USB, BT)", C_DIM);
+    cos_tx(8, 100, "IN: ITS KNOBS TURN THE", C_DIM);
+    cos_tx(8, 112, "MACROS (THE MIDI IN JACK)", C_DIM);
+}
+
 /* GLO > LINK: what the PROGRAM CHANGEs do */
 static void cos_body_link(void)
 {
@@ -1827,6 +1858,7 @@ static void cos_scene(void)
         else if (pg->kind == CK_COS && (pg->id[0] == CC_COMP || pg->id[0] == CC_CIN || pg->id[0] == CC_CSC)) cos_body_master();
         else if (pg->kind == CK_COS && pg->id[0] == CC_LIN) cos_body_lim();
         else if (pg->kind == CK_COS && pg->id[0] == CC_PCCH) cos_body_link();
+        else if (pg->kind == CK_COS && pg->id[0] == CC_MCCH) cos_body_link2();
         else cos_body_sound();
         break;
     }

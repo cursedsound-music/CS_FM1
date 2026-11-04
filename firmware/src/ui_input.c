@@ -2219,6 +2219,13 @@ static __attribute__((noinline)) void ui_polls(void)
         cos_pc_ch = (uint8_t)(x[11] <= 16u ? x[11] : 0u);          /* (LINK: byte 19 the channel, 20 PC OUT) */
         cos_pc_out = (uint8_t)(x[12] == 1u);
         cos_vj_ch = (uint8_t)(x[13] <= 16u ? x[13] : 0u);          /* (LINK's VJ CH: byte 21) */
+        {                                                /* (LINK 2: STRING's row 8, bytes 24..26: its 16 presets' stars
+                                                         * are bytes 0..1, the row cleared once at the settings' rev 3) */
+            const uint8_t *m = &favorites.factory[8][24];
+            cos_mc_ch = (uint8_t)(m[0] <= 16u ? m[0] : 0u);
+            cos_mc_cc = (uint8_t)(m[1] && m[1] <= 125u ? m[1] - 1u : 16u);   /* (0 there: CC 16) */
+            cos_mc_dir = (uint8_t)(m[2] <= 2u ? m[2] : 0u);
+        }
     }
 }
 /* every frame, whichever interface (cursed-os: COS_SLIM has only its own): MOMENTARY's glide, the reverb's shared

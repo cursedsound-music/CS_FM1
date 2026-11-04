@@ -117,6 +117,14 @@ static __attribute__((noinline)) void live_tick(uint32_t n)
     uint32_t b = beat_samples(), beat = song.playing && beat_pos + n >= b, bar = beat && beat_n == 3u,
              half = beat && beat_n == 1u, now = !song.playing;
     if (bd_kill) { bd_kill = 0; bd_state = BD_OFF; bd_req = 0; }
+    if (cos_mc_ch && cos_mc_dir != 2u) {              /* (LINK 2: a macro that moved, out as its CC; one a block) */
+        static uint8_t rr;
+        uint32_t k = rr++ & 3u;
+        if (macro_v[k] != cos_mc_sent[k]) {
+            cos_mc_sent[k] = macro_v[k];
+            mo_send(0xB0u | (cos_mc_ch - 1u), (cos_mc_cc + k) & 127u, macro_v[k] & 127u);
+        }
+    }
     if (cos_pc_out_req) {                             /* (LINK: a section asked for, its PROGRAM CHANGE out) */
         if (cos_pc_ch) mo_send(0xC0u | (cos_pc_ch - 1u), cos_pc_out_req - 1u, 0);
         cos_pc_out_req = 0;
