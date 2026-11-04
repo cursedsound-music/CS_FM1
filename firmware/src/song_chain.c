@@ -91,6 +91,9 @@ static struct {
     uint16_t dx_mute;                 /* .. its mutes (groups, sounds) */
     uint8_t pfx_lane[32], pfx_ltgt;   /* .. its punch-in lane (pfx.c) */
     int16_t slg[G_SL_N];              /* .. (0.6.3) its SLICER (the globals G_SLMODE ..) */
+    int8_t x2[NTRK][X2_N];            /* .. (cursed-os) its tracks' LFO 2 / FILTER 2, its FX lane */
+    uint16_t fxl[FXL_N];
+    uint8_t fxl_on;
     volatile uint8_t ready;           /* main: staged; ISR: taken (0) */
     uint8_t row, section;             /* the song row it is for (SEC_LIVE: a live jump), the section (0..3) */
 } sec_stage __attribute__((section(".lowbuf")));   /* (0.6.78: app.ld LOWBUF) */

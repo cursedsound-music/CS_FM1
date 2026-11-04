@@ -514,12 +514,16 @@ int main(void)
         CHECK(song.g[G_BPM] >= 129 && bpm_frac == 2, "a whole one, the tenth kept (%d.%u)", song.g[G_BPM], bpm_frac);
         CHECK(cos_cdesc(CC_BPM, &vp) && *vp == song.g[G_BPM] * 10 + 2, "the knob's value in tenths");
         song.g[G_BPM] = 128;
-        CHECK(proj_tf(blk, 0, 0) == 3u && blk[0] == 'T' && blk[2] == 2u, "written: TF 2");
-        bpm_frac = 0;
-        CHECK(proj_tf(blk, 0, 8) == 3u && bpm_frac == 2u, "read back");
-        blk[0] = 'X';
-        proj_tf(blk, 0, 8);
-        CHECK(bpm_frac == 0u, "a project without it: a whole BPM");
+        {
+            project_t *q = &proj_scratch;
+            project_capture(q);
+            CHECK(q->tf == 2u && proj_tf(q, blk, 0, 0) == 3u && blk[0] == 'T' && blk[2] == 2u, "captured and written: TF 2");
+            q->tf = 0; bpm_frac = 0;
+            CHECK(proj_tf(q, blk, 0, 8) == 3u && q->tf == 2u && bpm_frac == 0u, "read back into the project, not the music");
+            blk[0] = 'X';
+            proj_tf(q, blk, 0, 8);
+            CHECK(q->tf == 0u, "a project without it: a whole BPM");
+        }
     }
 
 
@@ -772,6 +776,75 @@ int main(void)
         db_put(DK_DLY, 0);
         CHECK(song.g[G_DTIME] == (int16_t)DT_DOT, "KEEP leaves it");
         song.g[G_DTIME] = 1; song.g[G_DFDBK] = 60;
+    }
+
+
+    /* the set list: stopped, a song at once; playing, not with sections stored but unwritten; the song's A on the bar */
+    {
+        uint32_t s0 = song_cur;
+        song.playing = 1; live.dirty = 1;
+        CHECK(song_go_live((s0 + 1u) % NSONG) == 1 && song_cur == s0, "playing with an unsaved section: refused");
+        live.dirty = 0;
+        CHECK(song_go_live((s0 + 1u) % NSONG) == 0 && song_cur == (s0 + 1u) % NSONG, "playing: the next song's in (%u)", song_cur);
+        CHECK(live.req < 0, "(an empty song: nothing staged, the music plays on)");
+        song.playing = 0;
+        song_go_live(s0);
+        CHECK(song_cur == s0, "stopped: back to the first");
+    }
+
+
+    /* performance recording: REC armed, playing, a knob turn on EDIT becomes the track's motion at its step; OCT- clears */
+    {
+        uint32_t i2, n0;
+        track_t *t4 = &trk[3];
+        int16_t *vp;
+        const cpg_t *pg;
+        track_select(3); set_engine_of(t4, ENGI_ANALOG);
+        motion_clear(t4); song.rec = 0;
+        cz.mode = CM_SRC; cz.tab[CM_SRC] = 0;
+        fm1_in.buttons = 0;
+        song.rec = 1u << 3; song.playing = 1; t4->seq_idx = 5; t4->seq_pos = 0;
+        pg = cos_page();
+        n0 = motion_count(t4);
+        cos_turn(0, 3);
+        CHECK(motion_count(t4) == n0 + 1u && motion_enabled(t4), "REC: the knob's move recorded (%u)", motion_count(t4));
+        for (i2 = 0; i2 < motion.count; i2++)
+            if (MOTION_TRK(&motion.event[i2]) == 3u) CHECK(MOTION_STEP(&motion.event[i2]) == 5u, "at the step playing");
+        (void)vp; (void)pg;
+        song.rec = 0; cos_turn(0, 1);
+        CHECK(motion_count(t4) == n0 + 1u, "not armed: no record");
+        motion_clear(t4); song.playing = 0; cz.mode = CM_HOME;
+    }
+
+
+    /* the FX lane: REC armed + FX held writes the pad's effects a sixteenth at a time; played back after; saved */
+    {
+        uint32_t P = div_samples(2), b;
+        int32_t L[64], R[64], W[64], SD[64], SR[64];
+        memset((void *)cfx_lane, 0, sizeof cfx_lane); cfx_lane_on = 0;
+        song.playing = 1; ms_clock = 3u * P + 64u;           /* (the 4th sixteenth) */
+        cfx_rec = 1; cfx_held = CX_BIT(CX_DRIVE);
+        CHECK(cfx_lane_bits(64) == 0u && cfx_lane[3] == CX_BIT(CX_DRIVE) && cfx_lane_on, "recorded at sixteenth 4");
+        cfx_rec = 0; cfx_held = 0;
+        CHECK(cfx_lane_bits(64) == CX_BIT(CX_DRIVE), "played back there");
+        ms_clock = 5u * P + 64u;
+        CHECK(cfx_lane_bits(64) == 0u, ".. and not elsewhere");
+        for (b = 0; b < 4u; b++) { uint32_t i2; for (i2 = 0; i2 < 64u; i2++) { L[i2] = R[i2] = 0; W[i2] = 0; } cfx_block(L, R, W, SD, SR, 64); }
+        /* a project with LFO 2 / FILTER 2, the lane: packed and read back into the project only; a load applies it */
+        {
+            project_t *q = &proj_scratch;
+            trk_x2[2][X2_RATE] = 77; bpm_frac = 3;
+            project_capture(q);
+            CHECK(proj_pack(&proj_wire, q), "packed");
+            trk_x2[2][X2_RATE] = 5; bpm_frac = 0; cfx_lane[3] = 0; cfx_lane_on = 0;
+            CHECK(proj_import(q, &proj_wire, PROJ_STORE_SIZE) && q->x2[2][X2_RATE] == 77 && q->tf == 3u && q->fxl_on &&
+                  q->fxl[3] == CX_BIT(CX_DRIVE), "read back: in the project");
+            CHECK(trk_x2[2][X2_RATE] == 5 && bpm_frac == 0u && !cfx_lane_on, "the music untouched by a read");
+            project_restore_runtime(q);
+            CHECK(trk_x2[2][X2_RATE] == 77 && bpm_frac == 3u && cfx_lane_on && cfx_lane[3] == CX_BIT(CX_DRIVE), "a load: applied");
+            x2_defaults(2); bpm_frac = 0; memset((void *)cfx_lane, 0, sizeof cfx_lane); cfx_lane_on = 0;
+        }
+        song.playing = 0;
     }
 
     printf("cos_test: %s (%d failures)\n", fails ? "FAILED" : "ok", fails);

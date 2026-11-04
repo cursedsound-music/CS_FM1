@@ -27,6 +27,13 @@ static volatile uint32_t cfx_held;            /* keys (seq.c): the effects held,
 static volatile uint32_t cfx_latched;         /* .. latched (FX LATCH; main clears it: FX + OCT-) */
 static volatile uint32_t cfx_auto;            /* ISR: the BREAKDOWN's (cos_live.c live_tick) */
 static volatile uint32_t cfx_home;            /* main: HOME's isolator kills held (LOW MID HIGH KILL) */
+/* the FX lane: the pad's effects recorded a sixteenth at a time over two bars (REC armed, FX held, playing), played
+ * back round and round while the transport plays; a project's / section's ('FL', project.c proj_fl) */
+#define FXL_N 32u
+static volatile uint16_t cfx_lane[FXL_N];
+static volatile uint8_t cfx_lane_on;
+static volatile uint8_t cfx_rec;              /* main: REC armed and FX held: the lane is written where it passes */
+static uint32_t cfx_lane_bits(uint32_t n);
 #define CX_SLOPE 256                          /* a share's step a sample: 0 .. full in 2.9 ms */
 #define CX_TAPE_MAX 30000u                    /* TAPE STOP's longest halt (samples): its lag stays inside sl_buf */
 
@@ -186,7 +193,7 @@ static __attribute__((noinline)) void cfx_tape(int32_t *pl, int32_t *pr)
 /* fx.c lev_block, each block while an effect is at work or a share is still on: the mix (mix_l, mix_r, wet) in place */
 static __attribute__((noinline)) void cfx_block(int32_t *ml, int32_t *mr, int32_t *wt, int32_t *sd, int32_t *sr, uint32_t n)
 {
-    uint32_t on = perf_kill ? 0u : cfx_held | cfx_latched | cfx_auto | cfx_home, was = cx.on, i, base, P, gp, bar4, hp, np, f2, gph;
+    uint32_t on = perf_kill ? 0u : cfx_held | cfx_latched | cfx_auto | cfx_home | cfx_lane_bits(n), was = cx.on, i, base, P, gp, bar4, hp, np, f2, gph;
     int32_t hf = 0, hd = 0, nf = 0, ng = 0, duck;
     if (on != was)
         cfx_edges(on, was);
@@ -340,11 +347,27 @@ static __attribute__((noinline)) void cfx_block(int32_t *ml, int32_t *mr, int32_
                         cfx_goff[GF_DFDBK] || cfx_goff[GF_DMIX] || cfx_goff[GF_RSIZE]);
 }
 
+/* the lane's sixteenth now: recorded (REC with FX held: the keys held now), played back (its bits) */
+static uint32_t cfx_lane_bits(uint32_t n)
+{
+    uint32_t p, i;
+    if (!song.playing) return 0;
+    p = (ms_clock - n) / div_samples(2) % FXL_N;
+    if (cfx_rec) {
+        uint16_t v = (uint16_t)(cfx_held | cfx_latched);
+        cfx_lane[p] = v;
+        if (v) cfx_lane_on = 1;
+        return 0;
+    }
+    if (!cfx_lane_on) return 0;
+    (void)i;
+    return cfx_lane[p];
+}
 /* fx.c lev_block: the pad's effects, when any is on or still sounding */
 static void live_tick(uint32_t n);             /* (cos_live.c, the end of seq.c) */
 static void cfx_run(uint32_t n)
 {
     live_tick(n);                                 /* (cursed-os) the live layer: mutes, fills, the BREAKDOWN on the grid */
-    if (cfx_held | cfx_latched | cfx_auto | cfx_home | cx.busy | cx.on)
+    if (cfx_held | cfx_latched | cfx_auto | cfx_home | cx.busy | cx.on | cfx_lane_on | cfx_rec)
         cfx_block(mix_l, mix_r, wet, fxq_d, fxq_r, n);
 }

@@ -632,6 +632,12 @@ static void cos_turn(uint32_t k, int32_t s)
     else if (p->kind == CK_DB) db_put(p->id[k], v);
     else if (p->kind == CK_EU) eu_put(p->id[k], v);
     else if (p->kind == CK_COS) cos_cput(p->id[k], v);
+    else if (p->kind == CK_GLO && p->id[k] == G_DJF) motion_djf_set(TSEL, (int16_t)v);   /* (REC: recorded too) */
+    else if (p->kind == CK_TRK && vp == &TSEL->p[p->id[k]]) {   /* (a track's: REC armed and playing, recorded at the
+                                                         * step it falls on, as JIANT's AUTOMATION; else the new base) */
+        *vp = (int16_t)v;
+        (void)motion_capture(TSEL, p->id[k], (int16_t)v);
+    }
     else *vp = (int16_t)v;
 }
 
@@ -708,6 +714,7 @@ static __attribute__((noinline)) void cos_proj_scan(void)
     cz.pn_ok = 1;
 }
 static int section_jump(uint32_t s);                     /* (song_main.c) in on the next bar (stopped: now) */
+static int song_go_live(uint32_t n);                     /* .. the set list: song n, its A on the next bar */
 static void section_store(uint32_t s);                   /* .. the music now into it (RAM; flash once stopped) */
 /* a section asked for here (HOME's keys, SAVE's OCT-): in on the next bar, and with LINK's PC OUT its number sent */
 static void cos_section(uint32_t s)
@@ -789,7 +796,14 @@ static __attribute__((noinline)) void cos_input(void)
             cos_say(n ? "LOCKS CLEARED" : "NO LOCKS");
         }
         else if (b == B_REC && cz.mode == CM_GEN) cos_say(undo_do() ? "NOTHING TO UNDO" : "UNDONE");
-        else if (b == B_REC) cos_say("REC: CLASSIC UI (HOME+GLO)");
+        else if (b == B_REC && chain_busy()) cos_say("STOP THE SONG TO RECORD");
+        else if (b == B_REC) {                           /* REC: the track armed. Playing, its knobs (and the keys) record
+                                                         * into it, saved with the section; armed, OCT- clears its motion */
+            uint8_t bit = (uint8_t)(1u << song.sel);
+            if (!(song.rec & bit)) undo_mark();
+            song.rec ^= bit;
+            cos_say(song.rec & bit ? "REC: KNOBS AND KEYS" : "REC OFF");
+        }
         else if (b == B_SCL) { cz.scl_down = 1; cz.scl_used = 0; }   /* (its tap acts when let go: held, it is a shift) */
         else if (b == B_EDIT) { cz.ed_down = 1; cz.ed_used = 0; }    /* (the same: held, PRESETS steps engines) */
         else if (b == B_FX) { cz.fx_down = 1; cz.fx_used = 0; cz.hot = 0; }   /* (held: the FX pad; a tap: the FX page) */
@@ -802,6 +816,12 @@ static __attribute__((noinline)) void cos_input(void)
             settings_save();
             cos_say(perf_latch_on ? "FX LATCH" : "FX HOLD");
         }
+        else if (cz.fx_down && b == B_REC && ((song.rec >> song.sel) & 1u)) {   /* (REC armed) FX + REC: the FX lane cleared */
+            cz.fx_used = 1;
+            memset((void *)cfx_lane, 0, sizeof cfx_lane);
+            cfx_lane_on = 0;
+            cos_say("FX LANE CLEARED");
+        }
         else if (cz.fx_down && b == B_OCTDN) {           /* FX + OCT-: every effect and macro off */
             cz.fx_used = 1;
             perf_latched = 0;
@@ -811,6 +831,12 @@ static __attribute__((noinline)) void cos_input(void)
             cos_say("FX ALL OFF");
         }
         else if ((b == B_OCTDN || b == B_OCTUP) && cos_home_held()) {}   /* (HOME + OCT: the nudge, above; the BPM red) */
+        else if (b == B_OCTDN && ((song.rec >> song.sel) & 1u) && cz.mode != CM_TRIG && cz.mode != CM_PROJ &&
+                 cz.mode != CM_GEN) {                     /* (REC armed: OCT- clears the track's recorded motion) */
+            undo_mark();
+            motion_clear(TSEL);
+            cos_say("MOTION CLEARED");
+        }
         else if (b == B_OCTDN || b == B_OCTUP) {
             int up = b == B_OCTUP;
             if (cz.mode == CM_TRIG) {
@@ -891,6 +917,9 @@ static __attribute__((noinline)) void cos_input(void)
             cos_drone_key(k);
         } else if (cz.mode == CM_PROJ) {
             if (w < 4u) cz.slot = (uint8_t)w;
+            else if (w >= 8u && !chain_busy()) {           /* (white 9 .. 16: the set list's songs 1 .. 8) */
+                if (!song_go_live(w - 8u)) { cz.pn_ok = 0; cos_proj_scan(); }
+            }
         } else if (cz.mode == CM_HOME) {                 /* white 1..6 the track, 9..12 the sections A..D on the bar; black
                                                          * 1..6 mute (HOME held: solo), 7 FILL, 8 BREAKDOWN (cos_live.c) */
             if (w == 15u && cos_home_held()) cos_tap(fm1_ms);   /* (HOME + white 16: TAP TEMPO) */
@@ -924,6 +953,7 @@ static __attribute__((noinline)) void cos_input(void)
         }
     }
     if (cz.mode == CM_HOME && ((fm1_in.notes >> BK[6]) & 1u) && song.playing) fill_req = 1;   /* (FILL held: every bar) */
+    cfx_rec = (uint8_t)(cz.fx_down && song.rec && song.playing);   /* (REC armed, FX held: the FX lane recorded) */
     cfx_home = cz.mode == CM_HOME && !cz.fx_down ?      /* (HOME's black 9 10 11 held: LOW MID HIGH KILL, the isolator's) */
         (((fm1_in.notes >> BK[8]) & 1u) ? CX_BIT(CX_LOWK) : 0u) | (((fm1_in.notes >> BK[9]) & 1u) ? CX_BIT(CX_MIDK) : 0u) |
         (((fm1_in.notes >> BK[10]) & 1u) ? CX_BIT(CX_HIK) : 0u) : 0u;
@@ -986,7 +1016,7 @@ static void cos_head(void)
 {
     char b[24];
     const track_t *t = TSEL;
-    cv_rect(0, 0, 26, 14, C_FG);
+    cv_rect(0, 0, 26, 14, ((song.rec >> song.sel) & 1u) ? C_RED : C_FG);   /* (red: REC armed on the track) */
     b[0] = 'T'; b[1] = (char)('1' + song.sel % NTRK); b[2] = 0;
     cos_tx(5, 3, b, C_BG);
     cos_tx(32, 3, CM_NAME[cz.mode], C_FG);
@@ -1496,7 +1526,12 @@ static void cos_body_proj(void)
         cos_tx(32, y + 4, used ? cz.pn[i] : "EMPTY", used ? (pick ? C_FG : C_MID) : C_DIM);
         if (i == proj_cur_slot()) cos_txr(232, y + 4, "NOW", C_MID);
     }
-    cos_txc(120, 136, CZ_LBL, song.playing ? "OCT+ STORE  OCT- NEXT BAR" : "OCT+ SAVE  OCT- LOAD", C_DIM);
+    {                                                    /* the set list: the song these four are, the keys to the others */
+        char sb[24] = "SONG 1  W9-16: SONG 1-8";
+        sb[5] = (char)('1' + song_cur % 8u);
+        cos_txc(120, 128, CZ_LBL, sb, C_MID);
+    }
+    cos_txc(120, 140, CZ_LBL, song.playing ? "OCT+ STORE  OCT- NEXT BAR" : "OCT+ SAVE  OCT- LOAD", C_DIM);
 }
 
 /* the FX pad (FX held): the 16 white keys' effects in two columns, the black keys' under them; an effect on: red */
@@ -1583,15 +1618,13 @@ static void cos_body_lim(void)
 /* GLO > LINK: what the PROGRAM CHANGEs do */
 static void cos_body_link(void)
 {
-    cos_tx(8, 40, "PC IN ON PC CH: THE SECTION", C_FG);
-    cos_tx(8, 54, "PATTERN 1 5 9 13: A", C_DIM);
-    cos_tx(8, 66, "2 6 10 14: B  3 7 11 15: C", C_DIM);
-    cos_tx(8, 78, "4 8 12 16: D. ON THE BAR", C_DIM);
-    cos_tx(8, 98, "PC OUT: A SECTION HERE", C_FG);
-    cos_tx(8, 112, "SENDS PC 0..3 (USB, BT)", C_DIM);
-    cos_tx(8, 126, "VJ CH: NOTES FOR VISUALS", C_FG);
-    cos_tx(8, 140, "60 BRK 61 BUILD 62 DROP 63 FILL", C_DIM);
-    cos_tx(8, 152, "64-67 SECT A-D  CC20 BUILD", C_DIM);
+    cos_tx(8, 40, "PC IN: PATTERN TO SECTION", C_FG);
+    cos_tx(8, 52, "1 5 9 13 A  2 6 10 14 B", C_DIM);
+    cos_tx(8, 64, "3 7 11 15 C  4 8 12 16 D", C_DIM);
+    cos_tx(8, 82, "PC OUT: A SECTION SENT", C_FG);
+    cos_tx(8, 100, "VJ CH: EVENTS AS NOTES", C_FG);
+    cos_tx(8, 112, "60 BREAK 61 BUILD 62 DROP", C_DIM);
+    cos_tx(8, 124, "63 FILL 64-67 A-D CC20", C_DIM);
 }
 
 /* GLO > SYSTEM: what TRACKS and LOAD do */

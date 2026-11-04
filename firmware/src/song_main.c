@@ -154,6 +154,7 @@ static int song_stage(uint32_t s, uint32_t row)
                          (song_cur + 1u) * 40503u ^ (row + 1u) * 104729u ^ (k + 1u) * 1299709u ^ v * 15485863u);
                 if (v == RV_MUTE) d->p[P_MUTE] = 1;
             }
+            memcpy(sec_stage.x2[k], p->x2[k], sizeof sec_stage.x2[k]);   /* (cursed-os) the track's LFO 2 / FILTER 2 */
             fm6_unpack(p->fm6[k], d->fm6);
             fm6_sanitize(d->fm6);
             on |= p->motion.on & (1u << k);
@@ -173,6 +174,8 @@ static int song_stage(uint32_t s, uint32_t row)
     sec_stage.motion.on = (uint8_t)(on | (p->motion.on & ~((1u << NTRK) - 1u)));
     memcpy(sec_stage.motion.rsv, p->motion.rsv, sizeof sec_stage.motion.rsv);
     memcpy(sec_stage.pfx_lane, p->pfx_lane, sizeof sec_stage.pfx_lane);
+    memcpy(sec_stage.fxl, p->fxl, sizeof sec_stage.fxl);   /* (cursed-os) the row's own section's FX lane */
+    sec_stage.fxl_on = p->fxl_on;
     memcpy(sec_stage.slg, &p->g[G_SLMODE], sizeof sec_stage.slg);   /* (0.6.3) the section's SLICER */
     sec_stage.pfx_ltgt = p->pfx_ltgt > 2u ? 0u : p->pfx_ltgt;
     sec_stage.row = (uint8_t)row;
@@ -441,6 +444,49 @@ static int song_switch(uint32_t n, int load_a)
     return 0;
 }
 static int song_select(uint32_t n) { return song_switch(n, 1); }   /* (the song layer's KNOB 1) */
+/* (cursed-os) the set list: song n while the loop plays. Its four sections read in (flash reads only), its A in on the
+ * next bar; the music plays on till then. Not with sections stored but not written yet (flash waits for STOP), nor
+ * while a song plays its rows. Stopped: song_select. 0 done */
+static int song_go_live(uint32_t n)
+{
+    uint32_t k;
+    if (n >= NSONG || n == song_cur)
+        return 1;
+    if (!song.playing)
+        return song_switch(n, 1);
+    if (live.dirty) {
+        ui_message("STOP TO SAVE FIRST");
+        return 1;
+    }
+    if (chain.running && !chain.loop) {
+        ui_message("STOP THE SONG FIRST");
+        return 1;
+    }
+    fm1_irq_off();                                    /* (no section of the song left half staged) */
+    live.req = -1;
+    chain.running = 0;
+    chain.armed_bar = 0;
+    sec_stage.ready = 0;
+    fm1_irq_on();
+    song_idx.rows[song_cur] = chain_config;
+    song_cur = (uint8_t)n;
+    chain_config = song_idx.rows[n];
+    song_idx_dirty = 1;                               /* (the index: written once stopped, song_poll) */
+    song_idx_t = fm1_ms;
+    for (k = 0; k < 4u; k++) {
+        memset(proj_slot[k].raw, 0, 4);
+#if FELUCCA_FLASH
+        if (flash_ok)
+            proj_fetch(k);
+#endif
+    }
+    ui.song_row = 0;
+    live.cur = -1;
+    if (project_used(0))
+        return section_jump(0);
+    ui_message("SONG EMPTY: PLAYS ON");
+    return 0;
+}
 static int song_open(uint32_t n) { return song_switch(n, 0); }     /* (SAVE > PROJECT's KNOB 1) */
 
 /* Main loop, each pass: the next section staged; the music back after the song; SONG REC's rows; stored sections
