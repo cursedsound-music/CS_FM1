@@ -35,6 +35,7 @@ static void sec_apply(void)
     memcpy(pfx_lane, sec_stage.pfx_lane, sizeof pfx_lane);
     memcpy((void *)trk_x2, sec_stage.x2, sizeof sec_stage.x2);   /* (cursed-os) LFO 2 / FILTER 2, the FX lane: on the bar */
     memcpy((void *)cfx_lane, sec_stage.fxl, sizeof sec_stage.fxl);
+    memcpy((void *)cfx_plane, sec_stage.fxp, sizeof sec_stage.fxp);
     cfx_lane_on = sec_stage.fxl_on;
     memcpy(&song.g[G_SLMODE], sec_stage.slg, sizeof sec_stage.slg);   /* (0.6.3) the SLICER's bus as the section has it */
     pfx_ltgt = sec_stage.pfx_ltgt;

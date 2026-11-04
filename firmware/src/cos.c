@@ -40,7 +40,7 @@ enum { CK_NONE, CK_TRK, CK_GLO, CK_AC, CK_EU, CK_COS, CK_DB };
 enum { CC_OUTCH, CC_MOUT, CC_CLOCK, CC_SLOT, CC_TRKS, CC_LOAD, CC_COMP, CC_CATK, CC_CREL, CC_LIM, CC_PF0, CC_PF3 = CC_PF0 + 3,
        CC_X2, CC_X2E = CC_X2 + 15, CC_OCT, CC_KICK, CC_KICKE = CC_KICK + 4, CC_LN0, CC_LNE = CC_LN0 + 7, CC_KDRV, CC_BT,
        CC_L1SYNC, CC_L1RATE, CC_L1WAVE, CC_L1MODE, CC_L1PH, CC_L1FADE, CC_L2SYNC, CC_L2RATE, CC_BPM,
-       CC_CIN, CC_CTHR, CC_CRAT, CC_CMK, CC_CKNEE, CC_CSC, CC_CMIX, CC_LIN, CC_LREL, CC_LVL, CC_MUTEQ, CC_PCCH, CC_PCOUT, CC_VJCH, CC_EQL, CC_EQM, CC_EQH, CC_MAC0, CC_MAC3 = CC_MAC0 + 3 };
+       CC_CIN, CC_CTHR, CC_CRAT, CC_CMK, CC_CKNEE, CC_CSC, CC_CMIX, CC_LIN, CC_LREL, CC_LVL, CC_MUTEQ, CC_PCCH, CC_PCOUT, CC_VJCH, CC_EQL, CC_EQM, CC_EQH, CC_MAC0, CC_MAC3 = CC_MAC0 + 3, CC_RB0, CC_RB3 = CC_RB0 + 3, CC_MOPOS, CC_MOBARS, CC_LVLEN, CC_LVRATE, CC_LVDN, CC_LVSH };
 _Static_assert(X2_N <= 16u, "CC_X2 .. CC_X2E: room for every trk_x2 field");
 #define ID_MUTEQ 0xFCu                          /* (HOME 2's: MUTE Q, cos_knob) */
 #define ID_BPM 0xFDu                            /* (HOME's: BPM in tenths, cos_knob) */
@@ -50,7 +50,10 @@ typedef struct { const char *tab; uint8_t kind, id[4]; } cpg_t;
 static const cpg_t CZP_HOME[] = {{"PERFORM", CK_GLO, {ID_BPM, G_SWING, G_DJF, ID_OCT}},
                                 {"PERFORM 2", CK_GLO, {G_DUCK, G_DREL, ID_MUTEQ, X}},
                                 {"ISOLATOR", CK_COS, {CC_EQL, CC_EQM, CC_EQH, X}},   /* (JIANT's master EQ; HOME's black 9-11 the kills) */
-                                {"MACROS", CK_COS, {CC_MAC0, CC_MAC0 + 1u, CC_MAC0 + 2u, CC_MAC3}}};   /* (the sounds' M1..M4 in the matrix) */   /* (JIANT's master EQ; HOME's black 9-11 the kills) */   /* (DUCK: the kick pumps the rest) */
+                                {"MACROS", CK_COS, {CC_MAC0, CC_MAC0 + 1u, CC_MAC0 + 2u, CC_MAC3}},
+                                {"MORPH", CK_COS, {CC_MOPOS, CC_MOBARS, X, X}},   /* (cos_morph.c: white 13 A, 14 B) */
+                                {"LOOP", CK_COS, {CC_LVLEN, CC_LVRATE, CC_LVDN, CC_LVSH}}};   /* (JIANT's LIVE, seq_live.c: the
+                                                         * track picked; white 15 back in phase) */   /* (the sounds' M1..M4 in the matrix) */   /* (JIANT's master EQ; HOME's black 9-11 the kills) */   /* (DUCK: the kick pumps the rest) */
 static const cpg_t CZP_TRIG[] = {{"TRIG", CK_TRK, {P_SLEN, P_SDIV, P_SSWING, P_SGATE}}};
 /* EDIT: the engine's eight (its own page names: cos_tabs), the voice, the matrix's four slots; a VOICE track WORDS
  * third. ENV: the amp, the filter, the envelope's modulation, the two LFO pages */
@@ -96,7 +99,8 @@ static const cpg_t CZP_FX[] = {{"SEND", CK_TRK, {P_DIST, P_CHOR, P_DLY, P_REV}},
                               {"DELAY", CK_GLO, {G_DTIME, G_DFDBK, G_DCOLOR, G_DPING}},    /* (the buses: every track's) */
                               {"DELAY 2", CK_GLO, {G_DMIX, G_DDRV, G_DTYPE, G_DMOD}},     /* (the tape echo: MOD its wow and flutter;
                                                          * FEEDBK past 100 runs away into the clip: the dub spin) */
-                              {"REVERB", CK_GLO, {G_RSIZE, G_RDAMP, G_RPRE, G_RTYPE}}};
+                              {"REVERB", CK_GLO, {G_RSIZE, G_RDAMP, G_RPRE, G_RTYPE}},
+                              {"RUMBLE", CK_COS, {CC_RB0, CC_RB0 + 1u, CC_RB0 + 2u, CC_RB3}}};   /* (rumble.c: the kick's dark tail) */
 static const cpg_t CZP_GENA[] = {{"ACID", CK_AC, {AK_DENS, AK_SLIDE, AK_ACC, ID_OCT}}, {"ACID 2", CK_AC, {AK_STEPS, AK_NOTES, AK_TIE, AK_OCT}},
                                 {"ACID 3", CK_AC, {AK_EVERY, AK_AMT, AK_ROOT, AK_SCALE}}, {"ACID 4", CK_AC, {AK_LOCK, X, X, X}}};
 /* (a POLY synth track that is not ACID, the pad: DUB's chord stabs first, ACID's lines after them; a MONO one, the
@@ -159,7 +163,7 @@ static int cos_kit(void) { return drum_track(TSEL) != 0; }
 static void cos_pages(uint32_t m, const cpg_t **p, uint32_t *n)
 {
     static const cpg_t *const P[CM_N] = {CZP_HOME, CZP_TRIG, CZP_SRC, CZP_AMP, CZP_DRONE, CZP_FX, CZP_GENA, CZP_MIX, CZP_KEY, CZP_PROJ};
-    static const uint8_t N[CM_N] = {4, 1, 8, 9, 2, 5, 4, 8, 1, 1};
+    static const uint8_t N[CM_N] = {6, 1, 8, 9, 2, 6, 4, 8, 1, 1};
     int vo = m == CM_SRC && trk_engp(TSEL) == &ENG_FORMANT;
     if (m == CM_SRC && cos_kit()) { *p = CZP_SRCD; *n = NELEM(CZP_SRCD); return; }   /* (a kit: KICK, LEVELS, its own ..) */
     if (m == CM_GEN && cos_kit()) { *p = CZP_GENE; *n = 3; return; }
@@ -182,6 +186,30 @@ static const cpg_t *cos_page(void)
 }
 static int cos_on_words(void) { return cz.mode == CM_SRC && trk_engp(TSEL) == &ENG_FORMANT && cz.tab[CM_SRC] % 8u == 2u; }
 static void cos_say(const char *s) { str_cpy(cz.msg, s, sizeof cz.msg); cz.msg_ms = fm1_ms; }
+/* (cos_morph.c, in fx.c) MORPH: */
+/* HOME's white 13 / 14 (x 0 A, 1 B); store: HOME held */
+static void mph_key(uint32_t x, int store)
+{
+    x &= 1u;
+    if (store || !((mph.set >> x) & 1u)) {
+        mph_read(mph.s[x]);
+        mph.set |= (uint8_t)(1u << x);
+        mph.pos = x ? 1000 : 0;
+        mph.gl = mph.run = 0;
+        cos_say(x ? "B STORED" : "A STORED");
+        return;
+    }
+    if ((mph.set & 3u) != 3u) {                   /* (only one stored: nothing to glide between; the other first) */
+        cos_say(x ? "STORE A FIRST" : "STORE B FIRST");
+        return;
+    }
+    mph.from = mph.pos;
+    mph.to = x ? 1000 : 0;
+    mph.gl = 1;
+    mph.run = 0;
+    cos_say(x ? (MO_BARS[mph.bars % 6u] ? "TO B" : "B NEXT BAR") : (MO_BARS[mph.bars % 6u] ? "TO A" : "A NEXT BAR"));
+}
+
 static const char *const COS_NN[12] = {"C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"};
 
 /* the song's key: the first synth track's root (C with none) */
@@ -318,6 +346,34 @@ static const param_desc_t *cos_cdesc(uint32_t id, int16_t **vp)
         case CC_L1PH: cz.cc_v[14] = (int16_t)(t->p[P_LPHASE] < 0 ? lfo_ph_mem[k] : t->p[P_LPHASE]); return &DPH;
         default: *vp = &TSEL->p[P_LFADE]; return track_desc(TSEL, P_LFADE);
         }
+    }
+    if (id >= CC_LVLEN && id <= CC_LVSH) {               /* HOME > LOOP: JIANT's LIVE layer on the track picked (never
+                                                         * written into it: white 15 takes it back, in phase) */
+        static const char *const NL[33] = {"ALL", "1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12", "13", "14",
+                                           "15", "16", "17", "18", "19", "20", "21", "22", "23", "24", "25", "26", "27",
+                                           "28", "29", "30", "31", "32"};
+        static const char *const ND[13] = {"-90", "-80", "-70", "-60", "-50", "-40", "-30", "-20", "-10", "ALL", "x2", "x3", "x4"};
+        static const param_desc_t DL[4] = {{"LEN", F_ENUM, 0, 32, 0, NL, 0}, {"RATE", F_ENUM, 0, 8, 4, LV_RNAME, 0},
+                                           {"DENS", F_ENUM, 0, 12, 9, ND, 0}, {"SHIFT", F_INT, -16, 16, 0, 0, 0}};
+        uint32_t i = song.sel % NTRK;
+        cz.cc_v[14] = (int16_t)(id == CC_LVLEN ? (lv.cut[i] > 100u ? lv.cut[i] - 100u : 0u) : id == CC_LVRATE ? lv.rate[i] + 4 :
+                                id == CC_LVDN ? lv.dn[i] + 9 : lv.rot[i]);
+        *vp = &cz.cc_v[14];
+        return &DL[id - CC_LVLEN];
+    }
+    if (id == CC_MOPOS || id == CC_MOBARS) {             /* HOME > MORPH: A-B by hand, the glide's BARS */
+        static const char *const NB[6] = {"CUT", "1", "2", "4", "8", "16"};
+        static const param_desc_t DMP = {"A-B", F_PCT, 0, 100, 0, 0, 0}, DMB = {"BARS", F_ENUM, 0, 5, 3, NB, 0};
+        cz.cc_v[14] = id == CC_MOPOS ? (int16_t)((mph.pos + 5) / 10) : (int16_t)mph.bars;
+        *vp = &cz.cc_v[14];
+        return id == CC_MOPOS ? &DMP : &DMB;
+    }
+    if (id >= CC_RB0 && id <= CC_RB3) {                  /* FX > RUMBLE (rumble.c rmb_v), saved with the project */
+        static const param_desc_t DRB[4] = {{"LEVEL", F_PCT, 0, 100, 0, 0, 0}, {"DECAY", F_PCT, 0, 100, 70, 0, 0},
+                                            {"TONE", F_PCT, 0, 100, 50, 0, 0}, {"DUCK", F_PCT, 0, 100, 80, 0, 0}};
+        cz.cc_v[14] = rmb_v[(id - CC_RB0) & 3u];
+        *vp = &cz.cc_v[14];
+        return &DRB[(id - CC_RB0) & 3u];
     }
     if (id >= CC_MAC0 && id <= CC_MAC3) {                /* HOME > MACROS: M1..M4 (mod.c macro_v), what each sound's MOD pages
                                                          * route them to; saved with the project */
@@ -483,6 +539,19 @@ static void cos_cput(uint32_t id, int32_t v)
         } else {
             t->p[P_LFADE] = (int16_t)clamp(v, TP[P_LFADE].min, TP[P_LFADE].max);
         }
+    } else if (id >= CC_LVLEN && id <= CC_LVSH) {
+        uint32_t i = song.sel % NTRK;
+        if (id == CC_LVLEN) lv.cut[i] = (uint8_t)(v <= 0 ? 0 : 100 + clamp(v, 1, 32));
+        else if (id == CC_LVRATE) lv.rate[i] = (int8_t)(clamp(v, 0, 8) - 4);
+        else if (id == CC_LVDN) lv.dn[i] = (int8_t)(clamp(v, 0, 12) - 9);
+        else lv.rot[i] = (int8_t)clamp(v, -16, 16);
+        live_publish();
+    } else if (id == CC_MOPOS) {
+        mph_hand(v);
+    } else if (id == CC_MOBARS) {
+        mph.bars = (uint8_t)clamp(v, 0, 5);
+    } else if (id >= CC_RB0 && id <= CC_RB3) {
+        rmb_v[(id - CC_RB0) & 3u] = (uint8_t)clamp(v, 0, 100);
     } else if (id >= CC_MAC0 && id <= CC_MAC3) {
         macro_v[(id - CC_MAC0) & 3u] = (uint8_t)clamp(v, 0, 127);
     } else if (id >= CC_EQL && id <= CC_EQH) {
@@ -848,6 +917,7 @@ static __attribute__((noinline)) void cos_input(void)
         else if (cz.fx_down && b == B_REC && ((song.rec >> song.sel) & 1u)) {   /* (REC armed) FX + REC: the FX lane cleared */
             cz.fx_used = 1;
             memset((void *)cfx_lane, 0, sizeof cfx_lane);
+            memset((void *)cfx_plane, 0, sizeof cfx_plane);
             cfx_lane_on = 0;
             cos_say("FX LANE CLEARED");
         }
@@ -972,6 +1042,12 @@ static __attribute__((noinline)) void cos_input(void)
             if (cos_home_held()) cz.home_used = 1;
             if (w == 15u && cos_home_held()) cos_tap(fm1_ms);   /* (HOME + white 16: TAP TEMPO) */
             else if (w < trk_live) track_select(w);
+            else if (w == 12u || w == 13u) mph_key(w - 12u, cos_home_held());   /* (MORPH's A, B: cos_morph.c) */
+            else if (w == 14u) {                         /* (LOOP: the track picked back in phase on the beat; HOME held:
+                                                         * every track) */
+                live_return(cos_home_held() ? (1u << NTRK) - 1u : 1u << (song.sel % NTRK));
+                cos_say(cos_home_held() ? "ALL BACK" : "BACK");
+            }
             else if (w >= 8u && w < 12u) {
                 if (!cz.pn_ok) cos_proj_scan();
                 cos_section(w - 8u);
@@ -1246,6 +1322,7 @@ static void cos_body_home(void)
         cos_tx(14, y + 1, b, ((live_qmute >> t) & 1u) && (fm1_ms & 256u) ? C_RED : mute ? C_DIM : C_FG);   /* (a mute
                                                          * asked for: blinking until it goes in) */
         if ((perf_solo >> t) & 1u) cv_rect(58, y + 1, 3, 7, C_RED);   /* (soloed) */
+        if (LV_ON(t)) cv_rect(54, y + 3, 3, 3, C_RED);   /* (LOOP: playing modified) */
         for (i = 0; i < 16u; i++) {
             uint32_t st = (now != ~0u ? now / 16u * 16u : 0u) + i, v = st < len ? cos_step(tr, st, NLANE) : 0u;
             int32_t x = 64 + (int32_t)i * 11;
@@ -1265,7 +1342,18 @@ static void cos_body_home(void)
             str_cpy(b, BS[bd_state % 6u], sizeof b);
             if (bd_state == BD_BUILD) { uint32_t l = str_len(b); b[l] = ' '; b[l + 1] = (char)('0' + bd_bars % 10u); b[l + 2] = 0; }
         } else if (fill_on || fill_req) str_cpy(b, "FILL", sizeof b);
+        if (!b[0] && mph.gl) {                            /* (a MORPH gliding: where it goes, how far) */
+            str_cpy(b, mph.to ? "TO B " : "TO A ", sizeof b);
+            if (!mph.run || (int32_t)((song.playing ? ms_clock : fm1_ms) - mph.t0) < 0) str_cpy(b + 5, "NEXT BAR", 20);
+            else { uint32_t l = str_len(b), q = (uint32_t)(mph.to ? mph.pos : 1000 - mph.pos) / 10u;
+                   b[l] = (char)('0' + q / 100u % 10u); b[l + 1] = (char)('0' + q / 10u % 10u); b[l + 2] = (char)('0' + q % 10u);
+                   b[l + 3] = '%'; b[l + 4] = 0; if (q < 100u) memmove(b + l, b + l + 1, 4); }
+        }
         if (b[0]) cos_tx(4, 144, b, C_RED);
+        else if (cz.tab[CM_HOME] == 5u)                  /* (LOOP) */
+            cos_tx(4, 144, "W15 BACK  HOME+W15 ALL BACK", C_DIM);
+        else if (cz.tab[CM_HOME] == 4u)                  /* (MORPH: the keys; A and B lit when stored) */
+            cos_tx(4, 144, (mph.set & 3u) == 3u ? "W13 A  W14 B  HOME+ STORES" : "W13 / W14: STORE A / B", C_DIM);
         else cos_tx(4, 144, trk_live > 5u ? "B7 FILL B8 DROP B9-11 KILL" : "B7 FILL B8 BREAK B9-11 KILL", C_DIM);
         if (live.cur >= 0 && !b[0]) { char c[2] = {(char)('A' + live.cur), 0}; cos_txr(236, 144, c, C_MID); }
     }
@@ -1668,6 +1756,20 @@ static void cos_body_lim(void)
     cos_tx(8, 124, "RIDES THE LOUDNESS. OFF: NOT", C_DIM);
 }
 
+/* FX > RUMBLE: what it is, and its level now (a meter of the return's peak, the kick's pump in it) */
+static void cos_body_rumble(void)
+{
+    int32_t w = rmb_v[0] ? clamp(rb.pk * 160 / 24000, 0, 160) : 0;
+    cos_tx(8, 40, "KICK > LOWPASS > DARK VERB", C_MID);
+    cos_tx(8, 58, "RUMBLE NOW", C_DIM);
+    cv_frame(8, 70, 164, 12, C_DIM);
+    if (w) cv_rect(10, 72, w, 8, C_RED);
+    cos_tx(180, 72, rmb_v[0] ? "ON" : "OFF", rmb_v[0] ? C_FG : C_DIM);
+    cos_tx(8, 100, "DUCK: DOWN AT THE KICK,", C_DIM);
+    cos_tx(8, 112, "UP INTO THE OFFBEAT", C_DIM);
+    cos_tx(8, 124, "KICK KILL: THE TAIL RINGS OUT", C_DIM);
+}
+
 /* GLO > LINK: what the PROGRAM CHANGEs do */
 static void cos_body_link(void)
 {
@@ -1729,6 +1831,10 @@ static void cos_scene(void)
         else cos_body_sound();
         break;
     }
+    case CM_FX:
+        if (cos_page()->kind == CK_COS && cos_page()->id[0] == CC_RB0) cos_body_rumble();
+        else cos_body_sound();
+        break;
     default: cos_body_sound(); break;
     }
 dials:

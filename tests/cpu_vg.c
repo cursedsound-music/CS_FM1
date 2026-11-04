@@ -280,6 +280,9 @@ int main(void)
     cfx_held = CX_BIT(CX_TAPE);
     vg_section("cos/cputest.comp.tape");
     cfx_held = 0;
+    rmb_v[0] = 100; rmb_v[3] = 80;                      /* (RUMBLE on: the kit's tail) */
+    vg_section("cos/cputest.comp.rumble");
+    rmb_v[0] = 0;
     {
         uint32_t b;
         for (b = 0; b < 200u; b++) mix_block(vo, CTL);   /* (the shares down) */

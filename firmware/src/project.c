@@ -151,6 +151,10 @@ typedef struct {
     int16_t eqv[4], tapev[2];                  /* (cursed-os) the master's EQ ('EQ') and TAPE ('TP'): the project's, the
                                                 * music's only from a load (never a read, nor a section on the bar) */
     uint16_t fxl[FXL_N];                       /* .. the FX lane (cosfx.c cfx_lane): the pad's effects a sixteenth */
+    uint32_t fxp[FXL_N];                       /* .. perform.c's in it (cfx_plane): 'FP' */
+    uint8_t rmb[4];                            /* (cursed-os) RUMBLE (rumble.c rmb_v): LEVEL DECAY TONE DUCK ('RB') */
+    int16_t mos[2][MO_N];                      /* (cursed-os) MORPH's A and B (cos_morph.c mph), 'MO' */
+    uint8_t mo_set, mo_bars, mo_pos, rsv_mo;   /* .. which are stored, BARS, where it was (0 .. 100) */
     char name[PROJ_NAME_LEN];                  /* the project's name: upper-case ASCII 32..126, 0-padded; "" = none */
     uint32_t sum;
 } project_t;
@@ -299,6 +303,10 @@ static void proj_cos_defaults(project_t *q)
     q->tapev[0] = q->tapev[1] = 0;
     q->fxl_on = 0;
     memset(q->fxl, 0, sizeof q->fxl);
+    memset(q->fxp, 0, sizeof q->fxp);
+    memcpy(q->rmb, RB_DEF, sizeof q->rmb);
+    memset(q->mos, 0, sizeof q->mos);
+    q->mo_set = 0; q->mo_bars = 3; q->mo_pos = 0;
 }
 static __attribute__((noinline)) uint32_t proj_x2(project_t *q, const uint8_t *bc, uint32_t pos, uint32_t room)
 {
@@ -366,6 +374,80 @@ static __attribute__((noinline)) uint32_t proj_fl(project_t *q, const uint8_t *b
     for (i = 0; i < FXL_N; i++) q->fxl[i] = (uint16_t)(b[pos + 2u + 2u * i] | b[pos + 3u + 2u * i] << 8);
     q->fxl_on = 1;
     return 2u + 2u * FXL_N;
+}
+/* (cursed-os) the FX lane's perform.c effects: 'F' 'P' and FXL_N x 4 bytes (low byte first), when any is there */
+static __attribute__((noinline)) uint32_t proj_fp(project_t *q, const uint8_t *bc, uint32_t pos, uint32_t room)
+{
+    uint8_t *b = (uint8_t *)(uintptr_t)bc;
+    uint32_t i, k, any = 0;
+    for (i = 0; i < FXL_N && !room; i++) any |= q->fxp[i];
+    if (!room) {
+        if (!any || !q->fxl_on) return 0;
+        if (b) {
+            b[pos] = 'F'; b[pos + 1u] = 'P';
+            for (i = 0; i < FXL_N; i++)
+                for (k = 0; k < 4u; k++) b[pos + 2u + 4u * i + k] = (uint8_t)(q->fxp[i] >> (8u * k));
+        }
+        return 2u + 4u * FXL_N;
+    }
+    memset(q->fxp, 0, sizeof q->fxp);
+    if (pos + 2u + 4u * FXL_N > room || b[pos] != 'F' || b[pos + 1u] != 'P')
+        return 0;
+    for (i = 0; i < FXL_N; i++)
+        for (k = 0; k < 4u; k++) q->fxp[i] |= (uint32_t)b[pos + 2u + 4u * i + k] << (8u * k);
+    return 2u + 4u * FXL_N;
+}
+
+/* (cursed-os) RUMBLE: 'R' 'B' and its four knobs (0..100), when any is not its default (a project without it: off) */
+static __attribute__((noinline)) uint32_t proj_rb(project_t *q, const uint8_t *bc, uint32_t pos, uint32_t room)
+{
+    uint8_t *b = (uint8_t *)(uintptr_t)bc;
+    uint32_t k;
+    if (!room) {
+        if (!memcmp(q->rmb, RB_DEF, sizeof q->rmb)) return 0;
+        if (b) {
+            b[pos] = 'R'; b[pos + 1u] = 'B';
+            for (k = 0; k < 4u; k++) b[pos + 2u + k] = q->rmb[k];
+        }
+        return 6u;
+    }
+    memcpy(q->rmb, RB_DEF, sizeof q->rmb);
+    if (pos + 6u > room || b[pos] != 'R' || b[pos + 1u] != 'B')
+        return 0;
+    for (k = 0; k < 4u; k++) q->rmb[k] = b[pos + 2u + k] > 100u ? 100u : b[pos + 2u + k];
+    return 6u;
+}
+
+/* (cursed-os) MORPH: 'M' 'O', which are stored, BARS, where it was, then A and B (MO_N values each, low byte first),
+ * when either is stored (a project without it: none) */
+static __attribute__((noinline)) uint32_t proj_mo(project_t *q, const uint8_t *bc, uint32_t pos, uint32_t room)
+{
+    uint8_t *b = (uint8_t *)(uintptr_t)bc;
+    uint32_t i, x, n = 5u + 4u * MO_N;
+    if (!room) {
+        if (!(q->mo_set & 3u)) return 0;
+        if (b) {
+            b[pos] = 'M'; b[pos + 1u] = 'O';
+            b[pos + 2u] = q->mo_set & 3u; b[pos + 3u] = q->mo_bars; b[pos + 4u] = q->mo_pos;
+            for (x = 0; x < 2u; x++)
+                for (i = 0; i < MO_N; i++) {
+                    b[pos + 5u + (x * MO_N + i) * 2u] = (uint8_t)q->mos[x][i];
+                    b[pos + 6u + (x * MO_N + i) * 2u] = (uint8_t)((uint16_t)q->mos[x][i] >> 8);
+                }
+        }
+        return n;
+    }
+    memset(q->mos, 0, sizeof q->mos);
+    q->mo_set = 0; q->mo_bars = 3; q->mo_pos = 0;
+    if (pos + n > room || b[pos] != 'M' || b[pos + 1u] != 'O')
+        return 0;
+    q->mo_set = b[pos + 2u] & 3u;
+    q->mo_bars = b[pos + 3u] > 5u ? 3u : b[pos + 3u];
+    q->mo_pos = b[pos + 4u] > 100u ? 0u : b[pos + 4u];
+    for (x = 0; x < 2u; x++)
+        for (i = 0; i < MO_N; i++)
+            q->mos[x][i] = (int16_t)(b[pos + 5u + (x * MO_N + i) * 2u] | b[pos + 6u + (x * MO_N + i) * 2u] << 8);
+    return n;
 }
 
 /* (p9) the master's EQ: 'E' 'Q' and its four gains (-12 .. 12, a byte each), when any is set; a project without it
@@ -990,6 +1072,9 @@ static uint32_t proj_packed_size(const project_t *q)
     n += proj_x2(q, 0, 0, 0);                           /* (cursed-os) LFO 2 and FILTER 2, when set */
     n += proj_tf(q, 0, 0, 0);                           /* (cursed-os) the tempo's tenths */
     n += proj_fl(q, 0, 0, 0);                           /* (cursed-os) the FX lane, when in use */
+    n += proj_fp(q, 0, 0, 0);                           /* .. perform.c's effects in it */
+    n += proj_rb(q, 0, 0, 0);                           /* (cursed-os) RUMBLE, when set */
+    n += proj_mo(q, 0, 0, 0);                           /* (cursed-os) MORPH, when stored */
     if (q->g[G_DMOD] != GP[G_DMOD].def)                 /* (0.6.86) the delay's MOD's, when not the default */
         n += 3u;
     if (q->g[G_DTYPE] || q->g[G_DPING])                 /* (0.6.90) its TYPE and PING-PONG's */
@@ -1168,6 +1253,9 @@ static int proj_pack(project_store_t *out, const project_t *q)
     pos += proj_x2(q, b, pos, 0);                       /* (cursed-os) LFO 2 and FILTER 2, when set (after DA's) */
     pos += proj_tf(q, b, pos, 0);
     pos += proj_fl(q, b, pos, 0);
+    pos += proj_fp(q, b, pos, 0);
+    pos += proj_rb(q, b, pos, 0);
+    pos += proj_mo(q, b, pos, 0);
     memcpy(b + PROJC_PFX_OFF, q->pfx_lane, sizeof q->pfx_lane);
     b[PROJC_PFX_OFF + sizeof q->pfx_lane] = q->pfx_ltgt > 2u ? 0u : q->pfx_ltgt;
     for (i = 0; i < 4u; i++)
@@ -1459,6 +1547,9 @@ static int proj_unpack_c(project_t *q, const uint8_t *b)
     pos += proj_x2(q, b, pos, room);                    /* (cursed-os) LFO 2 and FILTER 2 (else the defaults) */
     pos += proj_tf(q, b, pos, room);                    /* (cursed-os) the tempo's tenths (else 0) */
     pos += proj_fl(q, b, pos, room);                    /* (cursed-os) the FX lane (else none) */
+    pos += proj_fp(q, b, pos, room);                    /* .. perform.c's in it (else none) */
+    pos += proj_rb(q, b, pos, room);                    /* (cursed-os) RUMBLE (else off) */
+    pos += proj_mo(q, b, pos, room);                    /* (cursed-os) MORPH (else none) */
     proj_new_tracks(q, nt);                             /* (a FUNC of fewer tracks: the rest at power-on) */
     for (t = nt; t < NTRK; t++)
         memcpy(q->fm6[t], FM6_INIT, FM6_PACKED);
@@ -1759,8 +1850,12 @@ static void project_capture(project_t *p)
     p->tf = bpm_frac;
     memcpy(p->eqv, eq_v, sizeof p->eqv);                /* (the master's EQ and TAPE) */
     memcpy(p->tapev, tape_v, sizeof p->tapev);
+    memcpy(p->rmb, rmb_v, sizeof p->rmb);               /* (cursed-os) RUMBLE */
+    memcpy(p->mos, mph.s, sizeof p->mos);               /* (cursed-os) MORPH's A and B */
+    p->mo_set = mph.set & 3u; p->mo_bars = mph.bars; p->mo_pos = (uint8_t)((mph.pos + 5) / 10);
     p->fxl_on = cfx_lane_on;
     memcpy(p->fxl, (const void *)cfx_lane, sizeof p->fxl);
+    memcpy(p->fxp, (const void *)cfx_plane, sizeof p->fxp);
     motion_unguard(f);
     memcpy(p->name, proj_name, str_len(proj_name));
     p->sum = proj_sum(p);
@@ -2011,7 +2106,11 @@ static int project_restore_runtime(const project_t *input)
     bpm_frac = p->tf;
     memcpy(eq_v, p->eqv, sizeof eq_v);
     memcpy(tape_v, p->tapev, sizeof tape_v);
+    memcpy(rmb_v, p->rmb, sizeof rmb_v);
+    memcpy(mph.s, p->mos, sizeof mph.s);
+    mph.set = p->mo_set & 3u; mph.bars = p->mo_bars % 6u; mph.pos = (int16_t)(p->mo_pos * 10u); mph.gl = mph.run = 0;
     memcpy((void *)cfx_lane, p->fxl, sizeof p->fxl);
+    memcpy((void *)cfx_plane, p->fxp, sizeof p->fxp);
     cfx_lane_on = p->fxl_on;
     if (!proj_lfo_keep)
         lfo_fade_restart((1u << NTRK) - 1u);            /* (0.9.18) the LFOs' FADE from 0 (MODE FREE: only now) */

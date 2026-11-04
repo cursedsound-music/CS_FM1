@@ -811,6 +811,8 @@ static uint32_t div_samples(uint32_t div)
 
 #include "perform.c"                                 /* the FX hold layer's effects (the master) */
 #include "cosfx.c"                                   /* (cursed-os) the FX pad's own, for techno */
+#include "rumble.c"                                  /* (cursed-os) RUMBLE: the kick's dark tail */
+#include "cos_morph.c"                               /* (cursed-os) MORPH: A and B, a glide between them */
 static void seq_note_on(track_t *t, uint32_t note, uint32_t vel);   /* (0.6.72: seq.c, a note MIDI OUT ALL sends) */
 static void seq_note_off(track_t *t, uint32_t note);
 #include "pfx.c"                                   /* .. its punch-in MIDI effects (on the notes) */
@@ -2498,6 +2500,11 @@ static inline __attribute__((always_inline)) void mix_part(track_t *t, uint32_t 
                 mod_end(t);
             return;
         }
+        if (rmb_v[0] && ENGINES[t->engine] == &ENG_DRUM) {   /* (cursed-os) RUMBLE's feed: the kit at its LEVEL */
+            void (*f)(const int32_t *, uint32_t, int32_t, int32_t, uint32_t) = rmb_feed;
+            FM1_OPAQUE(f);                              /* (as tape_block: out of the RAM code's direct reach) */
+            f(b, n, lq, dl, c1);
+        }
         int32_t lq0 = lq, gl0 = gl, gr0 = gr;           /* (0.7.5: uin_mix, the same ramps) */
         if (dx_xon && ENGINES[t->engine] == &ENG_DRUM)  /* (0.6.48) IMAGE, SENDs: from the same ramps as below */
         {
@@ -2944,7 +2951,7 @@ static __attribute__((noinline)) void mix_block(int32_t *out, uint32_t n)   /* (
     if (fx_stems)                                       /* (0.7.1) a part not mixed this block: a silent stem */
         memset(stem_buf, 0, sizeof stem_buf);
     pfx_rec_held = perf_kill ? 0u : perf_held & PF_MIDI;
-    pfx_block(n, (perf_kill ? 0u : (perf_held | perf_latched) & (PF_MIDI | PF_LOOPS)) | scene_pfx);
+    pfx_block(n, (perf_kill ? 0u : (perf_held | perf_latched | perf_lane) & (PF_MIDI | PF_LOOPS)) | scene_pfx);
     events_block(n);
     if (song.playing)                                   /* (JIANT) the modulation sequences' clock (mod.c): the block's end on
                                                          * the transport's grid (through tempo changes, an external clock) */
@@ -3008,6 +3015,12 @@ static __attribute__((noinline)) void mix_block(int32_t *out, uint32_t n)   /* (
                 mix_r[i] += sl_r[i];
             }
     }
+    if (rmb_v[0]) {                                     /* (cursed-os) RUMBLE, into the master before the DJ FILTER */
+        void (*f)(uint32_t) = rmb_block;
+        FM1_OPAQUE(f);                                  /* (as tape_block: out of the RAM code's direct reach) */
+        f(n);
+    } else
+        rb.on = 0;
     if (song.g[G_DJF] || djf.mode)                      /* (0.9.1) the DJ FILTER; centred and out: not run */
         djf_block(n);
     if (tape_v[0] || tape_v[1] || tp.drv || tp.wow) {   /* (0.9.9-snd8) TAPE; both 0 (and settled): not run */

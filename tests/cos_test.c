@@ -551,7 +551,7 @@ int main(void)
         cos_test_btn(B_HOME, 0);
         CHECK(cz.tab[CM_HOME] == 3u, "let go after a knob: MACROS again (%u)", cz.tab[CM_HOME]);
         cos_test_btn(B_HOME, 1); cos_test_btn(B_HOME, 0);
-        CHECK(cz.tab[CM_HOME] == 0u, "a tap: the next page, round to PERFORM (%u)", cz.tab[CM_HOME]);
+        CHECK(cz.tab[CM_HOME] == 4u, "a tap: the next page, MORPH (%u)", cz.tab[CM_HOME]);
         cz.mode = CM_FX; cz.tab[CM_HOME] = 2;
         cos_test_btn(B_HOME, 1);
         CHECK(cz.mode == CM_HOME && cz.tab[CM_HOME] == 0u, "from FX: HOME, PERFORM while held");
@@ -802,7 +802,7 @@ int main(void)
         const cpg_t *pp; uint32_t n;
         cz.mode = CM_HOME; song.sel = 3;
         cos_pages(CM_FX, &pp, &n);
-        CHECK(n == 5u && !strcmp(pp[3].tab, "DELAY 2") && pp[3].id[0] == G_DMIX && pp[3].id[3] == G_DMOD, "FX: DELAY 2 after DELAY");
+        CHECK(n == 6u && !strcmp(pp[3].tab, "DELAY 2") && !strcmp(pp[5].tab, "RUMBLE") && pp[3].id[0] == G_DMIX && pp[3].id[3] == G_DMOD, "FX: DELAY 2 after DELAY");
         song.g[G_DTIME] = 1; song.g[G_DFDBK] = 40;
         db_put(DK_DLY, 1);
         CHECK(song.g[G_DTIME] == (int16_t)DT_DOT && song.g[G_DFDBK] == 70, "DUB 3 DELAY 1/8D (%d, %d)", song.g[G_DTIME], song.g[G_DFDBK]);
@@ -816,9 +816,12 @@ int main(void)
     {
         uint32_t s0 = song_cur;
         song.playing = 1; live.dirty = 1;
-        CHECK(song_go_live((s0 + 1u) % NSONG) == 1 && song_cur == s0, "playing with an unsaved section: refused");
-        live.dirty = 0;
-        CHECK(song_go_live((s0 + 1u) % NSONG) == 0 && song_cur == (s0 + 1u) % NSONG, "playing: the next song's in (%u)", song_cur);
+        CHECK(song_go_live((s0 + 1u) % NSONG) == 1 && song_cur == s0 && live.dirty, "playing with an unsaved section: asks first");
+        CHECK(song_go_live((s0 + 2u) % NSONG) == 1 && song_cur == s0, "another song pressed: asks again");
+        CHECK(song_go_live((s0 + 1u) % NSONG) == 1 && song_cur == s0, ".. for that one");
+        CHECK(song_go_live((s0 + 1u) % NSONG) == 0 && song_cur == (s0 + 1u) % NSONG && !live.dirty, "again: the unsaved dropped, the next song's in (%u)", song_cur);
+        song.playing = 0; song_go_live(s0); song.playing = 1;
+        CHECK(song_go_live((s0 + 1u) % NSONG) == 0 && song_cur == (s0 + 1u) % NSONG, "playing, all saved: at once (%u)", song_cur);
         CHECK(live.req < 0, "(an empty song: nothing staged, the music plays on)");
         song.playing = 0;
         song_go_live(s0);
@@ -878,6 +881,212 @@ int main(void)
             x2_defaults(2); bpm_frac = 0; memset((void *)cfx_lane, 0, sizeof cfx_lane); cfx_lane_on = 0;
         }
         song.playing = 0;
+    }
+
+    /* RUMBLE: a four-on-the-floor kick alone; the kick's tail between the kicks, ducked at each, off out of the chain */
+    {
+        static int32_t o[2u * CTL];
+        uint32_t k, i, b, bs;
+        int64_t lo_off[2] = {0, 0}, lo_on[2] = {0, 0}, early = 0, late = 0;
+        int32_t pk_on = 0;
+        int run;
+        ui_power_on();
+        song.master_q12 = 4096;
+        trk_live = 5;
+        set_engine_of(&trk[0], ENGI_DRUM); trk[0].engine = trk[0].eng_req;
+        for (k = 0; k < NTRK; k++) trk[k].p[P_MUTE] = k != 0u;
+        CHECK(ENGINES[trk[0].engine] == &ENG_DRUM, "track 1 a kit");
+        for (i = 0; i < 16u; i++) {
+            step_t *s = &trk[0].step[i];
+            memset(s, 0, sizeof *s);
+            s->time = i % 4u ? ST_REST : ST_NOTE;
+            s->vel = 110;
+            s->hit = i % 4u ? 0u : 1u;
+        }
+        trk[0].p[P_SLEN] = 16; trk[0].p[P_DLY] = 0; trk[0].p[P_REV] = 0; trk[0].p[P_CHOR] = 0;
+        song.g[G_BPM] = 128; bpm_frac = 0; song.g[G_DUCK] = 0;
+        bs = beat_samples();
+        for (run = 0; run < 2; run++) {
+            rmb_v[0] = run ? 100 : 0; rmb_v[1] = 80; rmb_v[2] = 50; rmb_v[3] = 0;   /* (DUCK off here: the tail whole) */
+            transport_req = 1; ui_input();
+            for (b = 0; b < 8u * bs / CTL; b++) {              /* (two bars) */
+                memset(o, 0, sizeof o);
+                mix_block(o, CTL);
+                if (b * CTL < 4u * bs) continue;               /* (the second bar: the tail built up) */
+                for (i = 0; i < CTL; i++) {
+                    uint32_t at = (b * CTL + i) % bs;          /* where in the beat */
+                    int64_t v = o[2u * i];
+                    int64_t *e = run ? lo_on : lo_off;
+                    e[at >= bs / 2u] += v * v;                 /* (the beat's halves: the kick's, the offbeat's) */
+                    if (run && (o[2u * i] > pk_on || -o[2u * i] > pk_on)) pk_on = o[2u * i] < 0 ? -o[2u * i] : o[2u * i];
+                }
+            }
+            transport_req = 2; ui_input();
+            for (b = 0; b < 200u; b++) { memset(o, 0, sizeof o); mix_block(o, CTL); }
+        }
+        printf("  (RUMBLE: the offbeat's energy %lld off, %lld on; the kick's half %lld -> %lld; peak %d)\n",
+               (long long)lo_off[1], (long long)lo_on[1], (long long)lo_off[0], (long long)lo_on[0], pk_on);
+        CHECK(lo_on[1] > 2 * lo_off[1] && lo_on[0] < 2 * lo_off[0], "RUMBLE: the kick's tail fills the offbeat, the kick itself as it was");
+        CHECK(pk_on < 30000, "RUMBLE: under full scale (%d)", pk_on);
+        /* DUCK 100: just after the kick far less of it than at the offbeat */
+        rmb_v[3] = 100;
+        transport_req = 1; ui_input();
+        for (b = 0; b < 8u * bs / CTL; b++) {
+            memset(o, 0, sizeof o);
+            mix_block(o, CTL);
+            if (b * CTL < 4u * bs) continue;
+            for (i = 0; i < CTL; i++) {
+                uint32_t at = (b * CTL + i) % bs;
+                int64_t r = rb.oz2;                            /* (the return itself, the kick not in it) */
+                (void)r;
+                if (at >= bs / 8u && at < bs / 4u) early += (int64_t)rb.pk * rb.pk;
+                if (at >= bs * 5u / 8u && at < bs * 3u / 4u) late += (int64_t)rb.pk * rb.pk;
+            }
+        }
+        transport_req = 2; ui_input();
+        printf("  (RUMBLE DUCK 100: just after the kick %lld, at the offbeat %lld)\n", (long long)early, (long long)late);
+        CHECK(late > 4 * early, "DUCK: the rumble pulled down at the kick, up into the offbeat");
+        rmb_v[0] = 0;
+        for (b = 0; b < 4u; b++) { memset(o, 0, sizeof o); mix_block(o, CTL); }
+        CHECK(!rb.on, "LEVEL 0: out of the chain");
+        /* FX > RUMBLE's knobs; a project keeps them, a read leaves the music's */
+        {
+            project_t *q = &proj_scratch;
+            int16_t *vp;
+            cos_cput(CC_RB0, 60); cos_cput(CC_RB0 + 1u, 90); cos_cput(CC_RB0 + 2u, 30); cos_cput(CC_RB3, 250);
+            CHECK(rmb_v[0] == 60 && rmb_v[1] == 90 && rmb_v[2] == 30 && rmb_v[3] == 100, "the knobs (DUCK kept to 100)");
+            CHECK(cos_cdesc(CC_RB0 + 1u, &vp) && *vp == 90, "read back");
+            project_capture(q);
+            CHECK(proj_pack(&proj_wire, q), "packed");
+            rmb_v[0] = 0; rmb_v[1] = 70;
+            CHECK(proj_import(q, &proj_wire, PROJ_STORE_SIZE) && q->rmb[0] == 60 && q->rmb[1] == 90 && q->rmb[3] == 100, "read: in the project");
+            CHECK(rmb_v[0] == 0, "the music untouched by a read");
+            project_restore_runtime(q);
+            CHECK(rmb_v[0] == 60 && rmb_v[1] == 90 && rmb_v[2] == 30, "a load: applied");
+            memcpy(rmb_v, RB_DEF, sizeof rmb_v);
+            project_capture(q);
+            CHECK(proj_rb(q, 0, 0, 0) == 0u, "at its defaults: no block written");
+        }
+    }
+
+    /* MORPH: A and B stored by HOME's white 13 / 14, a glide over BARS from the next bar, KNOB 1 by hand; only what
+     * differs moves; a project keeps A and B */
+    {
+        static int32_t o[2u * CTL];
+        uint32_t b, bar, k;
+        int16_t *vp;
+        ui_power_on();
+        memset(&mph, 0, sizeof mph); mph.bars = 3;      /* (4 bars) */
+        song.g[G_BPM] = 120; bpm_frac = 0;
+        bar = 4u * beat_samples();
+        cz.mode = CM_HOME;
+        trk[1].p[P_LEVEL] = 100; trk[1].p[P_REV] = 0; trk[2].p[P_LEVEL] = 77; macro_v[1] = 0; song.g[G_DJF] = 0;
+        host_notes = 1u << WK[12]; cos_input();          /* (white 13: A stored) */
+        CHECK(mph.set == 1u && mph.s[0][1 * MO_TP + 0] == 100, "white 13: A stored");
+        trk[1].p[P_LEVEL] = 40; trk[1].p[P_REV] = 90; macro_v[1] = 127; song.g[G_DJF] = -30;
+        host_notes = 1u << WK[13]; cos_input();          /* (white 14: B stored) */
+        CHECK(mph.set == 3u && mph.pos == 1000, "white 14: B stored, at B");
+        trk[2].p[P_LEVEL] = 50;                           /* (moved after both: not the morph's, A and B hold it alike) */
+        host_notes = 1u << WK[12]; cos_input();          /* (A: a glide over 4 bars from the next bar) */
+        CHECK(mph.gl && mph.to == 0, "white 13 again: a glide to A");
+        transport_req = 1; ui_input();
+        for (b = 0; b < (bar / 2u) / CTL; b++) { memset(o, 0, sizeof o); mix_block(o, CTL); }
+        ui_input();
+        CHECK(trk[1].p[P_LEVEL] == 40 && mph.pos == 1000, "the bar not in yet: still B (%d)", trk[1].p[P_LEVEL]);
+        for (b = 0; b < (bar / 2u + 2u * bar) / CTL; b++) { memset(o, 0, sizeof o); mix_block(o, CTL); }
+        ui_input();
+        CHECK(mph.pos > 400 && mph.pos < 600 && trk[1].p[P_LEVEL] > 60 && trk[1].p[P_LEVEL] < 80, "half way after 2 of 4 bars (%d, LEVEL %d)", mph.pos, trk[1].p[P_LEVEL]);
+        CHECK(macro_v[1] > 40 && macro_v[1] < 90 && song.g[G_DJF] < -8 && song.g[G_DJF] > -22, "the macros and the DJ FILTER with it (%u, %d)", macro_v[1], song.g[G_DJF]);
+        CHECK(trk[2].p[P_LEVEL] == 50, "what A and B hold alike: left as set");
+        for (b = 0; b < (3u * bar) / CTL; b++) { memset(o, 0, sizeof o); mix_block(o, CTL); ui_input(); }
+        CHECK(!mph.gl && mph.pos == 0 && trk[1].p[P_LEVEL] == 100 && trk[1].p[P_REV] == 0 && macro_v[1] == 0 && song.g[G_DJF] == 0, "at A when it ends");
+        transport_req = 2; ui_input();
+        for (b = 0; b < 8u; b++) { memset(o, 0, sizeof o); mix_block(o, CTL); ui_input(); }
+        CHECK(!song.playing, "stopped");
+        cos_cput(CC_MOPOS, 25);
+        CHECK(trk[1].p[P_LEVEL] == 85 && cos_cdesc(CC_MOPOS, &vp) && *vp == 25, "KNOB 1 by hand: a quarter to B (%d)", trk[1].p[P_LEVEL]);
+        cos_cput(CC_MOBARS, 0);                          /* (CUT, stopped: at once) */
+        host_notes = 1u << WK[13]; cos_input(); ui_input();
+        CHECK(mph.pos == 1000 && trk[1].p[P_LEVEL] == 40, "CUT, stopped: at B at once (%d %d gl %u run %u playing %u)", mph.pos, trk[1].p[P_LEVEL], mph.gl, mph.run, song.playing);
+        fm1_in.buttons |= 1u << panel.btn[B_HOME];
+        trk[1].p[P_LEVEL] = 10;
+        host_notes = 1u << WK[13]; cos_input();          /* (HOME + white 14: B stored again) */
+        fm1_in.buttons &= ~(1u << panel.btn[B_HOME]);
+        CHECK(mph.s[1][1 * MO_TP] == 10, "HOME + white 14: B stored again");
+        {
+            project_t *q = &proj_scratch;
+            project_capture(q);
+            CHECK(proj_pack(&proj_wire, q), "packed");
+            memset(&mph, 0, sizeof mph);
+            CHECK(proj_import(q, &proj_wire, PROJ_STORE_SIZE) && mph.set == 0u, "a read: the music's MORPH untouched");
+            project_restore_runtime(q);
+            CHECK(mph.set == 3u && mph.s[1][1 * MO_TP] == 10 && mph.s[0][1 * MO_TP] == 100 && mph.bars == 0u, "a load: A and B back");
+            memset(&mph, 0, sizeof mph); mph.bars = 3;
+            project_capture(q);
+            CHECK(proj_mo(q, 0, 0, 0) == 0u, "nothing stored: no block written");
+        }
+        for (k = 0; k < NTRK; k++) (void)k;
+    }
+
+    /* HOME > LOOP: JIANT's LIVE layer on the track picked: LEN 3 loops its first three steps, RATE, DENS, SHIFT;
+     * white 15: back in phase on the beat */
+    {
+        static int32_t o[2u * CTL];
+        uint32_t b, mx = 0, beat;
+        int16_t *vp;
+        ui_power_on();
+        song.g[G_BPM] = 120; bpm_frac = 0;
+        beat = beat_samples();
+        cz.mode = CM_HOME; cz.tab[CM_HOME] = 5; song.sel = 0;
+        trk[0].p[P_SLEN] = 16; trk[1].p[P_SLEN] = 16; trk[1].p[P_SDIV] = trk[0].p[P_SDIV];   /* (track 2: the time kept) */
+        cos_cput(CC_LVLEN, 3);
+        CHECK(lv.cut[0] == 103u && lv.want[0].cut == 3u && cos_cdesc(CC_LVLEN, &vp) && *vp == 3, "LEN 3 asked for");
+        transport_req = 1; ui_input();
+        for (b = 0; b < 8u * beat / CTL; b++) {          /* (two bars) */
+            memset(o, 0, sizeof o); mix_block(o, CTL);
+            if (b * CTL > beat && trk[0].seq_idx > mx) mx = trk[0].seq_idx;
+        }
+        CHECK(mx < 3u && LV_ON(0), "LEN 3: the first three steps, round and round (the highest %u)", mx);
+        cos_cput(CC_LVRATE, 6); cos_cput(CC_LVDN, 4); cos_cput(CC_LVSH, 2);
+        CHECK(lv.want[0].rate == 2 && lv.want[0].drop == 50u && lv.want[0].rot == 2, "RATE x2, DENS -50, SHIFT 2");
+        cos_cput(CC_LVDN, 11);
+        CHECK(lv.want[0].rat == 3u && !lv.want[0].drop, "DENS x3: ratchets");
+        host_notes = 1u << WK[14]; cos_input();          /* (white 15: back) */
+        CHECK(!lv.cut[0] && !lv.rate[0] && !lv.dn[0] && !lv.rot[0], "white 15: the knobs back");
+        for (b = 0; b < 2u * beat / CTL; b++) { memset(o, 0, sizeof o); mix_block(o, CTL); }
+        CHECK(!LV_ON(0) && trk[0].seq_idx == trk[1].seq_idx, "on the beat: the track as written, in phase (%u, track 2 %u)", trk[0].seq_idx, trk[1].seq_idx);
+        for (b = 0; b < 4u * beat / CTL; b++) { memset(o, 0, sizeof o); mix_block(o, CTL); if (trk[0].seq_idx > mx) mx = trk[0].seq_idx; }
+        CHECK(mx > 8u, "all sixteen again (%u)", mx);
+        transport_req = 2; ui_input();
+    }
+
+    /* the FX lane: perform.c's effects too (REPEAT, the sweeps, the mutes, GLITCH, the LOOPs), played a block ahead so
+     * they go in on the sixteenth as a key held would */
+    {
+        uint32_t P = div_samples(2);
+        memset((void *)cfx_lane, 0, sizeof cfx_lane); memset((void *)cfx_plane, 0, sizeof cfx_plane); cfx_lane_on = 0;
+        song.playing = 1; ms_clock = 5u * P + 64u;
+        cfx_rec = 1; perf_held = PF_BIT(PF_HPF) | PF_BIT(PF_R16) | PF_BIT(PF_OCTD);   /* (OCT-: not the pad's, not kept) */
+        (void)cfx_lane_bits(64);
+        CHECK(cfx_plane[5] == (PF_BIT(PF_HPF) | PF_BIT(PF_R16)) && cfx_lane_on, "HP sweep and REPEAT 1/16 recorded at sixteenth 6");
+        cfx_rec = 0; perf_held = 0;
+        ms_clock = 5u * P - 64u + 64u;                    /* (a block ending where sixteenth 6 begins) */
+        (void)cfx_lane_bits(64);
+        CHECK(perf_lane == (PF_BIT(PF_HPF) | PF_BIT(PF_R16)), "played from the block before it: on the 1/16");
+        ms_clock = 7u * P + 64u; (void)cfx_lane_bits(64);
+        CHECK(perf_lane == 0u, ".. and not elsewhere");
+        {
+            project_t *q = &proj_scratch;
+            project_capture(q);
+            CHECK(proj_pack(&proj_wire, q), "packed");
+            memset((void *)cfx_plane, 0, sizeof cfx_plane);
+            CHECK(proj_import(q, &proj_wire, PROJ_STORE_SIZE) && q->fxp[5] == (PF_BIT(PF_HPF) | PF_BIT(PF_R16)), "kept with the project ('FP')");
+            project_restore_runtime(q);
+            CHECK(cfx_plane[5] == (PF_BIT(PF_HPF) | PF_BIT(PF_R16)), "a load: back");
+        }
+        memset((void *)cfx_lane, 0, sizeof cfx_lane); memset((void *)cfx_plane, 0, sizeof cfx_plane); cfx_lane_on = 0;
+        song.playing = 0; (void)cfx_lane_bits(64);
+        CHECK(perf_lane == 0u, "stopped: nothing played");
     }
 
     printf("cos_test: %s (%d failures)\n", fails ? "FAILED" : "ok", fails);

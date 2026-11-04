@@ -175,6 +175,7 @@ static int song_stage(uint32_t s, uint32_t row)
     memcpy(sec_stage.motion.rsv, p->motion.rsv, sizeof sec_stage.motion.rsv);
     memcpy(sec_stage.pfx_lane, p->pfx_lane, sizeof sec_stage.pfx_lane);
     memcpy(sec_stage.fxl, p->fxl, sizeof sec_stage.fxl);   /* (cursed-os) the row's own section's FX lane */
+    memcpy(sec_stage.fxp, p->fxp, sizeof sec_stage.fxp);
     sec_stage.fxl_on = p->fxl_on;
     memcpy(sec_stage.slg, &p->g[G_SLMODE], sizeof sec_stage.slg);   /* (0.6.3) the section's SLICER */
     sec_stage.pfx_ltgt = p->pfx_ltgt > 2u ? 0u : p->pfx_ltgt;
@@ -454,9 +455,20 @@ static int song_go_live(uint32_t n)
         return 1;
     if (!song.playing)
         return song_switch(n, 1);
-    if (live.dirty) {
-        ui_message("STOP TO SAVE FIRST");
-        return 1;
+    if (live.dirty) {                                 /* (sections stored while playing, not in flash yet: a flash
+                                                         * write stops the audio, and another song's four sections do not
+                                                         * fit beside these. A second press within 3 s drops them) */
+        static uint8_t ask;
+        static uint32_t ask_ms;
+        if (ask != n + 1u || (uint32_t)(fm1_ms - ask_ms) > 3000u) {
+            ask = (uint8_t)(n + 1u);
+            ask_ms = fm1_ms;
+            ui_message("UNSAVED: AGAIN TO DROP");
+            return 1;
+        }
+        ask = 0;
+        live.dirty = 0;
+        ui_message("UNSAVED DROPPED");
     }
     if (chain.running && !chain.loop) {
         ui_message("STOP THE SONG FIRST");

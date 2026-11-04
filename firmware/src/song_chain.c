@@ -93,6 +93,7 @@ static struct {
     int16_t slg[G_SL_N];              /* .. (0.6.3) its SLICER (the globals G_SLMODE ..) */
     int8_t x2[NTRK][X2_N];            /* .. (cursed-os) its tracks' LFO 2 / FILTER 2, its FX lane */
     uint16_t fxl[FXL_N];
+    uint32_t fxp[FXL_N];              /* .. (perform.c's effects in it) */
     uint8_t fxl_on;
     volatile uint8_t ready;           /* main: staged; ISR: taken (0) */
     uint8_t row, section;             /* the song row it is for (SEC_LIVE: a live jump), the section (0..3) */

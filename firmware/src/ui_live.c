@@ -83,7 +83,8 @@ static void live_publish(void)
         int32_t dn = lv.dn[i];
         if (!lv.byp) {
             m.rate = lv.rate[i];
-            m.cut = LV_CUT[lv.cut[i] % LV_NCUT];
+            m.cut = lv.cut[i] > 100u ? (uint8_t)(lv.cut[i] - 100u)   /* (cursed-os HOME > LOOP: 100 + its steps, any) */
+                                     : LV_CUT[lv.cut[i] % LV_NCUT];
             m.fl = (uint8_t)(((lv.here >> i) & 1u) * LF_HERE | ((lv.rnd >> i) & 1u) * (LVD_RND << 1));
             m.drop = (uint8_t)(dn < 0 ? -10 * dn : 0);
             m.rat = (uint8_t)(dn > 0 ? 1 + dn : 0);

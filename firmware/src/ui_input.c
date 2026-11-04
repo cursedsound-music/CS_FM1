@@ -2267,6 +2267,7 @@ static __attribute__((noinline)) void ui_house(void)
     }
 }
 static void ui_input_frame(void);
+static void mph_tick(void);                              /* (cursedsound) cos_morph.c, in cos.c below */
 static void ui_input(void)
 {
 #if COS_SLIM                                            /* (cursed-os) its interface only: JIANT's own left out of the image */
@@ -2275,6 +2276,7 @@ static void ui_input(void)
     eu_tick();
     ac_tick();
     db_tick();                                          /* (cursedsound) DUB's mutations, on the bar */
+    mph_tick();                                          /* (cursedsound) MORPH's glide */
     scale_link();
     return;
 #endif
@@ -2286,6 +2288,7 @@ static void ui_input(void)
         eu_tick();
         ac_tick();
         db_tick();
+        mph_tick();
         scale_link();
         return;
     }

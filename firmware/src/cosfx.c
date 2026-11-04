@@ -31,6 +31,9 @@ static volatile uint32_t cfx_home;            /* main: HOME's isolator kills hel
  * back round and round while the transport plays; a project's / section's ('FL', project.c proj_fl) */
 #define FXL_N 32u
 static volatile uint16_t cfx_lane[FXL_N];
+static volatile uint32_t cfx_plane[FXL_N];     /* .. and perform.c's effects of the pad a sixteenth (REPEAT, GLITCH, the
+                                                * sweeps, the mutes, the LOOPs: CFX_PF_LANE), played through perf_lane */
+#define CFX_PF_LANE (PF_REPEAT | PF_BIT(PF_LPF) | PF_BIT(PF_HPF) | PF_MUTE | PF_BIT(PF_GLT) | PF_LOOPS)
 static volatile uint8_t cfx_lane_on;
 static volatile uint8_t cfx_rec;              /* main: REC armed and FX held: the lane is written where it passes */
 static uint32_t cfx_lane_bits(uint32_t n);
@@ -351,17 +354,23 @@ static __attribute__((noinline)) void cfx_block(int32_t *ml, int32_t *mr, int32_
 /* the lane's sixteenth now: recorded (REC with FX held: the keys held now), played back (its bits) */
 static uint32_t cfx_lane_bits(uint32_t n)
 {
-    uint32_t p, i;
-    if (!song.playing) return 0;
-    p = (ms_clock - n) / div_samples(2) % FXL_N;
+    uint32_t p, pn, d;
+    if (!song.playing) { perf_lane = 0; return 0; }
+    d = div_samples(2);
+    p = (ms_clock - n) / d % FXL_N;
+    pn = ms_clock / d % FXL_N;                    /* (perform.c's: the next block's sixteenth, perf_begin takes them
+                                                   * there: on the 1/16 as a key held would) */
     if (cfx_rec) {
         uint16_t v = (uint16_t)(cfx_held | cfx_latched);
+        uint32_t pv = (perf_held | perf_latched) & CFX_PF_LANE;
         cfx_lane[p] = v;
-        if (v) cfx_lane_on = 1;
+        cfx_plane[p] = pv;
+        if (v || pv) cfx_lane_on = 1;
+        perf_lane = 0;
         return 0;
     }
-    if (!cfx_lane_on) return 0;
-    (void)i;
+    if (!cfx_lane_on) { perf_lane = 0; return 0; }
+    perf_lane = cfx_plane[pn];
     return cfx_lane[p];
 }
 /* fx.c lev_block: the pad's effects, when any is on or still sounding */
@@ -369,6 +378,7 @@ static void live_tick(uint32_t n);             /* (cos_live.c, the end of seq.c)
 static void cfx_run(uint32_t n)
 {
     live_tick(n);                                 /* (cursed-os) the live layer: mutes, fills, the BREAKDOWN on the grid */
+    if (!cfx_lane_on || !song.playing) perf_lane = 0;
     if (cfx_held | cfx_latched | cfx_auto | cfx_home | cx.busy | cx.on | cfx_lane_on | cfx_rec)
         cfx_block(mix_l, mix_r, wet, fxq_d, fxq_r, n);
 }
