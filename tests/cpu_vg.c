@@ -270,6 +270,23 @@ int main(void)
     song.g[G_DJF] = -24;                                /* (0.9.1) the same song through the DJ FILTER (a low-pass, ~1.4 kHz) */
     vg_section("song/cputest.djf");
     song.g[G_DJF] = 0;
+    /* (cursedsound) cursed-os on the same song: the master COMP (SC HPF, MIX 50) and the limiter's DRIVE; the FX pad's
+     * heaviest at once (GATE DRIVE CRUSH LOW KILL HP RISER NOISE RISER THROW WASH); TAPE STOP; ACID (the 303) on T2 */
+    mc_amt = 100; mc.sc = 4; mc.mix = 50; mc.knee = 6; lim_in = 2 * 32768;
+    vg_section("cos/cputest.comp");
+    cfx_held = CX_BIT(CX_GATE16) | CX_BIT(CX_DRIVE) | CX_BIT(CX_CRUSH) | CX_BIT(CX_LOWK) | CX_BIT(CX_HPR) |
+               CX_BIT(CX_NOISE) | CX_BIT(CX_THROW) | CX_BIT(CX_WASH);
+    vg_section("cos/cputest.comp.fx8");
+    cfx_held = CX_BIT(CX_TAPE);
+    vg_section("cos/cputest.comp.tape");
+    cfx_held = 0;
+    {
+        uint32_t b;
+        for (b = 0; b < 200u; b++) mix_block(vo, CTL);   /* (the shares down) */
+    }
+    set_engine_of(&trk[1], ENGI_ACID);
+    vg_section("cos/cputest.comp.acid");
+    mc_amt = 0; lim_in = 32768;
     {   /* (cpu5) the idle floor: mix/idle the power-on state 2 s on, nothing played (the buses never excited: cpu4's
          * certificates); mix/idle.tail after a chord into CLOUD, the delay and the chorus has rung out and the buses'
          * gate has shut (fx.c fx_rest), 6 s after the keys went up (the delay's FEEDBK holds the gate ~4 s) */

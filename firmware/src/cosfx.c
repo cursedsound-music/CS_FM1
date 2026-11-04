@@ -184,7 +184,7 @@ static __attribute__((noinline)) void cfx_tape(int32_t *pl, int32_t *pr)
 /* fx.c lev_block, each block while an effect is at work or a share is still on: the mix (mix_l, mix_r, wet) in place */
 static __attribute__((noinline)) void cfx_block(int32_t *ml, int32_t *mr, int32_t *wt, int32_t *sd, int32_t *sr, uint32_t n)
 {
-    uint32_t on = perf_kill ? 0u : cfx_held | cfx_latched | cfx_auto, was = cx.on, i, base, P, gp, bar4, hp, np, f2;
+    uint32_t on = perf_kill ? 0u : cfx_held | cfx_latched | cfx_auto, was = cx.on, i, base, P, gp, bar4, hp, np, f2, gph;
     int32_t hf = 0, hd = 0, nf = 0, ng = 0, duck;
     if (on != was)
         cfx_edges(on, was);
@@ -195,6 +195,7 @@ static __attribute__((noinline)) void cfx_block(int32_t *ml, int32_t *mr, int32_
     P = div_samples(2);
     gp = (on & CX_BIT(CX_GATE16)) ? P : 2u * P;
     base = song.playing ? ms_clock - n : cx.ph;
+    gph = base % gp;                          /* (the gate's place in its period: once a block, then counted) */
     cx.ph += n;
     bar4 = 64u * P;
     hp = cx.ht / ((bar4 >> 12) + 1u);         /* the risers' progress, Q12 (4 bars) */
@@ -215,8 +216,10 @@ static __attribute__((noinline)) void cfx_block(int32_t *ml, int32_t *mr, int32_
     }
     for (i = 0; i < n; i++) {
         int32_t l = ml[i], r = mr[i], m = (l + r) >> 1;
-        cx.wt = cx_ramp(cx.wt, (on & CX_BIT(CX_THROW)) != 0u);
-        cx.ww = cx_ramp(cx.ww, (on & CX_BIT(CX_WASH)) != 0u);
+        if ((on & CX_BIT(CX_THROW)) || cx.wt)
+            cx.wt = cx_ramp(cx.wt, (on & CX_BIT(CX_THROW)) != 0u);
+        if ((on & CX_BIT(CX_WASH)) || cx.ww)
+            cx.ww = cx_ramp(cx.ww, (on & CX_BIT(CX_WASH)) != 0u);
         if (cx.wt)
             sd[i] += mulq16(m, (uint32_t)cx.wt << 1);
         if (cx.ww) {
@@ -230,7 +233,8 @@ static __attribute__((noinline)) void cfx_block(int32_t *ml, int32_t *mr, int32_
         l += wt[i];
         r += wt[i];
         wt[i] = 0;
-        cx.wn = cx_ramp(cx.wn, (on & CX_BIT(CX_NOISE)) != 0u);
+        if ((on & CX_BIT(CX_NOISE)) || cx.wn)           /* (each stage: its share stepped only while it is in play) */
+            cx.wn = cx_ramp(cx.wn, (on & CX_BIT(CX_NOISE)) != 0u);
         if (cx.wn) {
             int32_t z, b;
             cx.nrnd ^= cx.nrnd << 13;
@@ -246,9 +250,10 @@ static __attribute__((noinline)) void cfx_block(int32_t *ml, int32_t *mr, int32_
         }
         if (cx.tape)
             cfx_tape(&l, &r);
-        cx.gs = cx_ramp(cx.gs, (on & (CX_BIT(CX_GATE16) | CX_BIT(CX_GATE8))) != 0u);
+        if ((on & (CX_BIT(CX_GATE16) | CX_BIT(CX_GATE8))) || cx.gs)
+            cx.gs = cx_ramp(cx.gs, (on & (CX_BIT(CX_GATE16) | CX_BIT(CX_GATE8))) != 0u);
         if (cx.gs) {                          /* GATE: open the first half of each 1/16 (1/8), 1.5 ms edges */
-            int open = (base + i) % gp < gp / 2u;
+            int open = gph < gp / 2u;
             cx.gg += clamp((open ? 32768 : 0) - cx.gg, -512, 512);
             {
                 int32_t g = 32768 - mulq16(32768 - cx.gg, (uint32_t)cx.gs << 1);
@@ -257,14 +262,17 @@ static __attribute__((noinline)) void cfx_block(int32_t *ml, int32_t *mr, int32_
             }
         } else
             cx.gg = 32768;
-        cx.wd = cx_ramp(cx.wd, (on & CX_BIT(CX_DRIVE)) != 0u);
+        if (++gph >= gp) gph = 0;
+        if ((on & CX_BIT(CX_DRIVE)) || cx.wd)
+            cx.wd = cx_ramp(cx.wd, (on & CX_BIT(CX_DRIVE)) != 0u);
         if (cx.wd) {                          /* DRIVE: x3 into a cubic soft clip, back down a little */
             int32_t u = clamp(l * 3, -32767, 32767), v = clamp(r * 3, -32767, 32767), uu = (u * u) >> 15, vv = (v * v) >> 15;
-            int32_t yl = ((3 * u - ((uu * u) >> 15)) >> 1) * 3 / 4, yr = ((3 * v - ((vv * v) >> 15)) >> 1) * 3 / 4;
+            int32_t yl = (((3 * u - ((uu * u) >> 15)) >> 1) * 3) >> 2, yr = (((3 * v - ((vv * v) >> 15)) >> 1) * 3) >> 2;
             l += mulq16(yl - l, (uint32_t)cx.wd << 1);
             r += mulq16(yr - r, (uint32_t)cx.wd << 1);
         }
-        cx.wc = cx_ramp(cx.wc, (on & CX_BIT(CX_CRUSH)) != 0u);
+        if ((on & CX_BIT(CX_CRUSH)) || cx.wc)
+            cx.wc = cx_ramp(cx.wc, (on & CX_BIT(CX_CRUSH)) != 0u);
         if (cx.wc) {                          /* CRUSH: 7 bits, every 4th sample held (~11 kHz) */
             if (++cx.cn >= 4u) {
                 cx.cn = 0;
@@ -274,7 +282,8 @@ static __attribute__((noinline)) void cfx_block(int32_t *ml, int32_t *mr, int32_
             l += mulq16(cx.chl - l, (uint32_t)cx.wc << 1);
             r += mulq16(cx.chr - r, (uint32_t)cx.wc << 1);
         }
-        cx.wl = cx_ramp(cx.wl, (on & CX_BIT(CX_LOWK)) != 0u);
+        if ((on & CX_BIT(CX_LOWK)) || cx.wl)
+            cx.wl = cx_ramp(cx.wl, (on & CX_BIT(CX_LOWK)) != 0u);
         if (cx.wl) {                          /* LOW KILL: two high-passes at ~200 Hz (24 dB an octave) */
             const int16_t *c = PF_SVF[19];
             int32_t yl = pf_svf(pf_svf(clamp(l >> 2, -32767, 32767), &cx.lz[0], c, 1), &cx.lz[2], c, 1) << 2;
@@ -284,7 +293,8 @@ static __attribute__((noinline)) void cfx_block(int32_t *ml, int32_t *mr, int32_
         } else if (cx.lz[0] | cx.lz[1] | cx.lz[4] | cx.lz[5]) {
             for (f2 = 0; f2 < 8u; f2++) cx.lz[f2] = 0;
         }
-        cx.wh = cx_ramp(cx.wh, (on & CX_BIT(CX_HPR)) != 0u);
+        if ((on & CX_BIT(CX_HPR)) || cx.wh)
+            cx.wh = cx_ramp(cx.wh, (on & CX_BIT(CX_HPR)) != 0u);
         if (cx.wh) {                          /* HP RISER (let go: the drop, in 2.9 ms) */
             int32_t yl = cx_svf(l >> 2, &cx.hz[0], hf, hd) << 2, yr = cx_svf(r >> 2, &cx.hz[2], hf, hd) << 2;
             l += mulq16(yl - l, (uint32_t)cx.wh << 1);
