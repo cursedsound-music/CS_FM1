@@ -1345,9 +1345,8 @@ static void cos_body_home(void)
         if (!b[0] && mph.gl) {                            /* (a MORPH gliding: where it goes, how far) */
             str_cpy(b, mph.to ? "TO B " : "TO A ", sizeof b);
             if (!mph.run || (int32_t)((song.playing ? ms_clock : fm1_ms) - mph.t0) < 0) str_cpy(b + 5, "NEXT BAR", 20);
-            else { uint32_t l = str_len(b), q = (uint32_t)(mph.to ? mph.pos : 1000 - mph.pos) / 10u;
-                   b[l] = (char)('0' + q / 100u % 10u); b[l + 1] = (char)('0' + q / 10u % 10u); b[l + 2] = (char)('0' + q % 10u);
-                   b[l + 3] = '%'; b[l + 4] = 0; if (q < 100u) memmove(b + l, b + l + 1, 4); }
+            else { uint32_t q = (uint32_t)(mph.to ? mph.pos : 1000 - mph.pos) / 10u;   /* (how far: a percent) */
+                   fmt_int(b + 5, (int32_t)q); str_cpy(b + str_len(b), "%", 2); }
         }
         if (b[0]) cos_tx(4, 144, b, C_RED);
         else if (cz.tab[CM_HOME] == 5u)                  /* (LOOP) */
