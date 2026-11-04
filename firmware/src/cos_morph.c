@@ -87,7 +87,7 @@ static void mph_tick(void)
             mph.len = l * bar;
         } else {
             mph.t0 = fm1_ms;
-            mph.len = (uint32_t)((uint64_t)l * bar * 1000u / 44100u);
+            mph.len = l * bar * 10u / 441u;          /* (samples to ms, in 32 bits: no 64-bit divide on the device) */
         }
         mph.run = 1;
         mph.rp = song.playing != 0;
@@ -99,7 +99,10 @@ static void mph_tick(void)
         p = mph.to;
         mph.gl = mph.run = 0;
     } else {
-        p = mph.from + (int32_t)((int64_t)(mph.to - mph.from) * t / mph.len);
+        uint32_t sh = 0, q;
+        while ((mph.len >> sh) > 2000000u) sh++;    /* (t x 1000 in 32 bits) */
+        q = (t >> sh) * 1000u / ((mph.len >> sh) ? (mph.len >> sh) : 1u);
+        p = mph.from + (mph.to - mph.from) * (int32_t)q / 1000;
     }
     mph.pos = (int16_t)p;
     mph_apply(p);
