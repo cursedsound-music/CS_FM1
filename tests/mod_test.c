@@ -666,7 +666,7 @@ static void test_jiant_078(void)
     fresh(ea, 0);
     trk[0].p[P_M1SRC] = MS_NOISE; trk[0].p[P_M1DST] = MD_CUT; trk[0].p[P_M1AMT] = 40;
     h = phrase();
-    check("0.7.8: the NOISE source moves the filter (its own sound)", h != a0 && MS_NOISE == 14 && MS_N == 16);
+    check("0.7.8: the NOISE source moves the filter (its own sound)", h != a0 && MS_NOISE == 14 && MS_N == 17);   /* (cursed-os: LFO2 appended) */
     fresh(ea, 0);
     trk[0].p[P_M1SRC] = MS_PROX; trk[0].p[P_M1DST] = MD_CUT; trk[0].p[P_M1AMT] = 40;
     mod_prox = 0;

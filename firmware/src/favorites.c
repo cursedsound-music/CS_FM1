@@ -19,6 +19,9 @@ static __attribute__((noinline)) void fav_rows_new(void)
 }
 /* (cursed-os) the row of an engine's stars: ACID (15) in SAMPLE's (4, retired, no presets): row 15 is the settings'
  * spare bytes (ui.c hint_given, cos.c's MIDI channels and master) */
+#ifndef ENGI_ACID
+#define ENGI_ACID 15u                                       /* (core.h's; a test without it) */
+#endif
 static uint32_t fav_row(uint32_t engine) { return engine == ENGI_ACID ? 4u : engine; }
 static int favorite_has(uint32_t engine, uint32_t preset)
 {

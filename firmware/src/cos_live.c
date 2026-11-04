@@ -18,8 +18,9 @@ static volatile uint8_t live_qsolo, live_qsolo_on;   /* main: the solo asked for
 static volatile uint8_t fill_req, fill_on;    /* main: a FILL asked for; ISR: the fill bar running */
 static volatile uint8_t bd_req, bd_kill, bd_state, bd_bars;   /* main: a press, everything off; ISR: where it is */
 #define FILL_N 8u
-static step_t fill_keep[NTRK][FILL_N];        /* the steps the fill wrote over, back after it */
-static uint8_t fill_idx[NTRK][FILL_N], fill_trk;
+static struct { uint8_t idx, hit, acc, time; } fill_keep[NTRK][FILL_N];   /* each step the fill touched: where, the hits
+                                                * and accents it added, the step's TIME before (an empty one made a hit) */
+static uint8_t fill_trk;
 
 /* the fill written over the drum tracks' next eight sixteenths (the bar's second half), the steps kept */
 static __attribute__((noinline)) void fill_write(void)
@@ -37,12 +38,14 @@ static __attribute__((noinline)) void fill_write(void)
             step_t *s = &t->step[i];
             uint8_t add = (uint8_t)(j >= 4u || !(j & 1u) ? 1u << 1 : 0u);   /* SD: eighths, then sixteenths */
             if (j >= 6u) add |= 1u << 2;                                    /* CP on the last two */
-            fill_idx[k][j] = (uint8_t)i;
-            fill_keep[k][j] = *s;
+            fill_keep[k][j].idx = (uint8_t)i;
+            fill_keep[k][j].time = s->time;
             if (s->time != ST_NOTE) {                    /* (an empty step: a hit of its own) */
                 memset(s, 0, sizeof *s);
                 s->vel = 100;
             }
+            fill_keep[k][j].hit = (uint8_t)(add & ~s->hit);   /* (only what it adds comes off again) */
+            fill_keep[k][j].acc = (uint8_t)(j >= 6u ? add & ~s->acc : 0u);
             s->time = ST_NOTE;
             s->hit |= add;
             if (j >= 6u) s->acc |= add;
@@ -54,10 +57,16 @@ static __attribute__((noinline)) void fill_write(void)
 static __attribute__((noinline)) void fill_undo(void)
 {
     uint32_t k, j;
-    for (k = 0; k < NTRK; k++)
+    for (k = 0; k < NTRK; k++)                      /* (only the fill's own hits off: an edit or a MUTATE made meanwhile
+                                                     * stays) */
         if ((fill_trk >> k) & 1u)
-            for (j = 0; j < FILL_N; j++)
-                trk[k].step[fill_idx[k][j]] = fill_keep[k][j];
+            for (j = 0; j < FILL_N; j++) {
+                step_t *s = &trk[k].step[fill_keep[k][j].idx];
+                s->hit &= (uint8_t)~fill_keep[k][j].hit;
+                s->acc &= (uint8_t)~fill_keep[k][j].acc;
+                if (fill_keep[k][j].time != ST_NOTE && !s->hit && !s->n)
+                    s->time = fill_keep[k][j].time;     /* (a step that was empty: empty again) */
+            }
     fill_trk = 0;
     fill_on = 0;
     seq_fill = 0;

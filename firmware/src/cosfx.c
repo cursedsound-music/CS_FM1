@@ -52,7 +52,7 @@ static struct {
     /* TAPE STOP */
     uint8_t tape, todd, kick0, solo0, kicked, soloed;   /* 1 at work (sl_buf ours), 2 going back; .. KICK, DRUMS kept */
     int32_t tw, thl, thr;                     /* its share; the first of a pair */
-    uint32_t twr, tn, tlen, trp;              /* samples written, since it began, the halt's length; read (Q16) */
+    uint32_t twr, tn, tlen, trp, tinv;        /* samples written, since it began, the halt's length; read (Q16); 2^28 / tlen */
     uint8_t busy;                             /* a share or a tail still sounding */
 } cx = {.gg = 32768, .nrnd = 0x2545F491u};
 
@@ -136,6 +136,7 @@ static __attribute__((noinline)) void cfx_edges(uint32_t on, uint32_t was)
         cx.tlen = beat_samples();
         if (cx.tlen > CX_TAPE_MAX) cx.tlen = CX_TAPE_MAX;
         if (cx.tlen < 4096u) cx.tlen = 4096u;
+        cx.tinv = (1u << 28) / cx.tlen;
     }
     if ((on & ~was) & CX_BIT(CX_HPR)) {
         cx.ht = 0;
@@ -178,7 +179,7 @@ static __attribute__((noinline)) void cfx_tape(int32_t *pl, int32_t *pr)
         }
         cx.twr++;
     }
-    rate = cx.tn < cx.tlen ? (uint32_t)(((uint64_t)(cx.tlen - cx.tn) << 16) / cx.tlen) : 0u;   /* 1 .. 0, Q16 */
+    rate = cx.tn < cx.tlen ? ((cx.tlen - cx.tn) * cx.tinv) >> 12 : 0u;   /* 1 .. 0, Q16 (30000 x 65536: in 32 bits) */
     pb_ring_f(cx.trp, &yl, &yr);
     cx.trp += rate;
     cx.tn++;

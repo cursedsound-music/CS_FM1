@@ -51,10 +51,10 @@ static void fm1_led_dim_level(uint32_t lo) { host_dim_lo = lo; }
 static int host_anim;                             /* hal/fm1_input.h: the power-on sweep running (it has the LEDs) */
 static int fm1_led_anim_on(void) { return host_anim; }
 #define FM1_TICKS_PER_US 1u
-static uint32_t host_ticks, host_pressed, host_notes;
+static uint32_t host_ticks, host_pressed, host_notes, host_released;
 static int32_t host_enc[7];
 static uint32_t fm1_ticks(void) { return host_ticks; }
-static uint32_t fm1_input_edges(int x) { uint32_t p = host_pressed; (void)x; host_pressed = 0; return p; }
+static uint32_t fm1_input_edges(uint32_t *rel) { uint32_t p = host_pressed; if (rel) *rel = host_released; host_pressed = host_released = 0; return p; }
 static uint32_t fm1_input_note_edges(void) { uint32_t n = host_notes; host_notes = 0; return n; }
 /* host_enc_late: detents the TIMER5 scan counts just after a read (#102: while ui_input runs); the next read has them */
 static int32_t host_enc_late[7];

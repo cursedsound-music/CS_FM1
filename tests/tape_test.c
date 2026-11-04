@@ -177,13 +177,13 @@ int main(void)
         project_capture(&proj_scratch);
         ok = proj_pack(&st, &proj_scratch);
         tape_v[0] = tape_v[1] = 0;
-        ok = ok && proj_import(&proj_scratch, &st, sizeof st);
+        ok = ok && proj_import(&proj_scratch, &st, sizeof st) && !project_restore_runtime(&proj_scratch);   /* (cursed-os: opened, as project_load: a read alone changes nothing playing) */
         ck("4. a project keeps TAPE and WOW (packed, opened: 37 64)", ok && tape_v[0] == 37 && tape_v[1] == 64);
         tape_v[0] = tape_v[1] = 0;
         project_capture(&proj_scratch);
         ok = proj_pack(&st, &proj_scratch);
         tape_v[0] = 50; tape_v[1] = 50;
-        ok = ok && proj_import(&proj_scratch, &st, sizeof st);
+        ok = ok && proj_import(&proj_scratch, &st, sizeof st) && !project_restore_runtime(&proj_scratch);   /* (cursed-os: opened, as project_load: a read alone changes nothing playing) */
         ck("   one without them (both 0: no block) opens with TAPE out", ok && !tape_v[0] && !tape_v[1]);
     }
     printf("tape: %s\n", bad ? "FAILED" : "all ok");

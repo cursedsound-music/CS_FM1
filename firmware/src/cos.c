@@ -40,7 +40,7 @@ enum { CK_NONE, CK_TRK, CK_GLO, CK_AC, CK_EU, CK_COS, CK_DB };
 enum { CC_OUTCH, CC_MOUT, CC_CLOCK, CC_SLOT, CC_TRKS, CC_LOAD, CC_COMP, CC_CATK, CC_CREL, CC_LIM, CC_PF0, CC_PF3 = CC_PF0 + 3,
        CC_X2, CC_X2E = CC_X2 + 15, CC_OCT, CC_KICK, CC_KICKE = CC_KICK + 4, CC_LN0, CC_LNE = CC_LN0 + 7, CC_KDRV, CC_BT,
        CC_L1SYNC, CC_L1RATE, CC_L1WAVE, CC_L1MODE, CC_L1PH, CC_L1FADE, CC_L2SYNC, CC_L2RATE, CC_BPM,
-       CC_CIN, CC_CTHR, CC_CRAT, CC_CMK, CC_CKNEE, CC_CSC, CC_CMIX, CC_LIN, CC_LREL, CC_LVL, CC_MUTEQ, CC_PCCH, CC_PCOUT, CC_VJCH, CC_EQL, CC_EQM, CC_EQH };
+       CC_CIN, CC_CTHR, CC_CRAT, CC_CMK, CC_CKNEE, CC_CSC, CC_CMIX, CC_LIN, CC_LREL, CC_LVL, CC_MUTEQ, CC_PCCH, CC_PCOUT, CC_VJCH, CC_EQL, CC_EQM, CC_EQH, CC_MAC0, CC_MAC3 = CC_MAC0 + 3 };
 _Static_assert(X2_N <= 16u, "CC_X2 .. CC_X2E: room for every trk_x2 field");
 #define ID_MUTEQ 0xFCu                          /* (HOME 2's: MUTE Q, cos_knob) */
 #define ID_BPM 0xFDu                            /* (HOME's: BPM in tenths, cos_knob) */
@@ -49,7 +49,8 @@ typedef struct { const char *tab; uint8_t kind, id[4]; } cpg_t;
 #define X 0xFFu
 static const cpg_t CZP_HOME[] = {{"PERFORM", CK_GLO, {ID_BPM, G_SWING, G_DJF, ID_OCT}},
                                 {"PERFORM 2", CK_GLO, {G_DUCK, G_DREL, ID_MUTEQ, X}},
-                                {"ISOLATOR", CK_COS, {CC_EQL, CC_EQM, CC_EQH, X}}};   /* (JIANT's master EQ; HOME's black 9-11 the kills) */   /* (DUCK: the kick pumps the rest) */
+                                {"ISOLATOR", CK_COS, {CC_EQL, CC_EQM, CC_EQH, X}},   /* (JIANT's master EQ; HOME's black 9-11 the kills) */
+                                {"MACROS", CK_COS, {CC_MAC0, CC_MAC0 + 1u, CC_MAC0 + 2u, CC_MAC3}}};   /* (the sounds' M1..M4 in the matrix) */   /* (JIANT's master EQ; HOME's black 9-11 the kills) */   /* (DUCK: the kick pumps the rest) */
 static const cpg_t CZP_TRIG[] = {{"TRIG", CK_TRK, {P_SLEN, P_SDIV, P_SSWING, P_SGATE}}};
 /* EDIT: the engine's eight (its own page names: cos_tabs), the voice, the matrix's four slots; a VOICE track WORDS
  * third. ENV: the amp, the filter, the envelope's modulation, the two LFO pages */
@@ -98,11 +99,16 @@ static const cpg_t CZP_FX[] = {{"SEND", CK_TRK, {P_DIST, P_CHOR, P_DLY, P_REV}},
                               {"REVERB", CK_GLO, {G_RSIZE, G_RDAMP, G_RPRE, G_RTYPE}}};
 static const cpg_t CZP_GENA[] = {{"ACID", CK_AC, {AK_DENS, AK_SLIDE, AK_ACC, ID_OCT}}, {"ACID 2", CK_AC, {AK_STEPS, AK_NOTES, AK_TIE, AK_OCT}},
                                 {"ACID 3", CK_AC, {AK_EVERY, AK_AMT, AK_ROOT, AK_SCALE}}, {"ACID 4", CK_AC, {AK_LOCK, X, X, X}}};
-/* (a synth track that is not ACID: DUB's chord stabs first, ACID's lines after them) */
+/* (a POLY synth track that is not ACID, the pad: DUB's chord stabs first, ACID's lines after them; a MONO one, the
+ * bass: ACID's first, DUB's after, CZP_GENM) */
 static const cpg_t CZP_GENS[] = {{"DUB", CK_DB, {DK_SHAPE, DK_DENS, DK_MOVE, DK_LEN}}, {"DUB 2", CK_DB, {DK_BARS, DK_VOIC, DK_ECHO, ID_OCT}},
                                 {"DUB 3", CK_DB, {DK_ROOT, DK_EVERY, DK_AMT, DK_DLY}},
                                 {"ACID", CK_AC, {AK_DENS, AK_SLIDE, AK_ACC, ID_OCT}}, {"ACID 2", CK_AC, {AK_STEPS, AK_NOTES, AK_TIE, AK_OCT}},
                                 {"ACID 3", CK_AC, {AK_EVERY, AK_AMT, AK_ROOT, AK_SCALE}}, {"ACID 4", CK_AC, {AK_LOCK, X, X, X}}};
+static const cpg_t CZP_GENM[] = {{"ACID", CK_AC, {AK_DENS, AK_SLIDE, AK_ACC, ID_OCT}}, {"ACID 2", CK_AC, {AK_STEPS, AK_NOTES, AK_TIE, AK_OCT}},
+                                {"ACID 3", CK_AC, {AK_EVERY, AK_AMT, AK_ROOT, AK_SCALE}}, {"ACID 4", CK_AC, {AK_LOCK, X, X, X}},
+                                {"DUB", CK_DB, {DK_SHAPE, DK_DENS, DK_MOVE, DK_LEN}}, {"DUB 2", CK_DB, {DK_BARS, DK_VOIC, DK_ECHO, ID_OCT}},
+                                {"DUB 3", CK_DB, {DK_ROOT, DK_EVERY, DK_AMT, DK_DLY}}};
 static const cpg_t CZP_GENE[] = {{"EUCLID", CK_EU, {EK_HITS, EK_STEPS, EK_ROT, EK_K4}}, {"MODES", CK_EU, {EK_M0, EK_M0 + 1u, EK_M0 + 2u, EK_M0 + 3u}},
                                 {"MUTATE", CK_EU, {EK_U0, EK_U0 + 1u, EK_U0 + 2u, EK_U0 + 3u}}};
 static const cpg_t CZP_MIX[] = {{"MIX", CK_TRK, {P_LEVEL, P_PAN, P_GLIDE, P_MUTE}},
@@ -137,6 +143,8 @@ static struct {
     int16_t cc_v[15];                                   /* (CK_COS: the knobs' views) */
     uint8_t fx_down, fx_used;                           /* FX held: the pad (keys: perform.c's effects, knobs its macros) */
     uint8_t ed_down, ed_used;                           /* EDIT held (+ PRESETS: the next engine); its tap acts let go */
+    uint8_t home_down, home_used, home_tab;             /* HOME held (the tempo's button): on HOME its tap, the next page, let go */
+    uint8_t rec_down, rec_used;                         /* REC held (+ OCT-: the motion cleared); its tap arms, let go */
     uint32_t set_ms;                                    /* a setting turned (MASTER): saved 2 s after, not every detent */
     uint8_t slot, pn_ok;                                /* SAVE: the slot picked (0..3); the names below read */
     char pn[4][13];                     /* .. each slot's name ("": empty) */
@@ -151,11 +159,16 @@ static int cos_kit(void) { return drum_track(TSEL) != 0; }
 static void cos_pages(uint32_t m, const cpg_t **p, uint32_t *n)
 {
     static const cpg_t *const P[CM_N] = {CZP_HOME, CZP_TRIG, CZP_SRC, CZP_AMP, CZP_DRONE, CZP_FX, CZP_GENA, CZP_MIX, CZP_KEY, CZP_PROJ};
-    static const uint8_t N[CM_N] = {3, 1, 8, 9, 2, 5, 4, 8, 1, 1};
+    static const uint8_t N[CM_N] = {4, 1, 8, 9, 2, 5, 4, 8, 1, 1};
     int vo = m == CM_SRC && trk_engp(TSEL) == &ENG_FORMANT;
     if (m == CM_SRC && cos_kit()) { *p = CZP_SRCD; *n = NELEM(CZP_SRCD); return; }   /* (a kit: KICK, LEVELS, its own ..) */
     if (m == CM_GEN && cos_kit()) { *p = CZP_GENE; *n = 3; return; }
-    if (m == CM_GEN && trk_eng(TSEL) != ENGI_ACID) { *p = CZP_GENS; *n = NELEM(CZP_GENS); return; }
+    if (m == CM_GEN && trk_eng(TSEL) != ENGI_ACID) {     /* (the pad: DUB first; the bass, a MONO one: ACID first) */
+        int poly = TSEL->p[P_VOICE] == V_POLY;
+        *p = poly ? CZP_GENS : CZP_GENM;
+        *n = poly ? NELEM(CZP_GENS) : NELEM(CZP_GENM);
+        return;
+    }
     *p = vo ? CZP_SRCV : m == CM_AMP && trk_engp(TSEL) == &ENG_ANALOG ? CZP_AMPA : P[m % CM_N];
     *n = N[m % CM_N] + (uint32_t)vo;                                      /* (VOICE: WORDS too) */
 }
@@ -305,6 +318,14 @@ static const param_desc_t *cos_cdesc(uint32_t id, int16_t **vp)
         case CC_L1PH: cz.cc_v[14] = (int16_t)(t->p[P_LPHASE] < 0 ? lfo_ph_mem[k] : t->p[P_LPHASE]); return &DPH;
         default: *vp = &TSEL->p[P_LFADE]; return track_desc(TSEL, P_LFADE);
         }
+    }
+    if (id >= CC_MAC0 && id <= CC_MAC3) {                /* HOME > MACROS: M1..M4 (mod.c macro_v), what each sound's MOD pages
+                                                         * route them to; saved with the project */
+        static const param_desc_t DMC[4] = {{"M1", F_PCT, 0, 127, 0, 0, 0}, {"M2", F_PCT, 0, 127, 0, 0, 0},
+                                            {"M3", F_PCT, 0, 127, 0, 0, 0}, {"M4", F_PCT, 0, 127, 0, 0, 0}};
+        cz.cc_v[14] = macro_v[(id - CC_MAC0) & 3u];
+        *vp = &cz.cc_v[14];
+        return &DMC[(id - CC_MAC0) & 3u];
     }
     if (id >= CC_EQL && id <= CC_EQH) {                  /* HOME > ISOLATOR: the master EQ's bands (fx.c eq_block): LOW, MID (its
                                                          * two middle bands together), HIGH */
@@ -462,6 +483,8 @@ static void cos_cput(uint32_t id, int32_t v)
         } else {
             t->p[P_LFADE] = (int16_t)clamp(v, TP[P_LFADE].min, TP[P_LFADE].max);
         }
+    } else if (id >= CC_MAC0 && id <= CC_MAC3) {
+        macro_v[(id - CC_MAC0) & 3u] = (uint8_t)clamp(v, 0, 127);
     } else if (id >= CC_EQL && id <= CC_EQH) {
         v = clamp(v, -12, 6);
         if (id == CC_EQL) eq_v[0] = (int16_t)v;
@@ -614,6 +637,7 @@ static void cos_turn(uint32_t k, int32_t s)
     int32_t v;
     if (!d || !vp || d->max == d->min) return;
     if (cz.mode == CM_SRC || cz.mode == CM_AMP || cz.mode == CM_FX) { cz.lk_mode = cz.mode; cz.lk_tab = cz.tab[cz.mode]; }
+    if (cos_home_held()) cz.home_used = 1;               /* (HOME + a knob: no page turn when let go) */
     if (p->id[k] == ID_BPM) {                            /* BPM: a whole one a step (accelerated); HOME held: a tenth */
         v = *vp + (cos_home_held() ? (s > 0 ? 1 : -1) : 10 * accel(EN_K1 + k, s, 200));
         v = clamp(v, 400, 2400);
@@ -694,10 +718,11 @@ static void cos_gen_enter(void)
     if (cos_kit()) { track_select(cos_acid_trk(&made)); cz.bank = 0; }
     cz.tab[CM_GEN] = 0;
     if (cos_empty(TSEL) && !chain_busy()) {
-        if (trk_eng(TSEL) == ENGI_ACID) ac_throw(song.sel, 1);
-        else {                                           /* (any other synth: dub chord stabs, on DUB STAB) */
+        if (trk_eng(TSEL) == ENGI_ACID || TSEL->p[P_VOICE] != V_POLY) ac_throw(song.sel, 1);   /* (ACID, a MONO bass: a line) */
+        else {                                           /* (a POLY synth, the pad: dub chord stabs, on DUB STAB; VOICE keeps
+                                                         * its singer) */
             undo_mark();
-            db_sound(song.sel);
+            if (trk_eng(TSEL) != ENGI_VOICE) db_sound(song.sel);
             db_throw(song.sel, 1);
             if (!made) cos_say("DUB CHORDS");
         }
@@ -797,16 +822,20 @@ static __attribute__((noinline)) void cos_input(void)
         }
         else if (b == B_REC && cz.mode == CM_GEN) cos_say(undo_do() ? "NOTHING TO UNDO" : "UNDONE");
         else if (b == B_REC && chain_busy()) cos_say("STOP THE SONG TO RECORD");
-        else if (b == B_REC) {                           /* REC: the track armed. Playing, its knobs (and the keys) record
-                                                         * into it, saved with the section; armed, OCT- clears its motion */
-            uint8_t bit = (uint8_t)(1u << song.sel);
-            if (!(song.rec & bit)) undo_mark();
-            song.rec ^= bit;
-            cos_say(song.rec & bit ? "REC: KNOBS AND KEYS" : "REC OFF");
-        }
+        else if (b == B_REC) { cz.rec_down = 1; cz.rec_used = 0; }   /* REC: a tap arms the track (playing, its knobs and keys
+                                                         * record into it, saved with the section); held + OCT-: its motion
+                                                         * cleared */
         else if (b == B_SCL) { cz.scl_down = 1; cz.scl_used = 0; }   /* (its tap acts when let go: held, it is a shift) */
         else if (b == B_EDIT) { cz.ed_down = 1; cz.ed_used = 0; }    /* (the same: held, PRESETS steps engines) */
         else if (b == B_FX) { cz.fx_down = 1; cz.fx_used = 0; cz.hot = 0; }   /* (held: the FX pad; a tap: the FX page) */
+        else if (b == B_HOME) {                          /* (to HOME at once, PERFORM while held: the tempo's button, K1 BPM;
+                                                         * let go: the page before, or on a tap on HOME the next one) */
+            cz.home_down = 1;
+            cz.home_used = cz.mode != CM_HOME;
+            cz.home_tab = cz.tab[CM_HOME];               /* (the HOME page it comes back to) */
+            if (cz.mode != CM_HOME) cos_mode(CM_HOME);
+            cz.tab[CM_HOME] = 0;
+        }
         else if (cz.fx_down && b == B_OCTUP) {           /* FX + OCT+: LATCH (a key turns its effect on / off) or HOLD */
             cz.fx_used = 1;
             ui_prefs ^= PREF_LATCH;
@@ -830,9 +859,9 @@ static __attribute__((noinline)) void cos_input(void)
             perf_k[0] = perf_k[1] = perf_k[2] = perf_k[3] = 0;
             cos_say("FX ALL OFF");
         }
-        else if ((b == B_OCTDN || b == B_OCTUP) && cos_home_held()) {}   /* (HOME + OCT: the nudge, above; the BPM red) */
-        else if (b == B_OCTDN && ((song.rec >> song.sel) & 1u) && cz.mode != CM_TRIG && cz.mode != CM_PROJ &&
-                 cz.mode != CM_GEN) {                     /* (REC armed: OCT- clears the track's recorded motion) */
+        else if ((b == B_OCTDN || b == B_OCTUP) && cos_home_held()) cz.home_used = 1;   /* (HOME + OCT: the nudge, above) */
+        else if (b == B_OCTDN && cz.rec_down) {          /* (REC held + OCT-: the track's recorded motion cleared) */
+            cz.rec_used = 1;
             undo_mark();
             motion_clear(TSEL);
             cos_say("MOTION CLEARED");
@@ -858,6 +887,24 @@ static __attribute__((noinline)) void cos_input(void)
         cz.hot = 0;
         if (!cz.fx_used) cos_mode(CM_FX);
         if (!perf_latch_on) perf_k[0] = perf_k[1] = perf_k[2] = perf_k[3] = 0;   /* (momentary: the macros go too) */
+    }
+    if (cz.home_down && ((released >> panel.btn[B_HOME]) & 1u)) {
+        cz.home_down = 0;
+        if (cz.mode == CM_HOME) {
+            const cpg_t *hp;
+            uint32_t hn;
+            cos_pages(CM_HOME, &hp, &hn);
+            cz.tab[CM_HOME] = (uint8_t)(cz.home_used ? cz.home_tab : (cz.home_tab + 1u) % hn);   /* (a tap on HOME: its next page) */
+        }
+    }
+    if (cz.rec_down && ((released >> panel.btn[B_REC]) & 1u)) {
+        cz.rec_down = 0;
+        if (!cz.rec_used) {                              /* (a tap: the track armed / disarmed) */
+            uint8_t bit = (uint8_t)(1u << song.sel);
+            if (!(song.rec & bit)) undo_mark();
+            song.rec ^= bit;
+            cos_say(song.rec & bit ? "REC: KNOBS AND KEYS" : "REC OFF");
+        }
     }
     if (cz.ed_down && ((released >> panel.btn[B_EDIT]) & 1u)) {
         cz.ed_down = 0;
@@ -922,6 +969,7 @@ static __attribute__((noinline)) void cos_input(void)
             }
         } else if (cz.mode == CM_HOME) {                 /* white 1..6 the track, 9..12 the sections A..D on the bar; black
                                                          * 1..6 mute (HOME held: solo), 7 FILL, 8 BREAKDOWN (cos_live.c) */
+            if (cos_home_held()) cz.home_used = 1;
             if (w == 15u && cos_home_held()) cos_tap(fm1_ms);   /* (HOME + white 16: TAP TEMPO) */
             else if (w < trk_live) track_select(w);
             else if (w >= 8u && w < 12u) {
@@ -929,16 +977,20 @@ static __attribute__((noinline)) void cos_input(void)
                 cos_section(w - 8u);
             }
             else if (j < trk_live && cos_home_held()) {
-                uint8_t cur = live_qsolo_on ? live_qsolo : perf_solo;
+                uint8_t cur;
+                fm1_irq_off();                           /* (the ISR takes these on the beat: never half of one) */
+                cur = live_qsolo_on ? live_qsolo : perf_solo;
                 live_qsolo = (uint8_t)(cur ^ (1u << j));
                 live_qsolo_on = 1;
+                fm1_irq_on();
                 if (!cos_mq) cos_say(live_qsolo ? "SOLO" : "SOLO OFF");
             }
             else if (j < trk_live && !cos_mq) {
                 trk[j].p[P_MUTE] = (int16_t)!trk[j].p[P_MUTE];
                 cos_say(trk[j].p[P_MUTE] ? "MUTED" : "UNMUTED");
             }
-            else if (j < trk_live) live_qmute ^= (uint8_t)(1u << j);   /* (on the next beat / bar) */
+            else if (j < trk_live) { fm1_irq_off(); live_qmute ^= (uint8_t)(1u << j); fm1_irq_on(); }   /* (on the next
+                                                         * beat / bar; the ISR takes it whole) */
             else if (j == 6u) { fill_req = 1; cos_say(song.playing ? "FILL" : "FILL: PLAY FIRST"); }
             else if (j == 7u) {
                 static const char *const BS[6] = {"BREAK NEXT BAR", "BREAK", "BUILD NEXT BAR", "BUILD", "DROP NEXT BAR", ""};
@@ -1140,7 +1192,8 @@ static void cos_dial(int32_t cx, int32_t cy, uint32_t k)
     if (p->id[k & 3u] == ID_BPM) cos_bpm_text(val, v);
     cos_up(val);
     if (str_len(val) > 7u) val[7] = 0;
-    cos_txc(cx, cy + r + 15, CZ_TALL, val, hot ? C_RED : C_FG);
+    cos_txc(cx, cy + r + 15 + (str_len(val) > 5u ? 3 : 0), str_len(val) > 5u ? CZ_LBL : CZ_TALL, val, hot ? C_RED : C_FG);   /* (a long word in the
+                                                         * small letters: whole) */
 }
 
 /* the foot: the selected track's sixteen of the bank, the playhead's a red bar over its cell */
@@ -1486,7 +1539,7 @@ static void cos_body_gen(void)
         str_cpy(b + str_len(b), "  ", 3);
         str_cpy(b + str_len(b), MV[a->move % 3u], 10);
         cos_tx(4, 38, b, C_FG);
-        cos_txr(236, 38, "OCT+ NEW GROOVE", C_DIM);
+        cos_txr(236, 38, "OCT+ NEW", C_DIM);
         cz_rtop = 54;
         cos_body_trig();
         cz_rtop = 40;

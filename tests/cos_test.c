@@ -10,6 +10,15 @@
 static int fails;
 #define CHECK(c, ...) do { if (!(c)) { fails++; printf("FAIL %s:%d: ", __FILE__, __LINE__); printf(__VA_ARGS__); printf("\n"); } } while (0)
 
+/* a panel button pressed (down 1) or let go, through cos_input */
+static void cos_test_btn(uint32_t b, int down)
+{
+    uint32_t m = 1u << panel.btn[b];
+    if (down) { fm1_in.buttons |= m; host_pressed = m; }
+    else { fm1_in.buttons &= ~m; host_released = m; }
+    cos_input();
+}
+
 int main(void)
 {
     uint32_t i, k;
@@ -527,6 +536,30 @@ int main(void)
     }
 
 
+    /* HOME held: PERFORM (K1 BPM) wherever HOME was; let go: back. A tap on HOME: its next page. MACROS: M1..M4 */
+    {
+        int16_t *vp;
+        cz.mode = CM_HOME; cz.tab[CM_HOME] = 3;          /* (MACROS) */
+        cos_cput(CC_MAC0 + 1u, 90);
+        CHECK(macro_v[1] == 90 && cos_cdesc(CC_MAC0 + 1u, &vp) && *vp == 90, "MACROS: M2 90");
+        cos_cput(CC_MAC0, 300);
+        CHECK(macro_v[0] == 127, "M1 kept to 127 (%u)", macro_v[0]);
+        macro_v[0] = macro_v[1] = 0;
+        cos_test_btn(B_HOME, 1);
+        CHECK(cz.tab[CM_HOME] == 0u, "held: PERFORM");
+        cos_turn(0, 1);
+        cos_test_btn(B_HOME, 0);
+        CHECK(cz.tab[CM_HOME] == 3u, "let go after a knob: MACROS again (%u)", cz.tab[CM_HOME]);
+        cos_test_btn(B_HOME, 1); cos_test_btn(B_HOME, 0);
+        CHECK(cz.tab[CM_HOME] == 0u, "a tap: the next page, round to PERFORM (%u)", cz.tab[CM_HOME]);
+        cz.mode = CM_FX; cz.tab[CM_HOME] = 2;
+        cos_test_btn(B_HOME, 1);
+        CHECK(cz.mode == CM_HOME && cz.tab[CM_HOME] == 0u, "from FX: HOME, PERFORM while held");
+        cos_test_btn(B_HOME, 0);
+        CHECK(cz.tab[CM_HOME] == 2u, "let go: the HOME page it was on (%u)", cz.tab[CM_HOME]);
+        song.g[G_BPM] = 128; bpm_frac = 0;
+    }
+
     /* the master COMP (THRESH RATIO KNEE MAKEUP INPUT MIX SC HPF) and LIMIT (DRIVE RELEASE AUTO LV), from the knobs */
     {
         uint32_t b, i2, ph = 0;
@@ -575,7 +608,7 @@ int main(void)
         const cpg_t *pp; uint32_t n;
         track_t *t3 = &trk[3];
         for (j = 0; j < NSTEP; j++) step_clear(&t3->step[j]);
-        set_engine_of(t3, ENGI_ANALOG); t3->p[P_ROOT] = 9;   /* (A) */
+        set_engine_of(t3, ENGI_ANALOG); t3->p[P_ROOT] = 9; t3->p[P_VOICE] = V_POLY;   /* (A; a POLY track, the pad) */
         track_select(3); cz.mode = CM_HOME; cos_mode(CM_GEN);
         cos_pages(CM_GEN, &pp, &n);
         CHECK(n == 7u && pp[0].kind == CK_DB && pp[3].kind == CK_AC, "a synth track's GEN: DUB, then ACID");

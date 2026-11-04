@@ -53,12 +53,12 @@ int main(void)
         project_capture(&proj_scratch);
         ok = proj_pack(&st, &proj_scratch);
         eq_v[0] = eq_v[1] = eq_v[2] = eq_v[3] = 0;
-        ok = ok && proj_import(&proj_scratch, &st, sizeof st);
+        ok = ok && proj_import(&proj_scratch, &st, sizeof st) && !project_restore_runtime(&proj_scratch);   /* (cursed-os: opened, as project_load: a read alone changes nothing playing) */
         ck("3. a project keeps the EQ (5 -3 0 12)", ok && eq_v[0] == 5 && eq_v[1] == -3 && eq_v[2] == 0 && eq_v[3] == 12);
         eq_v[0] = eq_v[1] = eq_v[2] = eq_v[3] = 0;
         project_capture(&proj_scratch); ok = proj_pack(&st, &proj_scratch);
         eq_v[1] = 7;
-        ok = ok && proj_import(&proj_scratch, &st, sizeof st);
+        ok = ok && proj_import(&proj_scratch, &st, sizeof st) && !project_restore_runtime(&proj_scratch);   /* (cursed-os: opened, as project_load: a read alone changes nothing playing) */
         ck("   one without it opens flat", ok && !eq_v[0] && !eq_v[1] && !eq_v[2] && !eq_v[3]);
     }
     printf("eq: %s\n", bad ? "FAILED" : "all ok");
