@@ -14,7 +14,7 @@
  * sends go into the buses' next block (fxq_d, fxq_r) and the delay's and reverb's offsets through mod.c macro_master
  * (cfx_goff). TAPE STOP borrows the SLICER's buffer as REPEAT does: one or the other at a time. */
 enum { CX_GATE16, CX_GATE8, CX_TAPE, CX_DRIVE, CX_CRUSH, CX_THROW, CX_WASH, CX_FREEZE, CX_HPR, CX_NOISE,
-       CX_LOWK, CX_KICK, CX_DRUMS, CX_N };
+       CX_LOWK, CX_KICK, CX_DRUMS, CX_MIDK, CX_HIK, CX_N };   /* (MID / HIGH KILL: HOME's isolator keys) */
 #define CX_BIT(e) (1u << (e))
 #define CX_CODE 0x40u                         /* a key's code from here: cursed-os's own effect; below: perform.c's PF_* */
 static const uint8_t CFX_W[16] = {PF_R8, PF_R16, PF_R32, CX_CODE + CX_GATE16, CX_CODE + CX_GATE8, CX_CODE + CX_TAPE,
@@ -26,6 +26,7 @@ _Static_assert(NTRK == 6, "the black keys 1..6: the six tracks");
 static volatile uint32_t cfx_held;            /* keys (seq.c): the effects held, CX_BIT */
 static volatile uint32_t cfx_latched;         /* .. latched (FX LATCH; main clears it: FX + OCT-) */
 static volatile uint32_t cfx_auto;            /* ISR: the BREAKDOWN's (cos_live.c live_tick) */
+static volatile uint32_t cfx_home;            /* main: HOME's isolator kills held (LOW MID HIGH KILL) */
 #define CX_SLOPE 256                          /* a share's step a sample: 0 .. full in 2.9 ms */
 #define CX_TAPE_MAX 30000u                    /* TAPE STOP's longest halt (samples): its lag stays inside sl_buf */
 
@@ -39,6 +40,7 @@ static struct {
     uint32_t ht, nt;                          /* HP RISER's, NOISE RISER's samples since they began */
     int32_t hz[4], nz[2];                     /* .. their filters (Chamberlin: low, band; L R for HP RISER) */
     int32_t lz[8];                            /* LOW KILL: two high-passes, L and R */
+    int32_t mz[16], kz[8], wm, wk;            /* MID KILL's low- and high-pass pairs, HIGH KILL's low-passes (L R); shares */
     uint32_t tt, wst;                         /* THROW's, WASH's offsets: samples they stay after the key goes */
     /* TAPE STOP */
     uint8_t tape, todd, kick0, solo0, kicked, soloed;   /* 1 at work (sl_buf ours), 2 going back; .. KICK, DRUMS kept */
@@ -70,7 +72,7 @@ static void cfx_press(uint32_t c, int down)
         cfx_held &= ~CX_BIT(c);
 }
 /* the effects on (the pad's map) */
-static uint32_t cfx_now(void) { return cfx_held | cfx_latched | cfx_auto; }
+static uint32_t cfx_now(void) { return cfx_held | cfx_latched | cfx_auto | cfx_home; }
 
 /* 2^(x / 256), Q16 (x: octaves, Q8, under 15) */
 static uint32_t cx_exp2(uint32_t x)
@@ -184,7 +186,7 @@ static __attribute__((noinline)) void cfx_tape(int32_t *pl, int32_t *pr)
 /* fx.c lev_block, each block while an effect is at work or a share is still on: the mix (mix_l, mix_r, wet) in place */
 static __attribute__((noinline)) void cfx_block(int32_t *ml, int32_t *mr, int32_t *wt, int32_t *sd, int32_t *sr, uint32_t n)
 {
-    uint32_t on = perf_kill ? 0u : cfx_held | cfx_latched | cfx_auto, was = cx.on, i, base, P, gp, bar4, hp, np, f2, gph;
+    uint32_t on = perf_kill ? 0u : cfx_held | cfx_latched | cfx_auto | cfx_home, was = cx.on, i, base, P, gp, bar4, hp, np, f2, gph;
     int32_t hf = 0, hd = 0, nf = 0, ng = 0, duck;
     if (on != was)
         cfx_edges(on, was);
@@ -300,6 +302,30 @@ static __attribute__((noinline)) void cfx_block(int32_t *ml, int32_t *mr, int32_
             l += mulq16(yl - l, (uint32_t)cx.wh << 1);
             r += mulq16(yr - r, (uint32_t)cx.wh << 1);
         }
+        if ((on & CX_BIT(CX_MIDK)) || cx.wm)
+            cx.wm = cx_ramp(cx.wm, (on & CX_BIT(CX_MIDK)) != 0u);
+        if (cx.wm) {                          /* MID KILL: the lows (24 dB an octave under ~200 Hz) and the highs (over
+                                                * ~2.9 kHz) kept, the band between them out */
+            const int16_t *lo = PF_SVF[19], *hi = PF_SVF[46];
+            int32_t xl = clamp(l >> 2, -32767, 32767), xr = clamp(r >> 2, -32767, 32767);
+            int32_t yl = (pf_svf(pf_svf(xl, &cx.mz[0], lo, 0), &cx.mz[2], lo, 0) + pf_svf(pf_svf(xl, &cx.mz[4], hi, 1), &cx.mz[6], hi, 1)) << 2;
+            int32_t yr = (pf_svf(pf_svf(xr, &cx.mz[8], lo, 0), &cx.mz[10], lo, 0) + pf_svf(pf_svf(xr, &cx.mz[12], hi, 1), &cx.mz[14], hi, 1)) << 2;
+            l += mulq16(yl - l, (uint32_t)cx.wm << 1);
+            r += mulq16(yr - r, (uint32_t)cx.wm << 1);
+        } else if (cx.mz[0] | cx.mz[1] | cx.mz[8] | cx.mz[9]) {
+            for (f2 = 0; f2 < 16u; f2++) cx.mz[f2] = 0;
+        }
+        if ((on & CX_BIT(CX_HIK)) || cx.wk)
+            cx.wk = cx_ramp(cx.wk, (on & CX_BIT(CX_HIK)) != 0u);
+        if (cx.wk) {                          /* HIGH KILL: two low-passes at ~2.9 kHz (24 dB an octave) */
+            const int16_t *c = PF_SVF[46];
+            int32_t yl = pf_svf(pf_svf(clamp(l >> 2, -32767, 32767), &cx.kz[0], c, 0), &cx.kz[2], c, 0) << 2;
+            int32_t yr = pf_svf(pf_svf(clamp(r >> 2, -32767, 32767), &cx.kz[4], c, 0), &cx.kz[6], c, 0) << 2;
+            l += mulq16(yl - l, (uint32_t)cx.wk << 1);
+            r += mulq16(yr - r, (uint32_t)cx.wk << 1);
+        } else if (cx.kz[0] | cx.kz[1] | cx.kz[4] | cx.kz[5]) {
+            for (f2 = 0; f2 < 8u; f2++) cx.kz[f2] = 0;
+        }
         ml[i] = l;
         mr[i] = r;
     }
@@ -310,7 +336,7 @@ static __attribute__((noinline)) void cfx_block(int32_t *ml, int32_t *mr, int32_
         sl_lent = 0;
         slicer_drop();
     }
-    cx.busy = (uint8_t)(cx.wt || cx.ww || cx.wn || cx.tape || cx.gs || cx.wd || cx.wc || cx.wl || cx.wh || cx.tt || cx.wst ||
+    cx.busy = (uint8_t)(cx.wt || cx.ww || cx.wn || cx.tape || cx.gs || cx.wd || cx.wc || cx.wl || cx.wh || cx.wm || cx.wk || cx.tt || cx.wst ||
                         cfx_goff[GF_DFDBK] || cfx_goff[GF_DMIX] || cfx_goff[GF_RSIZE]);
 }
 
@@ -319,6 +345,6 @@ static void live_tick(uint32_t n);             /* (cos_live.c, the end of seq.c)
 static void cfx_run(uint32_t n)
 {
     live_tick(n);                                 /* (cursed-os) the live layer: mutes, fills, the BREAKDOWN on the grid */
-    if (cfx_held | cfx_latched | cfx_auto | cx.busy | cx.on)
+    if (cfx_held | cfx_latched | cfx_auto | cfx_home | cx.busy | cx.on)
         cfx_block(mix_l, mix_r, wet, fxq_d, fxq_r, n);
 }

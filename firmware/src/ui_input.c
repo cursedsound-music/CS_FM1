@@ -2218,6 +2218,7 @@ static __attribute__((noinline)) void ui_polls(void)
         cos_mq = (uint8_t)(x[10] && x[10] <= 3u ? x[10] - 1u : 2u);   /* (MUTE Q: byte 18; 0 there, BAR) */
         cos_pc_ch = (uint8_t)(x[11] <= 16u ? x[11] : 0u);          /* (LINK: byte 19 the channel, 20 PC OUT) */
         cos_pc_out = (uint8_t)(x[12] == 1u);
+        cos_vj_ch = (uint8_t)(x[13] <= 16u ? x[13] : 0u);          /* (LINK's VJ CH: byte 21) */
     }
 }
 /* every frame, whichever interface (cursed-os: COS_SLIM has only its own): MOMENTARY's glide, the reverb's shared

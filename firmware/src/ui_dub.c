@@ -16,13 +16,16 @@
 #define DB_HIST 8u
 typedef struct { uint16_t r, m; } dbs_t;
 typedef struct {
-    uint8_t on, shape, dens, move, len, bars, voic, echo, root, nh, every, amt, bar;
+    uint8_t on, shape, dens, move, len, bars, voic, echo, root, nh, every, amt, bar, dly;
     uint16_t ms;                                        /* the mutation seed (0: the anchor) */
     dbs_t s, hist[DB_HIST];
 } db_t;
 static db_t db[NTRK] COS_RAM;
 static uint32_t db_ms COS_RAM;                                  /* (the last hand gesture: an UNDO point after 2 s) */
-enum { DK_SHAPE, DK_DENS, DK_MOVE, DK_LEN, DK_BARS, DK_VOIC, DK_ECHO, DK_ROOT, DK_EVERY, DK_AMT, DK_N };
+enum { DK_SHAPE, DK_DENS, DK_MOVE, DK_LEN, DK_BARS, DK_VOIC, DK_ECHO, DK_ROOT, DK_EVERY, DK_AMT, DK_DLY, DK_N };
+/* DUB 3's DELAY: the shared delay's TIME set to what the stabs echo on (KEEP: as it is), FEEDBK to a dub's 70 at least */
+static const char *const DB_DLN[] = {"KEEP", "1/8D", "1/4D", "1/8", "1/4", "1/16D", 0};
+static const uint8_t DB_DLT[6] = {0, DT_DOT, DT_DOT + 2u, 1, 0, DT_DOT + 1u};
 static const int8_t DB_SHP[7][4] = {{0, 3, 7, 10}, {0, 3, 10, 14}, {0, 5, 10, 15}, {0, 5, 7, 10}, {0, 2, 7, 12},
                                     {0, 3, 7, 12}, {0, 4, 7, 11}};
 static const char *const DB_SHN[] = {"MIN7", "MIN9", "MIN11", "7SUS4", "SUS2", "MIN", "MAJ7", 0};
@@ -121,7 +124,7 @@ static param_desc_t db_d COS_RAM;
 static __attribute__((noinline)) const param_desc_t *db_desc(uint32_t k, int16_t **valp)
 {
     static const char *const LB[DK_N] = {"CHORD", "DENSITY", "MOVE", "LENGTH", "BARS", "VOICING", "ECHO", "ROOT", "EVERY",
-                                         "AMOUNT"};
+                                         "AMOUNT", "DELAY"};
     static const char *const EV[] = {"OFF", "1 BAR", "2 BARS", "4 BARS", "8 BARS", "16 BARS", 0};
     static const char *const MV[] = {"OFF", "2", "4", 0};   /* (the chords in the loop: one, two, four) */
     static const char *const BR[] = {"1", "2", "4", 0};
@@ -140,6 +143,7 @@ static __attribute__((noinline)) const param_desc_t *db_desc(uint32_t k, int16_t
     case DK_ECHO: db_v[k] = a->echo; break;
     case DK_EVERY: db_d.fmt = F_ENUM; db_d.max = 5; db_d.names = EV; db_v[k] = a->every; break;
     case DK_AMT: db_v[k] = a->amt; break;
+    case DK_DLY: db_d.fmt = F_ENUM; db_d.max = 5; db_d.names = DB_DLN; db_v[k] = a->dly; break;
     default: db_d.fmt = F_ENUM; db_d.max = 12; db_d.names = RT; db_v[k] = a->root; break;
     }
     *valp = &db_v[k];
@@ -149,11 +153,18 @@ static __attribute__((noinline)) const param_desc_t *db_desc(uint32_t k, int16_t
 static __attribute__((noinline)) void db_put(uint32_t k, int32_t v)
 {
     db_t *a = db_of(song.sel);
-    uint8_t *f[DK_N] = {&a->shape, &a->dens, &a->move, &a->len, &a->bars, &a->voic, &a->echo, &a->root, &a->every, &a->amt};
-    static const uint8_t LO[DK_N] = {0, 0, 0, 5, 0, 0, 0, 0, 0, 0}, HI[DK_N] = {6, 100, 2, 100, 2, 3, 100, 12, 5, 100};
+    uint8_t *f[DK_N] = {&a->shape, &a->dens, &a->move, &a->len, &a->bars, &a->voic, &a->echo, &a->root, &a->every, &a->amt, &a->dly};
+    static const uint8_t LO[DK_N] = {0, 0, 0, 5, 0, 0, 0, 0, 0, 0, 0}, HI[DK_N] = {6, 100, 2, 100, 2, 3, 100, 12, 5, 100, 5};
     k %= DK_N;
     *f[k] = (uint8_t)clamp(v, LO[k], HI[k]);
     ui.force = 1;
+    if (k == DK_DLY) {                                   /* (the delay is everyone's: only when turned, KEEP leaves it) */
+        if (a->dly) {
+            song.g[G_DTIME] = (int16_t)DB_DLT[a->dly % 6u];
+            if (song.g[G_DFDBK] < 70) song.g[G_DFDBK] = 70;
+        }
+        return;
+    }
     if (drum_track(TSEL)) { ui_message("DUB: PICK A SYNTH TRACK"); return; }
     if (chain_busy()) { ui_message("SONG PLAYS: STOP IT TO EDIT"); return; }
     db_gen(song.sel, 1);

@@ -63,6 +63,21 @@ static __attribute__((noinline)) void fill_undo(void)
     seq_fill = 0;
 }
 
+/* (GLO > LINK's VJ CH) an event out as a note, on and off at once, for visuals: 60 BREAK, 61 BUILD, 62 DROP, 63 FILL,
+ * 64 .. 67 the section A .. D going in; CC 20 the BUILD's progress 0 .. 127, a beat at a time (USB, Bluetooth) */
+enum { VJ_BREAK = 60, VJ_BUILD, VJ_DROP, VJ_FILL, VJ_SECT };
+static void vj_note(uint32_t n)
+{
+    if (!cos_vj_ch) return;
+    mo_send(0x90u | (cos_vj_ch - 1u), n, 127);
+    mo_send(0x80u | (cos_vj_ch - 1u), n, 0);
+}
+static void vj_cc(uint32_t c, uint32_t v)
+{
+    if (cos_vj_ch) mo_send(0xB0u | (cos_vj_ch - 1u), c, v > 127u ? 127u : v);
+}
+static int8_t vj_sect = -1;
+
 /* the BREAKDOWN's effects (cosfx.c cfx_auto) as its state has them */
 static uint32_t bd_bits(uint32_t s)
 {
@@ -72,10 +87,13 @@ static uint32_t bd_bits(uint32_t s)
 static void bd_step(uint32_t bar)                 /* a press (bar: 0 stopped, at once) or a bar line */
 {
     if (bar) {
+        uint32_t was = bd_state;
         if (bd_state == BD_ARM_BREAK) bd_state = BD_BREAK;
         else if (bd_state == BD_ARM_BUILD) { bd_state = BD_BUILD; bd_bars = 4; }
         else if (bd_state == BD_ARM_DROP) bd_state = BD_OFF;
         else if (bd_state == BD_BUILD && bd_bars && !--bd_bars) bd_state = BD_OFF;   /* (the four bars: the DROP) */
+        if (bd_state != was)
+            vj_note(bd_state == BD_BREAK ? VJ_BREAK : bd_state == BD_BUILD ? VJ_BUILD : VJ_DROP);
         if (bd_state == BD_BUILD && bd_bars == 1u) fill_req = 1;                       /* (a roll into it) */
         return;
     }
@@ -101,6 +119,12 @@ static __attribute__((noinline)) void live_tick(uint32_t n)
     }
     if (bar) bd_step(1);
     cfx_auto = bd_bits(bd_state);
+    if (beat && (bd_state == BD_BUILD || bd_state == BD_ARM_DROP))   /* (the build's progress, a beat at a time) */
+        vj_cc(20, (4u - bd_bars) * 32u + (beat_n + 1u) * 8u);
+    if (live.cur != vj_sect) {                        /* (a section went in) */
+        vj_sect = live.cur;
+        if (vj_sect >= 0) vj_note(VJ_SECT + (uint32_t)vj_sect);
+    }
     if (live_qmute && (now || cos_mq == 0u || (cos_mq == 1u ? beat : bar))) {
         uint32_t k, m = live_qmute;
         live_qmute = 0;
@@ -116,5 +140,6 @@ static __attribute__((noinline)) void live_tick(uint32_t n)
     else if (fill_req && half && !fill_on) {          /* (the bar's second half from the next block) */
         fill_req = 0;
         fill_write();
+        vj_note(VJ_FILL);
     }
 }

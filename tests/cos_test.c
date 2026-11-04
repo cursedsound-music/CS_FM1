@@ -696,6 +696,84 @@ int main(void)
         cos_cput(CC_PCCH, 0); cos_cput(CC_PCOUT, 0); midi_song_req = 0;
     }
 
+
+    /* the isolator: MID KILL (a notch at ~1 kHz), HIGH KILL (24 dB an octave at ~2.9 kHz); the knobs on the master EQ */
+    {
+        int32_t L[64], R[64], W[64], SD[64], SR[64], pk;
+        uint32_t b, i2, f, ph = 0;
+        int16_t *vp;
+        static const uint32_t HZ[3] = {1000, 8000, 100};
+        for (f = 0; f < 3u; f++) {
+            cfx_home = f == 0u ? CX_BIT(CX_MIDK) : CX_BIT(CX_HIK); pk = 0;
+            if (f == 2u) cfx_home = CX_BIT(CX_HIK);
+            for (b = 0; b < 400u; b++) {
+                for (i2 = 0; i2 < 64u; i2++) { L[i2] = R[i2] = og_sin(ph >> 16) / 3; ph += HZ[f] * 97391u; W[i2] = SD[i2] = SR[i2] = 0; }
+                cfx_block(L, R, W, SD, SR, 64);
+                if (b > 200u) for (i2 = 0; i2 < 64u; i2++) if (L[i2] > pk) pk = L[i2];
+            }
+            if (f == 0u) CHECK(pk < 1500, "MID KILL: 1 kHz down (%d of ~10900)", pk);
+            if (f == 1u) CHECK(pk < 800, "HIGH KILL: 8 kHz down (%d)", pk);
+            if (f == 2u) CHECK(pk > 9500, "HIGH KILL: 100 Hz through (%d)", pk);
+        }
+        cfx_home = 0;
+        for (b = 0; b < 40u; b++) { for (i2 = 0; i2 < 64u; i2++) { L[i2] = R[i2] = 0; W[i2] = 0; } cfx_block(L, R, W, SD, SR, 64); }
+        CHECK(!cx.busy, "let go: out");
+        cos_cput(CC_EQM, -6); cos_cput(CC_EQH, 4); cos_cput(CC_EQL, -12);
+        CHECK(eq_v[0] == -12 && eq_v[1] == -6 && eq_v[2] == -6 && eq_v[3] == 4 && cos_cdesc(CC_EQM, &vp) && *vp == -6, "ISOLATOR: LOW MID HIGH on the EQ's bands");
+        eq_v[0] = eq_v[1] = eq_v[2] = eq_v[3] = 0;
+    }
+
+
+    /* TAP TEMPO (HOME + white 16): four taps 469 ms apart, 127.9 BPM; a pause over 2 s starts again */
+    {
+        uint32_t t0 = 100000u;
+        cz_tap.n = 0;
+        cos_tap(t0); cos_tap(t0 + 469u); cos_tap(t0 + 938u); cos_tap(t0 + 1407u);
+        CHECK(song.g[G_BPM] == 127 && bpm_frac == 9u, "TAP: 127.9 (%d.%u)", song.g[G_BPM], bpm_frac);
+        cos_tap(t0 + 5000u);
+        CHECK(cz_tap.n == 1u, "a pause: from the start");
+        cos_tap(t0 + 5500u);
+        CHECK(song.g[G_BPM] == 120 && bpm_frac == 0u, "two taps 500 ms apart: 120.0");
+        song.g[G_BPM] = 120; bpm_frac = 0;
+    }
+
+
+    /* VJ CH: the live layer's events out as notes (60 BREAK .. 62 DROP, 63 FILL, 64.. a section), CC 20 the build */
+    {
+        uint32_t b = beat_samples(), w0, i2, got60 = 0, got61 = 0, got62 = 0, cc = 0;
+        cos_cput(CC_VJCH, 3);
+        usb.config = 1; w0 = mo_w;
+        song.playing = 1; bd_state = BD_OFF; bd_req = 1; beat_n = 0; beat_pos = 0; live_tick(64);
+        beat_n = 3; beat_pos = b - 5u; live_tick(64);          /* (BREAK) */
+        bd_req = 1; live_tick(64);                             /* (BUILD on this bar line too) */
+        for (i2 = 0; i2 < 4u; i2++) live_tick(64);             /* (the four bars: the DROP) */
+        for (i2 = w0; i2 != mo_w; i2++) {
+            uint32_t pk = midi_out_q[i2 % MQ], st = (pk >> 8) & 0xFFu, d1 = (pk >> 16) & 0xFFu;
+            if (st == 0x92u && d1 == 60u) got60++;
+            if (st == 0x92u && d1 == 61u) got61++;
+            if (st == 0x92u && d1 == 62u) got62++;
+            if (st == 0xB2u && d1 == 20u) cc++;
+        }
+        CHECK(got60 == 1u && got61 == 1u && got62 == 1u && cc >= 3u, "VJ: BREAK, BUILD, DROP on channel 3, the build's CC (%u %u %u %u)", got60, got61, got62, cc);
+        mo_r = mo_w; usb.config = 0; song.playing = 0; bd_state = BD_OFF; fill_req = 0;
+        cos_cput(CC_VJCH, 0);
+    }
+
+
+    /* dub tools: FX > DELAY 2 (MIX DRIVE TYPE MOD); DUB 3's DELAY sets the echo to the stabs (1/8D), FEEDBK to 70 at least */
+    {
+        const cpg_t *pp; uint32_t n;
+        cz.mode = CM_HOME; song.sel = 3;
+        cos_pages(CM_FX, &pp, &n);
+        CHECK(n == 5u && !strcmp(pp[3].tab, "DELAY 2") && pp[3].id[0] == G_DMIX && pp[3].id[3] == G_DMOD, "FX: DELAY 2 after DELAY");
+        song.g[G_DTIME] = 1; song.g[G_DFDBK] = 40;
+        db_put(DK_DLY, 1);
+        CHECK(song.g[G_DTIME] == (int16_t)DT_DOT && song.g[G_DFDBK] == 70, "DUB 3 DELAY 1/8D (%d, %d)", song.g[G_DTIME], song.g[G_DFDBK]);
+        db_put(DK_DLY, 0);
+        CHECK(song.g[G_DTIME] == (int16_t)DT_DOT, "KEEP leaves it");
+        song.g[G_DTIME] = 1; song.g[G_DFDBK] = 60;
+    }
+
     printf("cos_test: %s (%d failures)\n", fails ? "FAILED" : "ok", fails);
     return fails != 0;
 }

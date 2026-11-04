@@ -14,7 +14,6 @@ Planned work, roughly in order. Done items move to the commit log.
 ## Live
 
 - **DJ isolator EQ.** Low / mid / high kills or knobs on JIANT's master EQ (eq_v), next to the FX pad's LOW KILL.
-- **Booth lights.** LEDs flash on the beat and show the BREAKDOWN state (armed, break, build bars, drop).
 - **Tap tempo.** Alongside the nudge (HOME + OCT), for matching a CDJ or vinyl by ear.
 - **Set list.** Load the next project on a bar line without a gap in the sound.
 

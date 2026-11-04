@@ -391,6 +391,8 @@ static volatile uint8_t midi_song_req;
  * (a Syntakt's A01 A, A02 B, A03 C, A04 D, A05 A ..), on the next bar; cos_pc_out: a section asked for on cursed-os sends
  * its number (0..3) there (USB / Bluetooth: cos_live.c live_tick sends it) */
 static volatile uint8_t cos_pc_ch, cos_pc_out, cos_pc_out_req, cos_pc_in;
+/* (cursed-os) GLO > LINK's VJ CH (1..16, 0 OFF): the live layer's events out as notes for visuals (cos_live.c vj_*) */
+static volatile uint8_t cos_vj_ch;
 
 /* Keep the occasional controller/panic dispatch outside the hot rendering loop. Channel voice messages only
  * (realtime and clock are handled in events_block, SysEx never reaches here). With ROUT CH1-6 channels

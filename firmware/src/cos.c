@@ -40,7 +40,7 @@ enum { CK_NONE, CK_TRK, CK_GLO, CK_AC, CK_EU, CK_COS, CK_DB };
 enum { CC_OUTCH, CC_MOUT, CC_CLOCK, CC_SLOT, CC_TRKS, CC_LOAD, CC_COMP, CC_CATK, CC_CREL, CC_LIM, CC_PF0, CC_PF3 = CC_PF0 + 3,
        CC_X2, CC_X2E = CC_X2 + 15, CC_OCT, CC_KICK, CC_KICKE = CC_KICK + 4, CC_LN0, CC_LNE = CC_LN0 + 7, CC_KDRV, CC_BT,
        CC_L1SYNC, CC_L1RATE, CC_L1WAVE, CC_L1MODE, CC_L1PH, CC_L1FADE, CC_L2SYNC, CC_L2RATE, CC_BPM,
-       CC_CIN, CC_CTHR, CC_CRAT, CC_CMK, CC_CKNEE, CC_CSC, CC_CMIX, CC_LIN, CC_LREL, CC_LVL, CC_MUTEQ, CC_PCCH, CC_PCOUT };
+       CC_CIN, CC_CTHR, CC_CRAT, CC_CMK, CC_CKNEE, CC_CSC, CC_CMIX, CC_LIN, CC_LREL, CC_LVL, CC_MUTEQ, CC_PCCH, CC_PCOUT, CC_VJCH, CC_EQL, CC_EQM, CC_EQH };
 _Static_assert(X2_N <= 16u, "CC_X2 .. CC_X2E: room for every trk_x2 field");
 #define ID_MUTEQ 0xFCu                          /* (HOME 2's: MUTE Q, cos_knob) */
 #define ID_BPM 0xFDu                            /* (HOME's: BPM in tenths, cos_knob) */
@@ -48,7 +48,8 @@ _Static_assert(X2_N <= 16u, "CC_X2 .. CC_X2E: room for every trk_x2 field");
 typedef struct { const char *tab; uint8_t kind, id[4]; } cpg_t;
 #define X 0xFFu
 static const cpg_t CZP_HOME[] = {{"PERFORM", CK_GLO, {ID_BPM, G_SWING, G_DJF, ID_OCT}},
-                                {"PERFORM 2", CK_GLO, {G_DUCK, G_DREL, ID_MUTEQ, X}}};   /* (DUCK: the kick pumps the rest) */
+                                {"PERFORM 2", CK_GLO, {G_DUCK, G_DREL, ID_MUTEQ, X}},
+                                {"ISOLATOR", CK_COS, {CC_EQL, CC_EQM, CC_EQH, X}}};   /* (JIANT's master EQ; HOME's black 9-11 the kills) */   /* (DUCK: the kick pumps the rest) */
 static const cpg_t CZP_TRIG[] = {{"TRIG", CK_TRK, {P_SLEN, P_SDIV, P_SSWING, P_SGATE}}};
 /* EDIT: the engine's eight (its own page names: cos_tabs), the voice, the matrix's four slots; a VOICE track WORDS
  * third. ENV: the amp, the filter, the envelope's modulation, the two LFO pages */
@@ -92,12 +93,14 @@ static const cpg_t CZP_AMPA[] = {{"AMP", CK_TRK, {P_ATK, P_DEC, P_SUS, P_REL}},
 static const cpg_t CZP_DRONE[] = {{"DRONE", CK_TRK, {P_LEVEL, P_FCUT, P_LRATE, P_LD_FLT}}, {"SPACE", CK_TRK, {P_ATK, P_REL, P_DLY, P_REV}}};
 static const cpg_t CZP_FX[] = {{"SEND", CK_TRK, {P_DIST, P_CHOR, P_DLY, P_REV}}, {"DIST", CK_TRK, {P_DTYPE, P_DTONE, X, X}},
                               {"DELAY", CK_GLO, {G_DTIME, G_DFDBK, G_DCOLOR, G_DPING}},    /* (the buses: every track's) */
+                              {"DELAY 2", CK_GLO, {G_DMIX, G_DDRV, G_DTYPE, G_DMOD}},     /* (the tape echo: MOD its wow and flutter;
+                                                         * FEEDBK past 100 runs away into the clip: the dub spin) */
                               {"REVERB", CK_GLO, {G_RSIZE, G_RDAMP, G_RPRE, G_RTYPE}}};
 static const cpg_t CZP_GENA[] = {{"ACID", CK_AC, {AK_DENS, AK_SLIDE, AK_ACC, ID_OCT}}, {"ACID 2", CK_AC, {AK_STEPS, AK_NOTES, AK_TIE, AK_OCT}},
                                 {"ACID 3", CK_AC, {AK_EVERY, AK_AMT, AK_ROOT, AK_SCALE}}, {"ACID 4", CK_AC, {AK_LOCK, X, X, X}}};
 /* (a synth track that is not ACID: DUB's chord stabs first, ACID's lines after them) */
 static const cpg_t CZP_GENS[] = {{"DUB", CK_DB, {DK_SHAPE, DK_DENS, DK_MOVE, DK_LEN}}, {"DUB 2", CK_DB, {DK_BARS, DK_VOIC, DK_ECHO, ID_OCT}},
-                                {"DUB 3", CK_DB, {DK_ROOT, DK_EVERY, DK_AMT, X}},
+                                {"DUB 3", CK_DB, {DK_ROOT, DK_EVERY, DK_AMT, DK_DLY}},
                                 {"ACID", CK_AC, {AK_DENS, AK_SLIDE, AK_ACC, ID_OCT}}, {"ACID 2", CK_AC, {AK_STEPS, AK_NOTES, AK_TIE, AK_OCT}},
                                 {"ACID 3", CK_AC, {AK_EVERY, AK_AMT, AK_ROOT, AK_SCALE}}, {"ACID 4", CK_AC, {AK_LOCK, X, X, X}}};
 static const cpg_t CZP_GENE[] = {{"EUCLID", CK_EU, {EK_HITS, EK_STEPS, EK_ROT, EK_K4}}, {"MODES", CK_EU, {EK_M0, EK_M0 + 1u, EK_M0 + 2u, EK_M0 + 3u}},
@@ -108,7 +111,7 @@ static const cpg_t CZP_MIX[] = {{"MIX", CK_TRK, {P_LEVEL, P_PAN, P_GLIDE, P_MUTE
                                {"COMP 3", CK_COS, {CC_CSC, CC_CMIX, X, X}},
                                {"LIMIT", CK_COS, {CC_LIN, CC_LIM, CC_LREL, CC_LVL}},
                                {"MIDI", CK_COS, {CC_OUTCH, CC_MOUT, CC_CLOCK, X}},
-                               {"LINK", CK_COS, {CC_PCCH, CC_PCOUT, X, X}},   /* (a Syntakt's patterns: the sections) */
+                               {"LINK", CK_COS, {CC_PCCH, CC_PCOUT, CC_VJCH, X}},   /* (a Syntakt's patterns: the sections) */
                                {"SYSTEM", CK_COS, {CC_TRKS, CC_LOAD, CC_BT, X}}};
 static const cpg_t CZP_KEY[] = {{"KEY", CK_TRK, {P_SCALE, P_QUANT, 0xFFu, 0xFFu}}};   /* (the root: the keys) */
 static const cpg_t CZP_PERF[] = {{"FX PAD", CK_COS, {CC_PF0, CC_PF0 + 1u, CC_PF0 + 2u, CC_PF3}}};   /* (FX held) */
@@ -148,7 +151,7 @@ static int cos_kit(void) { return drum_track(TSEL) != 0; }
 static void cos_pages(uint32_t m, const cpg_t **p, uint32_t *n)
 {
     static const cpg_t *const P[CM_N] = {CZP_HOME, CZP_TRIG, CZP_SRC, CZP_AMP, CZP_DRONE, CZP_FX, CZP_GENA, CZP_MIX, CZP_KEY, CZP_PROJ};
-    static const uint8_t N[CM_N] = {2, 1, 8, 9, 2, 4, 4, 8, 1, 1};
+    static const uint8_t N[CM_N] = {3, 1, 8, 9, 2, 5, 4, 8, 1, 1};
     int vo = m == CM_SRC && trk_engp(TSEL) == &ENG_FORMANT;
     if (m == CM_SRC && cos_kit()) { *p = CZP_SRCD; *n = NELEM(CZP_SRCD); return; }   /* (a kit: KICK, LEVELS, its own ..) */
     if (m == CM_GEN && cos_kit()) { *p = CZP_GENE; *n = 3; return; }
@@ -303,10 +306,20 @@ static const param_desc_t *cos_cdesc(uint32_t id, int16_t **vp)
         default: *vp = &TSEL->p[P_LFADE]; return track_desc(TSEL, P_LFADE);
         }
     }
-    if (id == CC_PCCH || id == CC_PCOUT) {               /* GLO > LINK (midi_control.c cos_pc_ch, cos_pc_out) */
+    if (id >= CC_EQL && id <= CC_EQH) {                  /* HOME > ISOLATOR: the master EQ's bands (fx.c eq_block): LOW, MID (its
+                                                         * two middle bands together), HIGH */
+        static const param_desc_t DE[3] = {{"LOW", F_INT, -12, 6, 0, 0, "dB"}, {"MID", F_INT, -12, 6, 0, 0, "dB"},
+                                           {"HIGH", F_INT, -12, 6, 0, 0, "dB"}};
+        static const uint8_t B[3] = {0, 1, 3};
+        cz.cc_v[14] = eq_v[B[id - CC_EQL]];
+        *vp = &cz.cc_v[14];
+        return &DE[id - CC_EQL];
+    }
+    if (id >= CC_PCCH && id <= CC_VJCH) {                /* GLO > LINK (midi_control.c cos_pc_ch, cos_pc_out, cos_vj_ch) */
         static const char *const OO[2] = {"OFF", "ON"};
-        static const param_desc_t DL[2] = {{"PC CH", F_INT, 0, 16, 0, 0, 0}, {"PC OUT", F_ENUM, 0, 1, 0, OO, 0}};
-        cz.cc_v[14] = (int16_t)(id == CC_PCCH ? cos_pc_ch : cos_pc_out);
+        static const param_desc_t DL[3] = {{"PC CH", F_INT, 0, 16, 0, 0, 0}, {"PC OUT", F_ENUM, 0, 1, 0, OO, 0},
+                                           {"VJ CH", F_INT, 0, 16, 0, 0, 0}};
+        cz.cc_v[14] = (int16_t)(id == CC_PCCH ? cos_pc_ch : id == CC_PCOUT ? cos_pc_out : cos_vj_ch);
         *vp = &cz.cc_v[14];
         return &DL[id - CC_PCCH];
     }
@@ -449,10 +462,16 @@ static void cos_cput(uint32_t id, int32_t v)
         } else {
             t->p[P_LFADE] = (int16_t)clamp(v, TP[P_LFADE].min, TP[P_LFADE].max);
         }
-    } else if (id == CC_PCCH || id == CC_PCOUT) {
+    } else if (id >= CC_EQL && id <= CC_EQH) {
+        v = clamp(v, -12, 6);
+        if (id == CC_EQL) eq_v[0] = (int16_t)v;
+        else if (id == CC_EQM) eq_v[1] = eq_v[2] = (int16_t)v;
+        else eq_v[3] = (int16_t)v;
+    } else if (id >= CC_PCCH && id <= CC_VJCH) {
         uint8_t *x = &favorites.factory[6][19];             /* (TRIO's retired row: 0 there, OFF) */
         if (id == CC_PCCH) { x[0] = (uint8_t)clamp(v, 0, 16); cos_pc_ch = x[0]; }
-        else { x[1] = (uint8_t)clamp(v, 0, 1); cos_pc_out = x[1]; }
+        else if (id == CC_PCOUT) { x[1] = (uint8_t)clamp(v, 0, 1); cos_pc_out = x[1]; }
+        else { x[2] = (uint8_t)clamp(v, 0, 16); cos_vj_ch = x[2]; }
         cz.set_ms = fm1_ms;
     } else if (id == CC_MUTEQ) {
         favorites.factory[6][18] = (uint8_t)(clamp(v, 0, 2) + 1);   /* (TRIO's retired row: 0 there, BAR) */
@@ -567,6 +586,25 @@ static void cos_bpm_text(char *b, int32_t v)
     b[0] = '.';
     b[1] = (char)('0' + v % 10);
     b[2] = 0;
+}
+/* HOME held + white 16: TAP TEMPO. The last eight taps' gaps averaged (a gap over 2 s starts again), BPM in tenths */
+static struct { uint32_t t[8]; uint8_t n; } cz_tap;
+static __attribute__((noinline)) void cos_tap(uint32_t now)
+{
+    uint32_t i;
+    if (cz_tap.n && now - cz_tap.t[cz_tap.n - 1u] > 2000u) cz_tap.n = 0;
+    if (cz_tap.n == 8u) { for (i = 0; i < 7u; i++) cz_tap.t[i] = cz_tap.t[i + 1u]; cz_tap.n = 7; }
+    cz_tap.t[cz_tap.n++] = now;
+    if (cz_tap.n >= 2u) {
+        uint32_t gap = (cz_tap.t[cz_tap.n - 1u] - cz_tap.t[0]) / (cz_tap.n - 1u);
+        int32_t v = gap ? clamp((int32_t)((600000u + gap / 2u) / gap), 400, 2400) : 1200;
+        char b[16];
+        song.g[G_BPM] = (int16_t)(v / 10);
+        bpm_frac = (uint8_t)(v % 10);
+        str_cpy(b, "TAP ", 5);
+        cos_bpm_text(b + 4, v);
+        cos_say(b);
+    } else cos_say("TAP AGAIN");
 }
 static void cos_turn(uint32_t k, int32_t s)
 {
@@ -855,7 +893,8 @@ static __attribute__((noinline)) void cos_input(void)
             if (w < 4u) cz.slot = (uint8_t)w;
         } else if (cz.mode == CM_HOME) {                 /* white 1..6 the track, 9..12 the sections A..D on the bar; black
                                                          * 1..6 mute (HOME held: solo), 7 FILL, 8 BREAKDOWN (cos_live.c) */
-            if (w < trk_live) track_select(w);
+            if (w == 15u && cos_home_held()) cos_tap(fm1_ms);   /* (HOME + white 16: TAP TEMPO) */
+            else if (w < trk_live) track_select(w);
             else if (w >= 8u && w < 12u) {
                 if (!cz.pn_ok) cos_proj_scan();
                 cos_section(w - 8u);
@@ -885,6 +924,9 @@ static __attribute__((noinline)) void cos_input(void)
         }
     }
     if (cz.mode == CM_HOME && ((fm1_in.notes >> BK[6]) & 1u) && song.playing) fill_req = 1;   /* (FILL held: every bar) */
+    cfx_home = cz.mode == CM_HOME && !cz.fx_down ?      /* (HOME's black 9 10 11 held: LOW MID HIGH KILL, the isolator's) */
+        (((fm1_in.notes >> BK[8]) & 1u) ? CX_BIT(CX_LOWK) : 0u) | (((fm1_in.notes >> BK[9]) & 1u) ? CX_BIT(CX_MIDK) : 0u) |
+        (((fm1_in.notes >> BK[10]) & 1u) ? CX_BIT(CX_HIK) : 0u) : 0u;
     {                                                    /* TRIG: a white key let go: its trig, unless a lock was set */
         uint32_t up = cz.tg_down & ~fm1_in.notes, w;
         for (w = 0; w < 16u && up; w++)
@@ -986,7 +1028,7 @@ static void cos_tabs(void)
     if (cz.mode == CM_HOME && cos_home_held()) {          /* (HOME held: the tempo's keys) */
         cv_rect(2, 20, cos_w("TEMPO") + 6, 12, C_FG);
         cos_tx(5, 22, "TEMPO", C_BG);
-        cos_txr(238, 22, "OCT-/+ NUDGE  K1 .1", C_DIM);
+        cos_txr(238, 22, "OCT NUDGE K1 .1 W16 TAP", C_DIM);
         return;
     }
     if (cz.mode == CM_TRIG && cos_held()) {               /* (steps held: what a knob locks) */
@@ -1141,7 +1183,7 @@ static void cos_body_home(void)
             if (bd_state == BD_BUILD) { uint32_t l = str_len(b); b[l] = ' '; b[l + 1] = (char)('0' + bd_bars % 10u); b[l + 2] = 0; }
         } else if (fill_on || fill_req) str_cpy(b, "FILL", sizeof b);
         if (b[0]) cos_tx(4, 144, b, C_RED);
-        else cos_tx(4, 144, trk_live > 5u ? "W9-12 SECT  B7 FILL  B8 DROP" : "W9-12:A-D B7:FILL B8:BREAK", C_DIM);
+        else cos_tx(4, 144, trk_live > 5u ? "B7 FILL B8 DROP B9-11 KILL" : "B7 FILL B8 BREAK B9-11 KILL", C_DIM);
         if (live.cur >= 0 && !b[0]) { char c[2] = {(char)('A' + live.cur), 0}; cos_txr(236, 144, c, C_MID); }
     }
 }
@@ -1547,7 +1589,9 @@ static void cos_body_link(void)
     cos_tx(8, 78, "4 8 12 16: D. ON THE BAR", C_DIM);
     cos_tx(8, 98, "PC OUT: A SECTION HERE", C_FG);
     cos_tx(8, 112, "SENDS PC 0..3 (USB, BT)", C_DIM);
-    cos_tx(8, 126, cos_pc_ch ? "SET THE SYNTAKT'S PROG CH" : "PC CH 0: LINK OFF", C_DIM);
+    cos_tx(8, 126, "VJ CH: NOTES FOR VISUALS", C_FG);
+    cos_tx(8, 140, "60 BRK 61 BUILD 62 DROP 63 FILL", C_DIM);
+    cos_tx(8, 152, "64-67 SECT A-D  CC20 BUILD", C_DIM);
 }
 
 /* GLO > SYSTEM: what TRACKS and LOAD do */
