@@ -396,9 +396,10 @@ static volatile uint8_t cos_vj_ch;
 /* (cursed-os) GLO > LINK 2 / 3: the macros M1..M4 (mod.c macro_v) as CONTROL CHANGEs, each its own (cos_mc_cc), on
  * cos_mc_ch (1..16, 0 OFF); cos_mc_dir 0 BOTH, 1 OUT (sent when they move: the knobs, MORPH; cos_live.c live_tick), 2 IN
  * (the other machine's knobs turn them). cos_mc_sent: what went out or came in last (an incoming value is not sent
- * back). The maps (cos.c MC_MAP) are a Syntakt's CCs (midi.guide's table of its MIDI implementation, the manual's
- * appendix B): ST TRACK on a track's channel its FILTER FREQ 74, RESO 75, DELAY SEND 84, REVERB SEND 85; ST FX on its
- * FX channel the analog FX's FILTER FREQ 70, RESO 71, the DELAY's FEEDBACK 24, the REVERB's DECAY 30 */
+ * back). The maps (cos.c MC_MAP) are a Syntakt's CCs (its manual's appendix B, OS 1.30): TRACK on a track's channel
+ * its FILTER FREQ 74, RESO 75 (B.4), DELAY SEND 84, REVERB SEND 85 (B.5); FX on its FX channel the FX track's FILTER
+ * FREQ 70, RESO 71 (B.10), the DELAY's FEEDBACK 24, the REVERB's DECAY 30 (B.7: the appendix names no channel for
+ * these; 21..27 are a track's SYN knobs E..H and its FILTER BASE / WIDTH, so they are the FX channel's) */
 static volatile uint8_t cos_mc_ch, cos_mc_cc[4] = {74, 75, 84, 85}, cos_mc_dir, cos_mc_sent[4];
 
 /* Keep the occasional controller/panic dispatch outside the hot rendering loop. Channel voice messages only
