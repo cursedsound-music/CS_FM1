@@ -1115,13 +1115,16 @@ int main(void)
     {
         uint32_t w0, i2, got = 0, gv = 0, back = 0;
         int16_t *vp;
-        cos_cput(CC_MCCH, 2); cos_cput(CC_MCCC, 70); cos_cput(CC_MCDIR, 0);
-        CHECK(cos_mc_ch == 2u && cos_mc_cc == 70u && favorites.factory[8][24] == 2u && favorites.factory[8][25] == 71u,
-              "MAC CH 2, M1 CC 70: kept in the settings");
-        CHECK(cos_cdesc(CC_MCCC, &vp) && *vp == 70, "read back");
-        memset(favorites.factory[8] + 24, 0, 3); ui_polls();
-        CHECK(!cos_mc_ch && cos_mc_cc == 16u && !cos_mc_dir, "0 there (older settings): OFF, CC 16, BOTH");
-        cos_cput(CC_MCCH, 2); cos_cput(CC_MCCC, 70);
+        memset(favorites.factory[8] + 24, 0, 6); ui_polls();
+        CHECK(!cos_mc_ch && !cos_mc_dir && cos_mc_cc[0] == 74u && cos_mc_cc[3] == 85u && cos_cdesc(CC_MCMAP, &vp) && *vp == 1,
+              "0 there (older settings): OFF, BOTH, the ST TRACK map (74 75 84 85)");
+        cos_cput(CC_MCCH, 2); cos_cput(CC_MCDIR, 0); cos_cput(CC_MCMAP, 2);
+        CHECK(cos_mc_cc[0] == 70u && cos_mc_cc[1] == 71u && cos_mc_cc[2] == 24u && cos_mc_cc[3] == 30u, "MAP ST FX: 70 71 24 30");
+        cos_cput(CC_MC0, 70); cos_cput(CC_MC0 + 1u, 71); cos_cput(CC_MC0 + 2u, 72); cos_cput(CC_MC3, 73);   /* (LINK 3: each its own) */
+        CHECK(cos_mc_cc[2] == 72u && cos_cdesc(CC_MCMAP, &vp) && *vp == 0 && cos_cdesc(CC_MC0 + 2u, &vp) && *vp == 72, "LINK 3: M3 CC 72, MAP CUSTOM");
+        CHECK(favorites.factory[8][24] == 2u && favorites.factory[8][25] == 71u && favorites.factory[8][28] == 73u, "kept in the settings");
+        ui_polls();
+        CHECK(cos_mc_ch == 2u && cos_mc_cc[0] == 70u && cos_mc_cc[2] == 72u && cos_mc_cc[3] == 73u, "read back from them");
         usb.config = 1;
         macro_v[0] = macro_v[1] = macro_v[2] = macro_v[3] = 0;
         for (i2 = 0; i2 < 8u; i2++) live_tick(64);            /* (settled) */

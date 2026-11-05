@@ -2219,11 +2219,16 @@ static __attribute__((noinline)) void ui_polls(void)
         cos_pc_ch = (uint8_t)(x[11] <= 16u ? x[11] : 0u);          /* (LINK: byte 19 the channel, 20 PC OUT) */
         cos_pc_out = (uint8_t)(x[12] == 1u);
         cos_vj_ch = (uint8_t)(x[13] <= 16u ? x[13] : 0u);          /* (LINK's VJ CH: byte 21) */
-        {                                                /* (LINK 2: STRING's row 8, bytes 24..26: its 16 presets' stars
-                                                         * are bytes 0..1, the row cleared once at the settings' rev 3) */
+        {                                                /* (LINK 2 / 3: STRING's row 8, bytes 24..29: its 16 presets'
+                                                         * stars are bytes 0..1, the row cleared once at the settings' rev
+                                                         * 3) [24] MAC CH, [25] [27..29] M1..M4's CC + 1 (0 there: the
+                                                         * ST TRACK map's), [26] DIR */
+            static const uint8_t DEF[4] = {74, 75, 84, 85}, AT[4] = {1, 3, 4, 5};
             const uint8_t *m = &favorites.factory[8][24];
+            uint32_t k;
             cos_mc_ch = (uint8_t)(m[0] <= 16u ? m[0] : 0u);
-            cos_mc_cc = (uint8_t)(m[1] && m[1] <= 125u ? m[1] - 1u : 16u);   /* (0 there: CC 16) */
+            for (k = 0; k < 4u; k++)
+                cos_mc_cc[k] = (uint8_t)(m[AT[k]] && m[AT[k]] <= 128u ? m[AT[k]] - 1u : DEF[k]);
             cos_mc_dir = (uint8_t)(m[2] <= 2u ? m[2] : 0u);
         }
     }

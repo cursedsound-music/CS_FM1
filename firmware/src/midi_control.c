@@ -393,10 +393,13 @@ static volatile uint8_t midi_song_req;
 static volatile uint8_t cos_pc_ch, cos_pc_out, cos_pc_out_req, cos_pc_in;
 /* (cursed-os) GLO > LINK's VJ CH (1..16, 0 OFF): the live layer's events out as notes for visuals (cos_live.c vj_*) */
 static volatile uint8_t cos_vj_ch;
-/* (cursed-os) GLO > LINK 2: the macros M1..M4 (mod.c macro_v) as CONTROL CHANGEs cos_mc_cc .. + 3 on cos_mc_ch (1..16,
- * 0 OFF); cos_mc_dir 0 BOTH, 1 OUT (sent when they move: the knobs, MORPH; cos_live.c live_tick), 2 IN (the other
- * machine's knobs turn them). cos_mc_sent: what went out or came in last (an incoming value is not sent back) */
-static volatile uint8_t cos_mc_ch, cos_mc_cc = 16, cos_mc_dir, cos_mc_sent[4];
+/* (cursed-os) GLO > LINK 2 / 3: the macros M1..M4 (mod.c macro_v) as CONTROL CHANGEs, each its own (cos_mc_cc), on
+ * cos_mc_ch (1..16, 0 OFF); cos_mc_dir 0 BOTH, 1 OUT (sent when they move: the knobs, MORPH; cos_live.c live_tick), 2 IN
+ * (the other machine's knobs turn them). cos_mc_sent: what went out or came in last (an incoming value is not sent
+ * back). The maps (cos.c MC_MAP) are a Syntakt's CCs (midi.guide's table of its MIDI implementation, the manual's
+ * appendix B): ST TRACK on a track's channel its FILTER FREQ 74, RESO 75, DELAY SEND 84, REVERB SEND 85; ST FX on its
+ * FX channel the analog FX's FILTER FREQ 70, RESO 71, the DELAY's FEEDBACK 24, the REVERB's DECAY 30 */
+static volatile uint8_t cos_mc_ch, cos_mc_cc[4] = {74, 75, 84, 85}, cos_mc_dir, cos_mc_sent[4];
 
 /* Keep the occasional controller/panic dispatch outside the hot rendering loop. Channel voice messages only
  * (realtime and clock are handled in events_block, SysEx never reaches here). With ROUT CH1-6 channels
@@ -409,11 +412,17 @@ static void __attribute__((noinline)) midi_event(uint32_t st, uint32_t ch, uint3
         cos_pc_in = 1;                                  /* (not sent back: no loop) */
         return;
     }
-    if (st == 0xB0u && cos_mc_ch && ch == cos_mc_ch - 1u && cos_mc_dir != 1u && d1 - cos_mc_cc < 4u) {   /* (cursed-os)
-                                                         * LINK 2: the other machine's knob, a macro */
-        macro_v[d1 - cos_mc_cc] = (uint8_t)d2;
-        cos_mc_sent[d1 - cos_mc_cc] = (uint8_t)d2;
-        return;
+    if (st == 0xB0u && cos_mc_ch && ch == cos_mc_ch - 1u && cos_mc_dir != 1u) {   /* (cursed-os) LINK 2: the other
+                                                         * machine's knob, a macro (each one its CC is) */
+        uint32_t k, hit = 0;
+        for (k = 0; k < 4u; k++)
+            if (d1 == cos_mc_cc[k]) {
+                macro_v[k] = (uint8_t)d2;
+                cos_mc_sent[k] = (uint8_t)d2;
+                hit = 1;
+            }
+        if (hit)
+            return;
     }
     if (st == 0xC0u && ch == 15u) {                    /* (0.6.80) channel 16's PROGRAM CHANGE: a section, a project */
         midi_song_req = (uint8_t)(d1 + 1u);

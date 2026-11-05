@@ -18,5 +18,6 @@ Planned work. Done items move to the commit log.
 
 - **Set list with unsaved sections.** A second press drops them; keeping them needs either a flash write during audio
   (it stalls the audio) or RAM for another song's four sections (15 KB). Revisit if the device has the RAM.
-- **LINK 2 with the Syntakt.** Check which CCs the Syntakt's track or FX parameters answer to on its auto channel and
-  set M1 CC to them; OUT needs a USB host or Bluetooth MIDI between the two (the FM-1's jack is MIDI in only).
+- **LINK 2 with the Syntakt.** The maps come from midi.guide's table of its CCs (TRACK 74 75 84 85, FX 70 71 24 30):
+  check them on the device, with the Syntakt sending and receiving CCs in its MIDI config. OUT needs a USB host or
+  Bluetooth MIDI between the two (the FM-1's jack is MIDI in only).

@@ -122,7 +122,7 @@ static __attribute__((noinline)) void live_tick(uint32_t n)
         uint32_t k = rr++ & 3u;
         if (macro_v[k] != cos_mc_sent[k]) {
             cos_mc_sent[k] = macro_v[k];
-            mo_send(0xB0u | (cos_mc_ch - 1u), (cos_mc_cc + k) & 127u, macro_v[k] & 127u);
+            mo_send(0xB0u | (cos_mc_ch - 1u), cos_mc_cc[k] & 127u, macro_v[k] & 127u);
         }
     }
     if (cos_pc_out_req) {                             /* (LINK: a section asked for, its PROGRAM CHANGE out) */
