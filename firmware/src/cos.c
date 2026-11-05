@@ -836,7 +836,7 @@ static void cos_turn(uint32_t k, int32_t s)
         uint32_t n, i;
         cos_pages(cz.mode, &q, &n);
         for (i = 0; i < n; i++)
-            if (!strcmp(q[i].tab, p->tab) && q[i].kind == p->kind) { cz.tab[cz.mode] = (uint8_t)i; break; }
+            if (str_eq(q[i].tab, p->tab) && q[i].kind == p->kind) { cz.tab[cz.mode] = (uint8_t)i; break; }
     }
 }
 
