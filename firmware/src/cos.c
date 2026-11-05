@@ -40,7 +40,7 @@ enum { CK_NONE, CK_TRK, CK_GLO, CK_AC, CK_EU, CK_COS, CK_DB };
 enum { CC_OUTCH, CC_MOUT, CC_CLOCK, CC_SLOT, CC_TRKS, CC_LOAD, CC_COMP, CC_CATK, CC_CREL, CC_LIM, CC_PF0, CC_PF3 = CC_PF0 + 3,
        CC_X2, CC_X2E = CC_X2 + 15, CC_OCT, CC_KICK, CC_KICKE = CC_KICK + 4, CC_LN0, CC_LNE = CC_LN0 + 7, CC_KDRV, CC_BT,
        CC_L1SYNC, CC_L1RATE, CC_L1WAVE, CC_L1MODE, CC_L1PH, CC_L1FADE, CC_L2SYNC, CC_L2RATE, CC_BPM,
-       CC_CIN, CC_CTHR, CC_CRAT, CC_CMK, CC_CKNEE, CC_CSC, CC_CMIX, CC_LIN, CC_LREL, CC_LVL, CC_MUTEQ, CC_PCCH, CC_PCOUT, CC_VJCH, CC_EQL, CC_EQM, CC_EQH, CC_MAC0, CC_MAC3 = CC_MAC0 + 3, CC_RB0, CC_RB3 = CC_RB0 + 3, CC_MOPOS, CC_MOBARS, CC_LVLEN, CC_LVRATE, CC_LVDN, CC_LVSH, CC_MCCH, CC_MCCC, CC_MCDIR, CC_MCMAP, CC_MC0, CC_MC3 = CC_MC0 + 3 };
+       CC_CIN, CC_CTHR, CC_CRAT, CC_CMK, CC_CKNEE, CC_CSC, CC_CMIX, CC_LIN, CC_LREL, CC_LVL, CC_MUTEQ, CC_PCCH, CC_PCOUT, CC_VJCH, CC_EQL, CC_EQM, CC_EQH, CC_MAC0, CC_MAC3 = CC_MAC0 + 3, CC_RB0, CC_RB3 = CC_RB0 + 3, CC_MOPOS, CC_MOBARS, CC_LVLEN, CC_LVRATE, CC_LVDN, CC_LVSH, CC_MCCH, CC_MCCC, CC_MCDIR, CC_MCMAP, CC_MC0, CC_MC3 = CC_MC0 + 3, CC_MOCC };
 _Static_assert(X2_N <= 16u, "CC_X2 .. CC_X2E: room for every trk_x2 field");
 #define ID_MUTEQ 0xFCu                          /* (HOME 2's: MUTE Q, cos_knob) */
 #define ID_BPM 0xFDu                            /* (HOME's: BPM in tenths, cos_knob) */
@@ -122,7 +122,8 @@ static const cpg_t CZP_MIX[] = {{"MIX", CK_TRK, {P_LEVEL, P_PAN, P_GLIDE, P_MUTE
                                {"LIMIT", CK_COS, {CC_LIN, CC_LIM, CC_LREL, CC_LVL}},
                                {"MIDI", CK_COS, {CC_OUTCH, CC_MOUT, CC_CLOCK, X}},
                                {"LINK", CK_COS, {CC_PCCH, CC_PCOUT, CC_VJCH, X}},   /* (a Syntakt's patterns: the sections) */
-                               {"LINK 2", CK_COS, {CC_MCCH, CC_MCDIR, CC_MCMAP, X}},   /* (the macros as CCs, both ways) */
+                               {"LINK 2", CK_COS, {CC_MCCH, CC_MCDIR, CC_MCMAP, CC_MOCC}},   /* (the macros and MORPH as CCs, both
+                                                         * ways) */
                                {"LINK 3", CK_COS, {CC_MC0, CC_MC0 + 1u, CC_MC0 + 2u, CC_MC3}},   /* (.. each one's CC) */
                                {"SYSTEM", CK_COS, {CC_TRKS, CC_LOAD, CC_BT, X}}};
 static const cpg_t CZP_KEY[] = {{"KEY", CK_TRK, {P_SCALE, P_QUANT, 0xFFu, 0xFFu}}};   /* (the root: the keys) */
@@ -188,6 +189,8 @@ static const cpg_t *cos_page(void)
 }
 static int cos_on_words(void) { return cz.mode == CM_SRC && trk_engp(TSEL) == &ENG_FORMANT && cz.tab[CM_SRC] % 8u == 2u; }
 static void cos_say(const char *s) { str_cpy(cz.msg, s, sizeof cz.msg); cz.msg_ms = fm1_ms; }
+static uint32_t cos_ext10(void);                        /* (below: an external clock's tempo) */
+static int cos_follows(void);
 /* GLO > LINK 2 / 3: the macros as CCs; MAP: a Syntakt's (midi_control.c's note) */
 static const uint8_t MC_MAP[2][4] = {{74, 75, 84, 85}, {70, 71, 24, 30}};   /* ST TRACK, ST FX */
 static uint32_t cos_mc_map(void)
@@ -420,6 +423,12 @@ static const param_desc_t *cos_cdesc(uint32_t id, int16_t **vp)
         *vp = &cz.cc_v[14];
         return &DL[id - CC_PCCH];
     }
+    if (id == CC_MOCC) {                                 /* GLO > LINK 2: MORPH's A-B as a CC (-1: OFF) */
+        static const param_desc_t DO = {"MO CC", F_INT, -1, 127, -1, 0, 0};
+        cz.cc_v[14] = (int16_t)((int32_t)cos_mo_cc - 1);
+        *vp = &cz.cc_v[14];
+        return &DO;
+    }
     if (id >= CC_MCCH && id <= CC_MC3) {                 /* GLO > LINK 2 / 3 (midi_control.c cos_mc_*) */
         static const char *const MD[3] = {"BOTH", "OUT", "IN"};
         static const char *const MP[3] = {"OWN", "TRACK", "FX"};   /* (OWN: LINK 3's; the Syntakt's maps) */
@@ -443,7 +452,7 @@ static const param_desc_t *cos_cdesc(uint32_t id, int16_t **vp)
     }
     if (id == CC_BPM) {                                  /* BPM in tenths: HOME held, a knob's step is a tenth */
         static const param_desc_t DB = {"BPM", F_INT, 400, 2400, 1200, 0, 0};
-        cz.cc_v[14] = (int16_t)(song.g[G_BPM] * 10 + bpm_frac % 10u);
+        cz.cc_v[14] = (int16_t)(cos_follows() ? (int32_t)cos_ext10() : song.g[G_BPM] * 10 + bpm_frac % 10u);   /* (a clock: its) */
         *vp = &cz.cc_v[14];
         return &DB;
     }
@@ -599,6 +608,11 @@ static void cos_cput(uint32_t id, int32_t v)
         else if (id == CC_PCOUT) { x[1] = (uint8_t)clamp(v, 0, 1); cos_pc_out = x[1]; }
         else { x[2] = (uint8_t)clamp(v, 0, 16); cos_vj_ch = x[2]; }
         cz.set_ms = fm1_ms;
+    } else if (id == CC_MOCC) {
+        cos_mo_cc = (uint8_t)(clamp(v, -1, 127) + 1);
+        favorites.factory[8][30] = cos_mo_cc;            /* (STRING's row past its stars: 0 there, OFF) */
+        cos_mo_sent = 0xFFu;
+        cz.set_ms = fm1_ms;
     } else if (id >= CC_MCCH && id <= CC_MC3) {
         uint8_t *m = &favorites.factory[8][24];         /* (STRING's row past its stars: 0 there, OFF, ST TRACK, BOTH) */
         if (id == CC_MCCH) { m[0] = (uint8_t)clamp(v, 0, 16); cos_mc_ch = m[0]; }
@@ -725,11 +739,30 @@ static void cos_bpm_text(char *b, int32_t v)
     b[1] = (char)('0' + v % 10);
     b[2] = 0;
 }
+/* (external clock) the tempo it plays at, BPM x 10 for the header: midi_clock.c measures a quarter beat in ms, so
+ * each reading is +-1 % (128 shows 127 .. 129); smoothed here (1/32 a frame), a jump of 4 % or more taken at once,
+ * and the shown value moved only by 3 tenths or more. 0: the FM-1's own tempo */
+static uint32_t cz_ext_q, cz_ext_shown;
+static uint32_t cos_ext10(void)
+{
+    uint32_t b = song.g[G_CLOCK] ? midi_beat_samples : 0u, t;
+    if (!b) { cz_ext_q = cz_ext_shown = 0; return 0; }
+    t = (600u * (uint32_t)FS + b / 2u) / b;              /* (tenths: 60 s x 10 / a beat) */
+    if (!cz_ext_q || t * 16u > cz_ext_q + t * 16u / 25u || t * 16u + t * 16u / 25u < cz_ext_q) cz_ext_q = t << 4;   /* (4 %:
+                                                         * a reading's own error is up to ~1.5 % at 180 BPM) */
+    else cz_ext_q = (uint32_t)((int32_t)cz_ext_q + (((int32_t)(t << 4) - (int32_t)cz_ext_q) >> 5));
+    t = (cz_ext_q + 8u) >> 4;
+    if (!cz_ext_shown || t >= cz_ext_shown + 3u || t + 3u <= cz_ext_shown) cz_ext_shown = t;
+    return cz_ext_shown;
+}
+static int cos_follows(void) { return song.g[G_CLOCK] && midi_beat_samples; }   /* (an external clock leads now) */
+
 /* HOME held + white 16: TAP TEMPO. The last eight taps' gaps averaged (a gap over 2 s starts again), BPM in tenths */
 static struct { uint32_t t[8]; uint8_t n; } cz_tap;
 static __attribute__((noinline)) void cos_tap(uint32_t now)
 {
     uint32_t i;
+    if (cos_follows()) { cos_say("EXT CLOCK LEADS"); return; }   /* (the clock's tempo, not a tap's) */
     if (cz_tap.n && now - cz_tap.t[cz_tap.n - 1u] > 2000u) cz_tap.n = 0;
     if (cz_tap.n == 8u) { for (i = 0; i < 7u; i++) cz_tap.t[i] = cz_tap.t[i + 1u]; cz_tap.n = 7; }
     cz_tap.t[cz_tap.n++] = now;
@@ -753,6 +786,10 @@ static void cos_turn(uint32_t k, int32_t s)
     if (!d || !vp || d->max == d->min) return;
     if (cz.mode == CM_SRC || cz.mode == CM_AMP || cz.mode == CM_FX) { cz.lk_mode = cz.mode; cz.lk_tab = cz.tab[cz.mode]; }
     if (cos_home_held()) cz.home_used = 1;               /* (HOME + a knob: no page turn when let go) */
+    if (p->id[k] == ID_BPM && cos_follows()) {           /* (an external clock leads: its tempo, not the knob's) */
+        cos_say("EXT CLOCK LEADS");
+        return;
+    }
     if (p->id[k] == ID_BPM) {                            /* BPM: a whole one a step (accelerated); HOME held: a tenth */
         v = *vp + (cos_home_held() ? (s > 0 ? 1 : -1) : 10 * accel(EN_K1 + k, s, 200));
         v = clamp(v, 400, 2400);
@@ -920,6 +957,11 @@ static __attribute__((noinline)) void cos_input(void)
         int h = cos_home_held(), dn = (int)((fm1_in.buttons >> panel.btn[B_OCTDN]) & 1u),
             up = (int)((fm1_in.buttons >> panel.btn[B_OCTUP]) & 1u);
         bpm_nudge = (int8_t)(h ? up - dn : 0);
+        if (bpm_nudge && cos_follows()) {                /* (an external clock leads: nothing to nudge here; the other
+                                                         * machine's tempo is nudged) */
+            bpm_nudge = 0;
+            cos_say("EXT CLOCK LEADS");
+        }
     }
     fx_lock_on = 0;
     for (k = 0; k < 32u && pressed; k++) {
@@ -1205,7 +1247,8 @@ static void cos_head(void)
         cos_tx(32 + 8 * 6, 3, b, C_DIM);
     }
     b[0] = 0;
-    if (bpm_frac) cos_bpm_text(b, song.g[G_BPM] * 10 + bpm_frac % 10u);
+    if (cos_follows()) cos_bpm_text(b, (int32_t)cos_ext10());   /* (following a clock: its tempo, steady, in tenths) */
+    else if (bpm_frac) cos_bpm_text(b, song.g[G_BPM] * 10 + bpm_frac % 10u);
     else fmt_int(b, song.g[G_BPM]);
     if (bpm_nudge) str_cpy(b + str_len(b), bpm_nudge > 0 ? "+" : "-", 2);   /* (nudged: 3 %, red) */
     cos_txr(226, 3, b, bpm_nudge ? C_RED : C_FG);
@@ -1312,6 +1355,7 @@ static void cos_dial(int32_t cx, int32_t cy, uint32_t k)
     cos_txc(cx, cy + r + 4, CZ_LBL, b, C_MID);
     param_format(d, v, val, &unit);
     if (p->id[k & 3u] == ID_BPM) cos_bpm_text(val, v);
+    if (p->kind == CK_COS && p->id[k & 3u] == CC_MOCC && v < 0) { str_cpy(val, "OFF", sizeof val); unit = 0; }
     cos_up(val);
     if (str_len(val) > 7u) val[7] = 0;
     cos_txc(cx, cy + r + 15 + (str_len(val) > 5u ? 3 : 0), str_len(val) > 5u ? CZ_LBL : CZ_TALL, val, hot ? C_RED : C_FG);   /* (a long word in the
@@ -1833,7 +1877,11 @@ static void cos_body_link2(void)
         cos_tx(8, 54 + (int32_t)k * 12, b, C_MID);
     }
     cos_tx(8, 108, m == 2u ? "FX: THE SYNTAKT'S FX CHANNEL" : m == 1u ? "TRACK: A SYNTAKT TRACK'S CH" : "OWN: LINK 3, EACH ONE'S CC", C_DIM);
-    cos_tx(8, 124, "IN: MIDI JACK  OUT: USB, BT", C_DIM);
+    if (cos_mo_cc) {                                     /* (MORPH's A-B on a CC too) */
+        str_cpy(b, "MORPH A-B: CC ", sizeof b); fmt_int(b + str_len(b), cos_mo_cc - 1u);
+        cos_tx(8, 118, b, C_MID);
+    }
+    cos_tx(8, 132, "IN: MIDI JACK  OUT: USB, BT", C_DIM);
 }
 
 /* GLO > LINK: what the PROGRAM CHANGEs do */

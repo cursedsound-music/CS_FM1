@@ -2230,6 +2230,7 @@ static __attribute__((noinline)) void ui_polls(void)
             for (k = 0; k < 4u; k++)
                 cos_mc_cc[k] = (uint8_t)(m[AT[k]] && m[AT[k]] <= 128u ? m[AT[k]] - 1u : DEF[k]);
             cos_mc_dir = (uint8_t)(m[2] <= 2u ? m[2] : 0u);
+            cos_mo_cc = (uint8_t)(m[6] <= 128u ? m[6] : 0u);   /* ([30] MORPH's CC + 1, 0 OFF) */
         }
     }
 }

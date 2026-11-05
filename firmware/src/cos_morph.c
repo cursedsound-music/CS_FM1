@@ -61,6 +61,10 @@ static void mph_apply(int32_t pos)
         if (a[n] != b[n]) macro_v[i] = (uint8_t)clamp(MO_AT(n), 0, 127);
 #undef MO_AT
 }
+/* (LINK 2) MORPH's A-B as a CC on MAC CH (cos_mo_cc + 1, 0 OFF): in (midi_control.c midi_event), an Octatrack's
+ * crossfader or any fader moves it (cos_mo_in: the value + 1, taken here in mph_tick); out, a glide or KNOB 1 sends it
+ * (cos_live.c live_tick; cos_mo_sent: the last sent or come in, as the macros') */
+static volatile uint8_t cos_mo_cc, cos_mo_in, cos_mo_sent = 0xFFu;
 static uint32_t mph_bar(void) { return beat_samples() * 4u; }
 /* KNOB 1: by hand (0 .. 100), a glide let go */
 static void mph_hand(int32_t v)
@@ -74,6 +78,13 @@ static void mph_tick(void)
 {
     uint32_t bar, now, l, t;
     int32_t p;
+    if (cos_mo_in) {                             /* (LINK 2: the other machine's crossfader, by hand as KNOB 1) */
+        uint32_t v = cos_mo_in - 1u;
+        cos_mo_in = 0;
+        mph.gl = mph.run = 0;
+        mph.pos = (int16_t)((v * 1000u + 63u) / 127u);
+        mph_apply(mph.pos);
+    }
     if (!mph.gl) return;
     if (mph.run && mph.rp != (song.playing != 0)) {  /* (the transport started or stopped meanwhile: on from here) */
         mph.from = mph.pos;

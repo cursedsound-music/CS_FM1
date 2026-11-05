@@ -119,10 +119,16 @@ static __attribute__((noinline)) void live_tick(uint32_t n)
     if (bd_kill) { bd_kill = 0; bd_state = BD_OFF; bd_req = 0; }
     if (cos_mc_ch && cos_mc_dir != 2u) {              /* (LINK 2: a macro that moved, out as its CC; one a block) */
         static uint8_t rr;
-        uint32_t k = rr++ & 3u;
-        if (macro_v[k] != cos_mc_sent[k]) {
+        uint32_t k = rr++ % 5u;
+        if (k < 4u && macro_v[k] != cos_mc_sent[k]) {
             cos_mc_sent[k] = macro_v[k];
             mo_send(0xB0u | (cos_mc_ch - 1u), cos_mc_cc[k] & 127u, macro_v[k] & 127u);
+        } else if (k == 4u && cos_mo_cc && !cos_mo_in) {   /* (MORPH's A-B, unless one just came in) */
+            uint32_t v = ((uint32_t)clamp(mph.pos, 0, 1000) * 127u + 500u) / 1000u;
+            if (v != cos_mo_sent) {
+                cos_mo_sent = (uint8_t)v;
+                mo_send(0xB0u | (cos_mc_ch - 1u), (cos_mo_cc - 1u) & 127u, v);
+            }
         }
     }
     if (cos_pc_out_req) {                             /* (LINK: a section asked for, its PROGRAM CHANGE out) */

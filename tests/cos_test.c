@@ -1130,7 +1130,7 @@ int main(void)
         for (i2 = 0; i2 < 8u; i2++) live_tick(64);            /* (settled) */
         w0 = mo_w;
         macro_v[2] = 99;
-        for (i2 = 0; i2 < 4u; i2++) live_tick(64);
+        for (i2 = 0; i2 < 5u; i2++) live_tick(64);           /* (one CC a block, round the four macros and MORPH) */
         for (i2 = w0; i2 != mo_w; i2++) {
             uint32_t pk = midi_out_q[i2 % MQ], st = (pk >> 8) & 0xFFu, d1 = (pk >> 16) & 0xFFu, d2 = pk >> 24;
             if (st == 0xB1u && d1 == 72u) { got++; gv = d2; }
@@ -1145,9 +1145,63 @@ int main(void)
         cos_cput(CC_MCDIR, 1);
         midi_event(0xB0u, 1u, 70u, 5u);
         CHECK(macro_v[0] == 0u, "OUT only: the other machine's CC not taken");
+        /* MORPH's A-B on CC 30: in from the other machine's crossfader, out from a glide; never echoed */
+        cos_cput(CC_MCDIR, 0);
+        cos_cput(CC_MOCC, 30);
+        CHECK(cos_mo_cc == 31u && favorites.factory[8][30] == 31u && cos_cdesc(CC_MOCC, &vp) && *vp == 30, "MO CC 30, kept");
+        memset(&mph, 0, sizeof mph); mph.bars = 3;
+        trk[1].p[P_LEVEL] = 100; mph_read(mph.s[0]); trk[1].p[P_LEVEL] = 0; mph_read(mph.s[1]); mph.set = 3;
+        midi_event(0xB0u, 1u, 30u, 127u);                     /* (the crossfader to the right: B) */
+        ui_input();
+        CHECK(mph.pos == 1000 && trk[1].p[P_LEVEL] == 0, "CC 30 127 in: at B (%d)", mph.pos);
+        midi_event(0xB0u, 1u, 30u, 32u); ui_input();
+        CHECK(mph.pos > 240 && mph.pos < 270 && trk[1].p[P_LEVEL] > 70 && trk[1].p[P_LEVEL] < 80, "CC 30 32: a quarter (%d, LEVEL %d)", mph.pos, trk[1].p[P_LEVEL]);
+        w0 = mo_w; back = 0;
+        for (i2 = 0; i2 < 10u; i2++) live_tick(64);
+        for (i2 = w0; i2 != mo_w; i2++) if ((((midi_out_q[i2 % MQ]) >> 16) & 0xFFu) == 30u) back++;
+        CHECK(back == 0u, "the crossfader's value not sent back (%u)", back);
+        mph_hand(75);
+        w0 = mo_w; got = gv = 0;
+        for (i2 = 0; i2 < 10u; i2++) live_tick(64);
+        for (i2 = w0; i2 != mo_w; i2++) {
+            uint32_t pk = midi_out_q[i2 % MQ];
+            if (((pk >> 8) & 0xFFu) == 0xB1u && ((pk >> 16) & 0xFFu) == 30u) { got++; gv = pk >> 24; }
+        }
+        CHECK(got == 1u && gv == 95u, "KNOB 1 at 75: out as CC 30 95, once (%u, %u)", got, gv);
+        cos_cput(CC_MOCC, -1);
+        CHECK(!cos_mo_cc && !favorites.factory[8][30], "MO CC OFF");
+        memset(&mph, 0, sizeof mph); mph.bars = 3;
         mo_r = mo_w; usb.config = 0;
         cos_cput(CC_MCCH, 0); cos_cput(CC_MCDIR, 0);
         macro_v[0] = macro_v[1] = macro_v[2] = macro_v[3] = 0;
+    }
+
+    /* an external clock: the header's tempo steady (a quarter beat measured in ms: +-1 % each reading), its tempo
+     * jumps taken at once; HOME + OCT and TAP do nothing then */
+    {
+        uint32_t f, lo = 9999, hi = 0, ch = 0, last = 0, s = 12345;
+        song.g[G_CLOCK] = 1;
+        for (f = 0; f < 400u; f++) {                          /* (128 BPM: a quarter beat 117.2 ms, read as 116 .. 118) */
+            uint32_t dt, v;
+            s = s * 1103515245u + 12345u;
+            dt = 116u + (s >> 16) % 3u;
+            midi_beat_samples = (uint32_t)FS * dt / 250u;
+            v = cos_ext10();
+            if (f > 100u) { if (v < lo) lo = v; if (v > hi) hi = v; if (last && v != last) ch++; }
+            last = v;
+        }
+        CHECK(lo >= 1270u && hi <= 1290u, "128 BPM shown 127.0 .. 129.0 at worst (%u .. %u)", lo, hi);
+        CHECK(ch < 30u, "and steady: %u changes in 300 frames", ch);
+        midi_beat_samples = (uint32_t)FS * 100u / 250u;        /* (150 BPM: a jump) */
+        CHECK(cos_ext10() > 1480u, "a tempo change taken at once (%u)", cos_ext10());
+        {
+            int16_t b0 = song.g[G_BPM];
+            cz.msg[0] = 0;
+            cos_tap(1000); cos_tap(1500);
+            CHECK(!strcmp(cz.msg, "EXT CLOCK LEADS") && song.g[G_BPM] == b0, "TAP: the clock leads (%s)", cz.msg);
+        }
+        midi_beat_samples = 0; song.g[G_CLOCK] = 0;
+        CHECK(cos_ext10() == 0u && !cos_follows(), "its own tempo again");
     }
 
     printf("cos_test: %s (%d failures)\n", fails ? "FAILED" : "ok", fails);

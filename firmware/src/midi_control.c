@@ -401,6 +401,7 @@ static volatile uint8_t cos_vj_ch;
  * FREQ 70, RESO 71 (B.10), the DELAY's FEEDBACK 24, the REVERB's DECAY 30 (B.7: the appendix names no channel for
  * these; 21..27 are a track's SYN knobs E..H and its FILTER BASE / WIDTH, so they are the FX channel's) */
 static volatile uint8_t cos_mc_ch, cos_mc_cc[4] = {74, 75, 84, 85}, cos_mc_dir, cos_mc_sent[4];
+/* (cursed-os) .. and MORPH's A-B as a CC on the same channel: cos_morph.c's cos_mo_cc, cos_mo_in */
 
 /* Keep the occasional controller/panic dispatch outside the hot rendering loop. Channel voice messages only
  * (realtime and clock are handled in events_block, SysEx never reaches here). With ROUT CH1-6 channels
@@ -416,6 +417,11 @@ static void __attribute__((noinline)) midi_event(uint32_t st, uint32_t ch, uint3
     if (st == 0xB0u && cos_mc_ch && ch == cos_mc_ch - 1u && cos_mc_dir != 1u) {   /* (cursed-os) LINK 2: the other
                                                          * machine's knob, a macro (each one its CC is) */
         uint32_t k, hit = 0;
+        if (cos_mo_cc && d1 == cos_mo_cc - 1u) {         /* (MORPH's A-B) */
+            cos_mo_in = (uint8_t)(d2 + 1u);
+            cos_mo_sent = (uint8_t)d2;
+            hit = 1;
+        }
         for (k = 0; k < 4u; k++)
             if (d1 == cos_mc_cc[k]) {
                 macro_v[k] = (uint8_t)d2;
