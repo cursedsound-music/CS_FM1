@@ -243,8 +243,11 @@ static __attribute__((noinline)) void live_q(uint32_t n)
             lv.act |= (uint8_t)bit;
         }
         lv.rj[i] = (int8_t)(lv.rj[i] + w.rot - c->rot);   /* (GIRO: live_next) */
+        if (rq != LQ_NONE || memcmp(c, &w, sizeof w))  /* (cursed-os) only when it changed: the 1/16's pass with nothing
+                                                         * asked kept the next step live_next had already worked out (a
+                                                         * GIRO set before PLAY was lost at the first 1/16) */
+            t->jump_to = 0;                             /* (live_adv: the next step again, by the new window) */
         *c = w;
-        t->jump_to = 0;                                 /* (live_adv: the next step again, by the new window) */
         if (lv_phase0(c)) {                             /* in phase again: onto the ghost */
             t->seq_idx = lv.gidx[i];
             t->seq_pos = lv.gpos[i];

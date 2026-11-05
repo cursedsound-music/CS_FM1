@@ -235,8 +235,9 @@ static void track_dist(track_t *t, int32_t *b, uint32_t n)
 /* master: peak limiter in front of the soft clipper. Fast attack (~0.1 ms),
  * ~150 ms release, threshold where tanh is still nearly linear, so chords
  * get quieter instead of crushed. */
-#define LIM_T0 18000
-static volatile int32_t lim_t = LIM_T0;               /* (cursed-os) GLO > MASTER LIMIT: the ceiling, 0 .. -12 dB of LIM_T0 */
+#define LIM_T0 18054                                  /* (cursed-os: -6.0 dBFS out of the soft clip; JIANT's 18000) */
+static volatile int32_t lim_t = LIM_T0;               /* (cursed-os) GLO > MASTER LIMIT: the ceiling, the output's peak -6 ..
+                                                         * -18 dBFS (ui_input.c ui_polls' LIM) */
 #define LIM_T lim_t
 static int32_t lim_env = LIM_T0;
 /* (JIANT) CLIP (G_CLIP 0..100): the mix driven x1 .. x4 into the soft clip ahead of the limiter, its level kept near
@@ -323,7 +324,12 @@ static __attribute__((noinline)) void comp_block(uint32_t n)
             pk = r > pk ? r : pk;
         }
         pk = pk > (1 << 21) ? 1 << 21 : pk;                     /* (2^21, not 2^22: -2^22 is 0xFFC00000, the ROM check reads it as an address) */
-        comp_env += pk > comp_env ? (((pk - comp_env) >> 8) * ka) >> 8 : -((((comp_env - pk) >> 8) * kr) >> 8) - 1;
+        {                                               /* (the follower in full: a step under 256 kept, so a quiet mix is
+                                                         * read at its level; THRESH -36 had read it up to 3 dB low) */
+            int32_t d = pk > comp_env ? pk - comp_env : comp_env - pk, k = pk > comp_env ? ka : kr;
+            int32_t st = (((d >> 8) * k) >> 8) + (((d & 255) * k) >> 16);
+            comp_env += pk > comp_env ? st : -st - 1;
+        }
         comp_env = comp_env < 0 ? 0 : comp_env;
         over = comp_lg2((uint32_t)(comp_env > 0 ? comp_env : 1)) - thr;
         if (2 * over <= -kw)

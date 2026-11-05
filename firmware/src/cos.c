@@ -163,6 +163,7 @@ static int cos_active(void) { return (COS_DEFAULT ^ cz.flip) != 0; }
 #endif
 
 static int cos_kit(void) { return drum_track(TSEL) != 0; }
+static int cos_dead(const track_t *t, uint32_t id);      /* (below: a parameter the track's engine does not use) */
 static void cos_pages(uint32_t m, const cpg_t **p, uint32_t *n)
 {
     static const cpg_t *const P[CM_N] = {CZP_HOME, CZP_TRIG, CZP_SRC, CZP_AMP, CZP_DRONE, CZP_FX, CZP_GENA, CZP_MIX, CZP_KEY, CZP_PROJ};
@@ -178,6 +179,19 @@ static void cos_pages(uint32_t m, const cpg_t **p, uint32_t *n)
     }
     *p = vo ? CZP_SRCV : m == CM_AMP && trk_engp(TSEL) == &ENG_ANALOG ? CZP_AMPA : P[m % CM_N];
     *n = N[m % CM_N] + (uint32_t)vo;                                      /* (VOICE: WORDS too) */
+    if (m == CM_AMP) {                                   /* (a page all of whose knobs the engine does not use: left out,
+                                                         * cos_dead; a kit's AMP, ACID's AMP and ENV MOD) */
+        static cpg_t keep[12];
+        uint32_t i, j, o = 0;
+        for (i = 0; i < *n && o < NELEM(keep); i++) {
+            const cpg_t *q = &(*p)[i];
+            uint32_t live = q->kind != CK_TRK;
+            for (j = 0; j < 4u && !live; j++)
+                live = q->id[j] != 0xFFu && !cos_dead(TSEL, q->id[j]);
+            if (live) keep[o++] = *q;
+        }
+        if (o != *n) { *p = keep; *n = o; }
+    }
 }
 static const cpg_t *cos_page(void)
 {
@@ -190,18 +204,26 @@ static const cpg_t *cos_page(void)
 static int cos_on_words(void) { return cz.mode == CM_SRC && trk_engp(TSEL) == &ENG_FORMANT && cz.tab[CM_SRC] % 8u == 2u; }
 static void cos_say(const char *s) { str_cpy(cz.msg, s, sizeof cz.msg); cz.msg_ms = fm1_ms; }
 static uint32_t cos_ext10(void);                        /* (below: an external clock's tempo) */
-/* (cursed-os) the delay's TIME, right is longer: the divisions shortest to longest (1/32 .. 4BAR, the dotted and the
- * triplets in their places), then the free times 5 ms .. (JIANT's own order: 4BAR down to 1/32, then 5 ms up) */
-#define COS_DT_SYNC 13u
-static const uint8_t COS_DT[COS_DT_SYNC] = {3, 5, 2, 4, DT_DOT + 1u, 1, DT_DOT, 0, DT_DOT + 2u, 6, 7, 8, 9};
+/* (cursed-os) the delay's TIME, right is longer: the divisions shortest to longest (1/32 .. 1/1, the dotted and the
+ * triplets in their places), then the free times 5 ms .. (JIANT's own order: 4BAR down to 1/32, then 5 ms up). 2BAR and
+ * 4BAR left out: past the line (DLY_MAX, 2.97 s) under 162 / 323 BPM, so they were 2.97 s, not what they said
+ * (tests/cos_acc_test.c). Their places (COS_DT_SYNC, + 1) a gap the turn steps over; one a project brings shows as 1/1 */
+#define COS_DT_SYNC 11u
+static const uint8_t COS_DT[COS_DT_SYNC] = {3, 5, 2, 4, DT_DOT + 1u, 1, DT_DOT, 0, DT_DOT + 2u, 6, 7};
 static int32_t cos_dt_rank(int32_t i)                    /* N_DTIME's index -> its place */
 {
     uint32_t r;
     for (r = 0; r < COS_DT_SYNC; r++)
         if (COS_DT[r] == (uint32_t)i) return (int32_t)r;
-    return (int32_t)COS_DT_SYNC + i - 10;               /* (the free times: 10 .. DT_DOT - 1) */
+    if (i == 8 || i == 9) return (int32_t)COS_DT_SYNC - 1;   /* (2BAR, 4BAR: at 1/1's place) */
+    return (int32_t)COS_DT_SYNC + 2 + i - 10;           /* (the free times: 10 .. DT_DOT - 1) */
 }
-static int32_t cos_dt_index(int32_t r) { return r < (int32_t)COS_DT_SYNC ? COS_DT[r] : r - (int32_t)COS_DT_SYNC + 10; }
+/* a place -> N_DTIME's index; one in the gap: past it, the way turned (dir) */
+static int32_t cos_dt_index(int32_t r, int32_t dir)
+{
+    if (r >= (int32_t)COS_DT_SYNC && r < (int32_t)COS_DT_SYNC + 2) r = dir > 0 ? (int32_t)COS_DT_SYNC + 2 : (int32_t)COS_DT_SYNC - 1;
+    return r < (int32_t)COS_DT_SYNC ? COS_DT[r] : r - (int32_t)COS_DT_SYNC - 2 + 10;
+}
 static int cos_follows(void);
 /* GLO > LINK 2 / 3: the macros as CCs; MAP: a Syntakt's (midi_control.c's note) */
 static const uint8_t MC_MAP[2][4] = {{74, 75, 84, 85}, {70, 71, 24, 30}};   /* ST TRACK, ST FX */
@@ -420,8 +442,14 @@ static const param_desc_t *cos_cdesc(uint32_t id, int16_t **vp)
     }
     if (id >= CC_EQL && id <= CC_EQH) {                  /* HOME > ISOLATOR: the master EQ's bands (fx.c eq_block): LOW, MID (its
                                                          * two middle bands together), HIGH */
-        static const param_desc_t DE[3] = {{"LOW", F_INT, -12, 6, 0, 0, "dB"}, {"MID", F_INT, -12, 6, 0, 0, "dB"},
-                                           {"HIGH", F_INT, -12, 6, 0, 0, "dB"}};
+        /* what each step really does to its band's own (a sine at 50 Hz, 1 kHz, 12 kHz through eq_block: tests/cos_acc_test.c
+         * t_iso): the one-pole split leaves part of a band in its neighbours, so -12 on the EQ's gain is a gentler cut of the
+         * band as heard, -9 dB for LOW and MID, -6 for HIGH (the knob's steps as they were: a project's eq_v the same) */
+        static const char *const ISO_LO[20] = {"-9.3", "-8.7", "-8.2", "-7.4", "-6.7", "-6.0", "-5.3", "-4.5", "-3.5", "-2.6", "-1.8", "-0.8", "0.0", "+0.8", "+1.8", "+2.8", "+3.8", "+4.7", "+5.7", 0};
+        static const char *const ISO_MI[20] = {"-9.8", "-9.1", "-8.4", "-7.5", "-6.7", "-5.9", "-5.2", "-4.4", "-3.4", "-2.5", "-1.8", "-0.8", "0.0", "+0.8", "+1.8", "+2.7", "+3.6", "+4.6", "+5.5", 0};
+        static const char *const ISO_HI[20] = {"-6.0", "-5.6", "-5.3", "-4.8", "-4.4", "-4.0", "-3.6", "-3.0", "-2.4", "-1.8", "-1.3", "-0.6", "0.0", "+0.6", "+1.4", "+2.1", "+2.9", "+3.7", "+4.5", 0};
+        static const param_desc_t DE[3] = {{"LOW", F_INT, -12, 6, 0, ISO_LO, "dB"}, {"MID", F_INT, -12, 6, 0, ISO_MI, "dB"},
+                                           {"HIGH", F_INT, -12, 6, 0, ISO_HI, "dB"}};
         static const uint8_t B[3] = {0, 1, 3};
         cz.cc_v[14] = eq_v[B[id - CC_EQL]];
         *vp = &cz.cc_v[14];
@@ -529,10 +557,11 @@ static const param_desc_t *cos_cdesc(uint32_t id, int16_t **vp)
                                                          * bytes 4 .. 7 (ui_input.c ui_polls) */
         static const char *const OF[2] = {"OFF", "ON"};
         static const param_desc_t DM[4] = {{"COMP", F_ENUM, 0, 1, 0, OF, 0}, {"ATTACK", F_INT, 0, 100, 20, 0, 0},
-                                           {"RELEASE", F_INT, 0, 100, 40, 0, 0}, {"CEILING", F_INT, -12, 0, 0, 0, "dB"}};
+                                           {"RELEASE", F_INT, 0, 100, 40, 0, 0}, {"CEILING", F_INT, -18, -6, -6, 0, "dB"}};   /* (the
+                                                         * output's peak, dBFS: the soft clip after it counted) */
         const uint8_t *m = &favorites.factory[15][4];
         uint32_t i = id - CC_COMP;
-        cz.cc_v[6 + i] = (int16_t)(i == 0u ? m[0] != 0u : i == 3u ? -(int32_t)m[3] : i == 1u ? (m[1] ? m[1] - 1 : 20) : (m[2] ? m[2] - 1 : 40));
+        cz.cc_v[6 + i] = (int16_t)(i == 0u ? m[0] != 0u : i == 3u ? -6 - (int32_t)m[3] : i == 1u ? (m[1] ? m[1] - 1 : 20) : (m[2] ? m[2] - 1 : 40));
         *vp = &cz.cc_v[6 + i];
         return &DM[i];
     }
@@ -671,18 +700,38 @@ static void cos_cput(uint32_t id, int32_t v)
     } else if (id >= CC_COMP && id <= CC_LIM) {
         uint8_t *m = &favorites.factory[15][4];
         uint32_t i = id - CC_COMP;
-        m[i] = (uint8_t)(i == 0u ? (v ? 100 : 0) : i == 3u ? -clamp(v, -12, 0) : clamp(v, 0, 100) + 1);
+        m[i] = (uint8_t)(i == 0u ? (v ? 100 : 0) : i == 3u ? -6 - clamp(v, -18, -6) : clamp(v, 0, 100) + 1);
         cz.set_ms = fm1_ms;                              /* (saved when the knob rests: cos_input) */
     } else
         song.g[G_CLOCK] = (int16_t)clamp(v, GP[G_CLOCK].min, GP[G_CLOCK].max);
 }
 
 /* knob k of the page: its description and its value (0: none) */
+/* (cursed-os) a track's parameter its engine does not use: no dial for it (a blank), so no knob turns nothing.
+ *   a kit (DRUM-X): its lanes' own envelopes (drum_amp): no ATTACK DECAY SUSTAIN RELEASE, no ENV MOD to PITCH or
+ *     SHAPE (it reads neither), no GLIDE, no GATE (one-shots), no SCALE or QUANT (hits, not notes)
+ *   an engine with its own envelopes (ACID, FM6, STRING: ownenv): no ADSR (STRING's RELEASE is its damper's), no ENV
+ *     MOD (ENV is 0 for them)
+ *   ACID: one voice (no unison: no DETUNE), no SHAPE (it reads none: no LFO to SHAPE) */
+static int cos_dead(const track_t *t, uint32_t id)
+{
+    const engine_t *e = trk_engp(t);
+    if (e == &ENG_DRUM)
+        return id == P_ATK || id == P_DEC || id == P_SUS || id == P_REL || id == P_ED_PIT || id == P_ED_SHP ||
+               id == P_GLIDE || id == P_SGATE || id == P_SCALE || id == P_QUANT;   /* (and no scale: hits) */
+    if (e->ownenv && (id == P_ATK || id == P_DEC || id == P_SUS || (id == P_REL && e != &ENG_STRING) ||
+                      id == P_ED_FLT || id == P_ED_PIT || id == P_ED_SHP))
+        return 1;
+    if (e == &ENG_ACID && (id == P_DETUNE || id == P_LD_SHP))
+        return 1;
+    return 0;
+}
 static const param_desc_t *cos_knob(const cpg_t *p, uint32_t k, int16_t **vp)
 {
     uint32_t id = p->id[k & 3u];
     *vp = 0;
     if (id == 0xFFu) return 0;
+    if (p->kind == CK_TRK && cos_dead(TSEL, id)) return 0;   /* (this engine does not use it) */
     if (id == ID_OCT) return cos_cdesc(CC_OCT, vp);     /* (any page's: the track's OCTAVE) */
     if (id == ID_BPM) return cos_cdesc(CC_BPM, vp);
     if (id == ID_MUTEQ) return cos_cdesc(CC_MUTEQ, vp);
@@ -812,7 +861,7 @@ static void cos_turn(uint32_t k, int32_t s)
         return;
     }
     if (d->names == N_DTIME)                             /* (the delay's TIME: by length, cos_dt_rank) */
-        v = d->min + cos_dt_index(clamp(cos_dt_rank(*vp - d->min) + accel(EN_K1 + k, s, 0), 0, d->max - d->min));
+        v = d->min + cos_dt_index(clamp(cos_dt_rank(*vp - d->min) + accel(EN_K1 + k, s, 0), 0, d->max - d->min), s);
     else
         v = param_turn(d, *vp, accel(EN_K1 + k, s, d->fmt == F_ENUM ? 0 : d->max - d->min));
     cz.hot = (uint8_t)(k + 1u);
@@ -1873,6 +1922,7 @@ static void cos_body_lim(void)
     int32_t gr = lim_env > lim_t ? comp_lg2((uint32_t)lim_env) - comp_lg2((uint32_t)lim_t) : 0;
     cos_tx(8, 40, "DRIVE>LIMIT>CLIP>OUT", C_MID);
     cos_gr_meter(58, "LIMIT GAIN REDUCTION", gr, 1);
+    cos_tx(8, 88, "CEILING: THE PEAK OUT, DBFS", C_DIM);
     cos_tx(8, 100, "DRIVE: HARDER INTO CEILING", C_DIM);
     cos_tx(8, 112, "AUTO LV ON: THE LEVELER", C_DIM);
     cos_tx(8, 124, "RIDES THE LOUDNESS. OFF: NOT", C_DIM);
@@ -1999,7 +2049,7 @@ dials:
 /* the splash (ui_draw.c draw_splash / splash_write under COS_SLIM; main.c's boot loop calls it every ~4 ms for
  * SPL_WRITE + SPL_HOLD ms): black, a few still stars, the name 2x, the version, a 16-block bar filling like a pattern
  * (the block being filled red), READY. Drawn whole once, then only the bar's strip when a block fills */
-#define COS_VERSION "0.5"
+#define COS_VERSION "0.5.1"
 static void cos_px2(int32_t x, int32_t y, const char *s, uint16_t c)      /* (the face 2 x 2) */
 {
     int32_t r, b, b0;

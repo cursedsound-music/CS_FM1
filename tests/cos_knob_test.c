@@ -145,9 +145,10 @@ int main(void)
         CHECK(preset_pos(&tot) == (p0 + 1u) % tot, "PRESETS clockwise: the next sound (%u -> %u of %u)", p0, preset_pos(&tot), tot);
         for (k = 0; k < NE; k++) CHECK(panel.dir[k] == 1, "encoder role %u: clockwise is + (PANEL_DEFAULT)", k);
     }
-    /* the delay's TIME: right is longer all the way (1/32 .. 4BAR, then 5 ms .. the longest), each value once */
+    /* the delay's TIME: right is longer all the way (1/32 .. 1/1, then 5 ms .. the longest), each value once but 2BAR
+     * and 4BAR (past the line: cos.c COS_DT) */
     {
-        static const char *const SYNCN[13] = {"1/32", "16T", "1/16", "8T", "1/16D", "1/8", "1/8D", "1/4", "1/4D", "1/2", "1/1", "2BAR", "4BAR"};
+        static const char *const SYNCN[11] = {"1/32", "16T", "1/16", "8T", "1/16D", "1/8", "1/8D", "1/4", "1/4D", "1/2", "1/1"};
         int16_t *vp;
         const param_desc_t *d;
         uint32_t i, seen[128] = {0}, ok = 1, n = 0;
@@ -155,16 +156,24 @@ int main(void)
         d = cos_knob(cos_page(), 0, &vp);
         for (i = 0; i < 200u; i++) { host_ticks += 1000000u; cos_turn(0, -1); }
         CHECK(!strcmp(d->names[*vp - d->min], "1/32"), "all the way left: 1/32 (%s)", d->names[*vp - d->min]);
-        for (i = 0; i < 13u; i++) {
+        for (i = 0; i < 11u; i++) {
             ok &= !strcmp(d->names[*vp - d->min], SYNCN[i]);
             seen[(*vp - d->min) & 127]++; n++;
             host_ticks += 1000000u; cos_turn(0, 1);
         }
-        CHECK(ok, "the divisions shortest to longest, 1/32 .. 4BAR");
+        CHECK(ok, "the divisions shortest to longest, 1/32 .. 1/1");
         CHECK(!strcmp(d->names[*vp - d->min], "5ms"), "then the free times from 5 ms (%s)", d->names[*vp - d->min]);
         for (i = 0; i < 200u; i++) { int32_t a = *vp; seen[(a - d->min) & 127]++; n++; host_ticks += 1000000u; cos_turn(0, 1); if (*vp == a) break; }
-        for (i = 0; i <= (uint32_t)(d->max - d->min); i++) ok &= seen[i] == 1u;
-        CHECK(ok && n == (uint32_t)(d->max - d->min + 1), "every TIME once on the way (%u of %d)", n, d->max - d->min + 1);
+        for (i = 0; i <= (uint32_t)(d->max - d->min); i++) ok &= seen[i] == (i == 8u || i == 9u ? 0u : 1u);
+        CHECK(ok && n == (uint32_t)(d->max - d->min - 1), "every TIME once on the way (%u of %d)", n, d->max - d->min - 1);
+        *vp = (int16_t)(d->min + 8);                      /* (a project's 2BAR: at 1/1's place, a turn on from there) */
+        CHECK(cos_dial_at(d, *vp) == cos_dial_at(d, d->min + 7), "2BAR from a project: the pointer at 1/1's place");
+        host_ticks += 1000000u; cos_turn(0, 1);
+        CHECK(!strcmp(d->names[*vp - d->min], "5ms"), "2BAR, a turn right: 5ms (%s)", d->names[*vp - d->min]);
+        *vp = (int16_t)(d->min + 8);
+        host_ticks += 1000000u; cos_turn(0, -1);
+        CHECK(!strcmp(d->names[*vp - d->min], "1/2"), "2BAR, a turn left: 1/2 (%s)", d->names[*vp - d->min]);
+        *vp = (int16_t)d->def;
     }
     printf("cos_knob_test: %d knobs turned (%d at their top), %s (%d failures)\n", checked, at_top, fails ? "FAILED" : "ok", fails);
     return fails != 0;

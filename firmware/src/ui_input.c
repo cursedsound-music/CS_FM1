@@ -2195,7 +2195,10 @@ static __attribute__((noinline)) void ui_polls(void)
     }
     {                                                   /* (cursed-os) GLO > MASTER (fx.c comp_block, the limiter): bytes 4 .. 7
                                                          * of engine 15's, COMP, ATTACK + 1, RELEASE + 1 (0: the default), LIMIT dB */
-        static const uint16_t LIM[13] = {18000, 16043, 14298, 12743, 11357, 10122, 9021, 8040, 7166, 6387, 5692, 5073, 4521};
+        static const uint16_t LIM[13] = {18054, 15749, 13810, 12157, 10731, 9493, 8412, 7463, 6628, 5891, 5239, 4662, 4149};
+                                                         /* (the output's peak after master_out's soft clip at -6 .. -18 dBFS
+                                                         * exactly: tests/cos_acc_test.c; was 18000 x 10^(-k/20), the clip
+                                                         * after it making CEILING 0 -5.9 dBFS and its steps 0.84 .. 0.98 dB) */
         const uint8_t *m = &favorites.factory[15][4];
         mc_amt = (uint8_t)(m[0] <= 100u ? m[0] : 0u);
         mc_atk = (uint8_t)(m[1] && m[1] <= 101u ? m[1] - 1u : 20u);

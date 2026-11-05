@@ -228,7 +228,7 @@ int main(void)
         CHECK(comp_gr == 0, "quiet: no reduction once released (%d)", comp_gr);
         CHECK(mix_l[20] >= 800 && mix_l[20] <= 1700, "quiet: about as it was, the makeup on it (%d)", mix_l[20]);
         favorites.factory[15][4] = 0; favorites.factory[15][7] = 6; ui_polls();
-        CHECK(mc_amt == 0 && lim_t == 9021, "COMP 0 off; LIMIT -6 dB: the ceiling halved (%d)", lim_t);
+        CHECK(mc_amt == 0 && lim_t == 8412, "COMP 0 off; LIMIT byte 6: CEILING -12 dBFS (%d)", lim_t);
         favorites.factory[15][7] = 0; ui_polls();
     }
 
@@ -1080,6 +1080,17 @@ int main(void)
         for (b = 0; b < 4u * beat / CTL; b++) { memset(o, 0, sizeof o); mix_block(o, CTL); if (trk[0].seq_idx > mx) mx = trk[0].seq_idx; }
         CHECK(mx > 8u, "all sixteen again (%u)", mx);
         transport_req = 2; ui_input();
+        /* SHIFT set while stopped: from the first step on, two ahead of track 2 (seq_live.c: was lost at the first
+         * 1/16, the track in phase) */
+        host_notes = 1u << WK[14]; cos_input(); host_notes = 0; cos_input();
+        for (b = 0; b < 2u * beat / CTL; b++) { memset(o, 0, sizeof o); mix_block(o, CTL); }
+        cos_cput(CC_LVSH, 2);
+        transport_req = 1; ui_input();
+        for (b = 0; b < (4u * beat + beat / 2u) / CTL; b++) { memset(o, 0, sizeof o); mix_block(o, CTL); }
+        CHECK(LV_ON(0) && trk[0].seq_idx % 16u == (trk[1].seq_idx + 2u) % 16u, "SHIFT 2 set while stopped: two ahead after PLAY (%u, track 2 %u)",
+              trk[0].seq_idx, trk[1].seq_idx);
+        transport_req = 2; ui_input();
+        host_notes = 1u << WK[14]; cos_input(); host_notes = 0; cos_input();
     }
 
     /* the FX lane: perform.c's effects too (REPEAT, the sweeps, the mutes, GLITCH, the LOOPs), played a block ahead so
