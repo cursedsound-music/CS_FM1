@@ -190,6 +190,18 @@ static const cpg_t *cos_page(void)
 static int cos_on_words(void) { return cz.mode == CM_SRC && trk_engp(TSEL) == &ENG_FORMANT && cz.tab[CM_SRC] % 8u == 2u; }
 static void cos_say(const char *s) { str_cpy(cz.msg, s, sizeof cz.msg); cz.msg_ms = fm1_ms; }
 static uint32_t cos_ext10(void);                        /* (below: an external clock's tempo) */
+/* (cursed-os) the delay's TIME, right is longer: the divisions shortest to longest (1/32 .. 4BAR, the dotted and the
+ * triplets in their places), then the free times 5 ms .. (JIANT's own order: 4BAR down to 1/32, then 5 ms up) */
+#define COS_DT_SYNC 13u
+static const uint8_t COS_DT[COS_DT_SYNC] = {3, 5, 2, 4, DT_DOT + 1u, 1, DT_DOT, 0, DT_DOT + 2u, 6, 7, 8, 9};
+static int32_t cos_dt_rank(int32_t i)                    /* N_DTIME's index -> its place */
+{
+    uint32_t r;
+    for (r = 0; r < COS_DT_SYNC; r++)
+        if (COS_DT[r] == (uint32_t)i) return (int32_t)r;
+    return (int32_t)COS_DT_SYNC + i - 10;               /* (the free times: 10 .. DT_DOT - 1) */
+}
+static int32_t cos_dt_index(int32_t r) { return r < (int32_t)COS_DT_SYNC ? COS_DT[r] : r - (int32_t)COS_DT_SYNC + 10; }
 static int cos_follows(void);
 /* GLO > LINK 2 / 3: the macros as CCs; MAP: a Syntakt's (midi_control.c's note) */
 static const uint8_t MC_MAP[2][4] = {{74, 75, 84, 85}, {70, 71, 24, 30}};   /* ST TRACK, ST FX */
@@ -799,7 +811,10 @@ static void cos_turn(uint32_t k, int32_t s)
         cz.hot_ms = fm1_ms;
         return;
     }
-    v = param_turn(d, *vp, accel(EN_K1 + k, s, d->fmt == F_ENUM ? 0 : d->max - d->min));
+    if (d->names == N_DTIME)                             /* (the delay's TIME: by length, cos_dt_rank) */
+        v = d->min + cos_dt_index(clamp(cos_dt_rank(*vp - d->min) + accel(EN_K1 + k, s, 0), 0, d->max - d->min));
+    else
+        v = param_turn(d, *vp, accel(EN_K1 + k, s, d->fmt == F_ENUM ? 0 : d->max - d->min));
     cz.hot = (uint8_t)(k + 1u);
     cz.hot_ms = fm1_ms;
     if (p->id[k] == ID_OCT) cos_cput(CC_OCT, v);
@@ -815,6 +830,14 @@ static void cos_turn(uint32_t k, int32_t s)
         (void)motion_capture(TSEL, p->id[k], (int16_t)v);
     }
     else *vp = (int16_t)v;
+    if (cos_page() != p) {                               /* (the turn changed the mode's pages: DUB on a MONO bass makes it
+                                                         * POLY, its GEN pages DUB first. The same page stays under the knob) */
+        const cpg_t *q;
+        uint32_t n, i;
+        cos_pages(cz.mode, &q, &n);
+        for (i = 0; i < n; i++)
+            if (!strcmp(q[i].tab, p->tab) && q[i].kind == p->kind) { cz.tab[cz.mode] = (uint8_t)i; break; }
+    }
 }
 
 /* the white key w (0..15) on TRIG: its step of the bank on or off (a kit: the lane's hit; a synth: a note, the
@@ -1315,6 +1338,15 @@ static void cos_tabs(void)
 
 /* the dial of knob k at (cx, cy): its arc 270 degrees, the value's part bright (red while turned), the label under it
  * and the value under that */
+/* where the dial shows v, lo .. hi: right is more, as the knob turns it (param_turn): CHANCE's F_PCTINV the other way
+ * round, an ordered list (enum_order) at its place in the order shown, the delay's TIME by length */
+static int32_t cos_dial_at(const param_desc_t *d, int32_t v)
+{
+    if (d->names == N_DTIME) return d->min + cos_dt_rank(v - d->min);
+    if (d->fmt == F_PCTINV) return d->max + d->min - v;
+    if (enum_order(d)) return enum_rank(d, v);
+    return v;
+}
 static void cos_dial(int32_t cx, int32_t cy, uint32_t k)
 {
     uint64_t held = cz.mode == CM_TRIG ? cos_held() : 0u;   /* (TRIG with steps held: the lock page, the first one's locks) */
@@ -1323,7 +1355,7 @@ static void cos_dial(int32_t cx, int32_t cy, uint32_t k)
     const param_desc_t *d = cos_knob(p, k, &vp);
     char val[24], b[16];
     const char *unit = 0;
-    int32_t a, v, r = 12, lo, hi, z;
+    int32_t a, v, pv, r = 12, lo, hi, z;
     uint32_t hot = cz.hot == k + 1u, locked = 0;
     if (!d || !vp) {
         cos_txc(cx, cy + r + 4, CZ_LBL, "-", C_DARK);
@@ -1339,14 +1371,15 @@ static void cos_dial(int32_t cx, int32_t cy, uint32_t k)
     }
     lo = d->min; hi = d->max;
     z = d->fmt == F_BIPCT || d->fmt == F_SEMI || (lo < 0 && hi > 0) ? 0 : lo;   /* (bipolar: from the middle) */
+    pv = cos_dial_at(d, v);                               /* (the pointer: right is more) */
     for (a = 0; a <= 40; a++) {                           /* 40 dots round 270 degrees, from 7:30 to 4:30 */
         uint32_t ang = (uint32_t)(0x6000 + a * 0xC000 / 40) & 0xFFFFu;
         int32_t x = cx + ((r * og_cos(ang)) >> 15), y = cy + ((r * og_sin(ang)) >> 15);
-        int32_t at = lo + (hi - lo) * a / 40, on = hi > lo && ((at >= z && at <= v) || (at <= z && at >= v));
+        int32_t at = lo + (hi - lo) * a / 40, on = hi > lo && ((at >= z && at <= pv) || (at <= z && at >= pv));
         cv_rect(x - 1, y - 1, 2, 2, on ? (hot ? C_RED : C_FG) : C_DARK);
     }
     {                                                     /* the pointer */
-        uint32_t ang = (uint32_t)(0x6000 + (hi > lo ? (v - lo) * 0xC000 / (hi - lo) : 0)) & 0xFFFFu;
+        uint32_t ang = (uint32_t)(0x6000 + (hi > lo ? (pv - lo) * 0xC000 / (hi - lo) : 0)) & 0xFFFFu;
         cv_line(cx, cy, cx + (((r - 5) * og_cos(ang)) >> 15), cy + (((r - 5) * og_sin(ang)) >> 15), C_FG);
     }
     str_cpy(b, d->label, sizeof b);
@@ -1966,7 +1999,7 @@ dials:
 /* the splash (ui_draw.c draw_splash / splash_write under COS_SLIM; main.c's boot loop calls it every ~4 ms for
  * SPL_WRITE + SPL_HOLD ms): black, a few still stars, the name 2x, the version, a 16-block bar filling like a pattern
  * (the block being filled red), READY. Drawn whole once, then only the bar's strip when a block fills */
-#define COS_VERSION "0.4"
+#define COS_VERSION "0.5"
 static void cos_px2(int32_t x, int32_t y, const char *s, uint16_t c)      /* (the face 2 x 2) */
 {
     int32_t r, b, b0;

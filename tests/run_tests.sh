@@ -258,6 +258,8 @@ if [ -f build/gen/felucca_tables.h ]; then
     $CC -O1 -w -Ibuild/gen -Ifirmware/src -Itests -o "$OUT/acid_test" tests/acid_test.c -lm
     $CC -O1 -w -Ibuild/gen -Ifirmware/src -Itests -o "$OUT/cos_test" tests/cos_test.c -lm
     run "cursed-os: the song's key (nearest interval, the next bar, the kits kept, ACID in the new key), the trigs" "$OUT/cos_test"
+    $CC -O1 -w -DCOS_SLIM=1 -Ibuild/gen -Ifirmware/src -Itests -o "$OUT/cos_knob_test" tests/cos_knob_test.c -lm
+    run "cursed-os: every knob on every page, right is more (the dial too), back again; the power-on values" "$OUT/cos_knob_test"
     run "ACID (cursedsound): the 303 line generator: deterministic, DENSITY, STEPS, NOTES, the key, LOCK, OCT- history, mutations, slides, drum tracks left alone" "$OUT/acid_test"
     $CC -O1 -w -Ibuild/gen -Ifirmware/src -Itests -o "$OUT/gen_test" tests/gen_test.c -lm
     run "GEN (0.6.91): the song generator, every genre: deterministic, one scale, the kick anchored, the bass's roots, chord tones, forms, the screen; (0.9.9-gen1) the clean base, the archetypes, the CPU budget; (gen2) the 303 line and its legato slides, the leads' vibrato, the drums' decays; (gen3) the rules by role, the drums' share, the loudness" "$OUT/gen_test"
