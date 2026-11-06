@@ -44,13 +44,11 @@ static struct {
     uint32_t on;                              /* the effects at work this block */
     uint32_t ph;                              /* samples, while the transport is stopped (the gates' grid) */
     int32_t gg, gs;                           /* GATE: its gain, its share (Q15) */
-    int32_t wd, wc, wh, wn, wl, ww, wt;       /* shares: DRIVE CRUSH HP RISER NOISE LOW KILL WASH THROW */
+    int32_t wd, wc, wh, wn, ww, wt;           /* shares: DRIVE CRUSH HP RISER NOISE WASH THROW */
     int32_t chl, chr;                         /* CRUSH: the held sample */
     uint32_t cn, nrnd;                        /* .. its count; NOISE's generator */
     uint32_t ht, nt;                          /* HP RISER's, NOISE RISER's samples since they began */
     int32_t hz[4], nz[2];                     /* .. their filters (Chamberlin: low, band; L R for HP RISER) */
-    int32_t lz[8];                            /* LOW KILL: two high-passes, L and R */
-    int32_t mz[16], kz[8], wm, wk;            /* MID KILL's low- and high-pass pairs, HIGH KILL's low-passes (L R); shares */
     uint32_t tt, wst;                         /* THROW's, WASH's offsets: samples they stay after the key goes */
     /* TAPE STOP */
     uint8_t tape, todd, kick0, solo0, kicked, soloed;   /* 1 at work (sl_buf ours), 2 going back; .. KICK, DRUMS kept */
@@ -58,6 +56,7 @@ static struct {
     uint32_t twr, tn, tlen, trp, tinv;        /* samples written, since it began, the halt's length; read (Q16); 2^28 / tlen */
     uint8_t busy;                             /* a share or a tail still sounding */
 } cx = {.gg = 32768, .nrnd = 0x2545F491u};
+#include "cos_iso.c"                          /* (cursed-os) the ISOLATOR: its knobs and the kills (LOW MID HIGH KILL) */
 
 /* seq.c keyboard_block: a key of the pad down / up (c: CFX_W / CFX_B; PF_N: none) */
 static void cfx_press(uint32_t c, int down)
@@ -199,6 +198,12 @@ static __attribute__((noinline)) void cfx_block(int32_t *ml, int32_t *mr, int32_
 {
     uint32_t on = perf_kill ? 0u : cfx_held | cfx_latched | cfx_auto | cfx_home | cfx_lane_bits(n), was = cx.on, i, base, P, gp, bar4, hp, np, f2, gph;
     int32_t hf = 0, hd = 0, nf = 0, ng = 0, duck;
+    int32_t it[3];                            /* the ISOLATOR's targets: its knobs, the kills held */
+    int isw;
+    it[0] = iso_target(iso_v[0], (on & CX_BIT(CX_LOWK)) != 0u);
+    it[1] = iso_target(iso_v[1], (on & CX_BIT(CX_MIDK)) != 0u);
+    it[2] = iso_target(iso_v[2], (on & CX_BIT(CX_HIK)) != 0u);
+    isw = it[0] != 32768 || it[1] != 32768 || it[2] != 32768;
     if (on != was)
         cfx_edges(on, was);
     if (!(on & CX_BIT(CX_TAPE)) && cx.tape == 1u)
@@ -295,16 +300,17 @@ static __attribute__((noinline)) void cfx_block(int32_t *ml, int32_t *mr, int32_
             l += mulq16(cx.chl - l, (uint32_t)cx.wc << 1);
             r += mulq16(cx.chr - r, (uint32_t)cx.wc << 1);
         }
-        if ((on & CX_BIT(CX_LOWK)) || cx.wl)
-            cx.wl = cx_ramp(cx.wl, (on & CX_BIT(CX_LOWK)) != 0u);
-        if (cx.wl) {                          /* LOW KILL: two high-passes at ~200 Hz (24 dB an octave) */
-            const int16_t *c = PF_SVF[19];
-            int32_t yl = pf_svf(pf_svf(clamp(l >> 2, -32767, 32767), &cx.lz[0], c, 1), &cx.lz[2], c, 1) << 2;
-            int32_t yr = pf_svf(pf_svf(clamp(r >> 2, -32767, 32767), &cx.lz[4], c, 1), &cx.lz[6], c, 1) << 2;
-            l += mulq16(yl - l, (uint32_t)cx.wl << 1);
-            r += mulq16(yr - r, (uint32_t)cx.wl << 1);
-        } else if (cx.lz[0] | cx.lz[1] | cx.lz[4] | cx.lz[5]) {
-            for (f2 = 0; f2 < 8u; f2++) cx.lz[f2] = 0;
+        if (isw || iso.w) {                   /* the ISOLATOR: its knobs, the kills held (cos_iso.c) */
+            iso.w = cx_ramp(iso.w, isw);
+            for (f2 = 0; f2 < 3u; f2++) iso.g[f2] += clamp(it[f2] - iso.g[f2], -ISO_SLOPE, ISO_SLOPE);
+            if (iso.w) {
+                int32_t yl = iso_ch(clamp(l, -(1 << 22), 1 << 22), iso.s[0], iso.g), yr = iso_ch(clamp(r, -(1 << 22), 1 << 22), iso.s[1], iso.g);
+                l += mulq16(yl - l, (uint32_t)iso.w << 1);
+                r += mulq16(yr - r, (uint32_t)iso.w << 1);
+            } else {
+                memset(iso.s, 0, sizeof iso.s);
+                iso.g[0] = iso.g[1] = iso.g[2] = 32768;
+            }
         }
         if ((on & CX_BIT(CX_HPR)) || cx.wh)
             cx.wh = cx_ramp(cx.wh, (on & CX_BIT(CX_HPR)) != 0u);
@@ -312,30 +318,6 @@ static __attribute__((noinline)) void cfx_block(int32_t *ml, int32_t *mr, int32_
             int32_t yl = cx_svf(l >> 2, &cx.hz[0], hf, hd) << 2, yr = cx_svf(r >> 2, &cx.hz[2], hf, hd) << 2;
             l += mulq16(yl - l, (uint32_t)cx.wh << 1);
             r += mulq16(yr - r, (uint32_t)cx.wh << 1);
-        }
-        if ((on & CX_BIT(CX_MIDK)) || cx.wm)
-            cx.wm = cx_ramp(cx.wm, (on & CX_BIT(CX_MIDK)) != 0u);
-        if (cx.wm) {                          /* MID KILL: the lows (24 dB an octave under ~200 Hz) and the highs (over
-                                                * ~2.9 kHz) kept, the band between them out */
-            const int16_t *lo = PF_SVF[19], *hi = PF_SVF[46];
-            int32_t xl = clamp(l >> 2, -32767, 32767), xr = clamp(r >> 2, -32767, 32767);
-            int32_t yl = (pf_svf(pf_svf(xl, &cx.mz[0], lo, 0), &cx.mz[2], lo, 0) + pf_svf(pf_svf(xl, &cx.mz[4], hi, 1), &cx.mz[6], hi, 1)) << 2;
-            int32_t yr = (pf_svf(pf_svf(xr, &cx.mz[8], lo, 0), &cx.mz[10], lo, 0) + pf_svf(pf_svf(xr, &cx.mz[12], hi, 1), &cx.mz[14], hi, 1)) << 2;
-            l += mulq16(yl - l, (uint32_t)cx.wm << 1);
-            r += mulq16(yr - r, (uint32_t)cx.wm << 1);
-        } else if (cx.mz[0] | cx.mz[1] | cx.mz[8] | cx.mz[9]) {
-            for (f2 = 0; f2 < 16u; f2++) cx.mz[f2] = 0;
-        }
-        if ((on & CX_BIT(CX_HIK)) || cx.wk)
-            cx.wk = cx_ramp(cx.wk, (on & CX_BIT(CX_HIK)) != 0u);
-        if (cx.wk) {                          /* HIGH KILL: two low-passes at ~2.9 kHz (24 dB an octave) */
-            const int16_t *c = PF_SVF[46];
-            int32_t yl = pf_svf(pf_svf(clamp(l >> 2, -32767, 32767), &cx.kz[0], c, 0), &cx.kz[2], c, 0) << 2;
-            int32_t yr = pf_svf(pf_svf(clamp(r >> 2, -32767, 32767), &cx.kz[4], c, 0), &cx.kz[6], c, 0) << 2;
-            l += mulq16(yl - l, (uint32_t)cx.wk << 1);
-            r += mulq16(yr - r, (uint32_t)cx.wk << 1);
-        } else if (cx.kz[0] | cx.kz[1] | cx.kz[4] | cx.kz[5]) {
-            for (f2 = 0; f2 < 8u; f2++) cx.kz[f2] = 0;
         }
         ml[i] = l;
         mr[i] = r;
@@ -347,7 +329,7 @@ static __attribute__((noinline)) void cfx_block(int32_t *ml, int32_t *mr, int32_
         sl_lent = 0;
         slicer_drop();
     }
-    cx.busy = (uint8_t)(cx.wt || cx.ww || cx.wn || cx.tape || cx.gs || cx.wd || cx.wc || cx.wl || cx.wh || cx.wm || cx.wk || cx.tt || cx.wst ||
+    cx.busy = (uint8_t)(cx.wt || cx.ww || cx.wn || cx.tape || cx.gs || cx.wd || cx.wc || iso.w || cx.wh || cx.tt || cx.wst ||
                         cfx_goff[GF_DFDBK] || cfx_goff[GF_DMIX] || cfx_goff[GF_RSIZE]);
 }
 
@@ -379,6 +361,6 @@ static void cfx_run(uint32_t n)
 {
     live_tick(n);                                 /* (cursed-os) the live layer: mutes, fills, the BREAKDOWN on the grid */
     if (!cfx_lane_on || !song.playing) perf_lane = 0;
-    if (cfx_held | cfx_latched | cfx_auto | cfx_home | cx.busy | cx.on | cfx_lane_on | cfx_rec)
+    if (cfx_held | cfx_latched | cfx_auto | cfx_home | cx.busy | cx.on | cfx_lane_on | cfx_rec | iso_v[0] | iso_v[1] | iso_v[2])
         cfx_block(mix_l, mix_r, wet, fxq_d, fxq_r, n);
 }

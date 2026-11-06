@@ -232,46 +232,79 @@ static void t_limit(void)
 
 /* ---- the ISOLATOR ---- */
 /* a sine at f through eq_block with the bands set: its gain, dB */
-static double eq_gain_at(double f)
+/* the ISOLATOR (cosfx.c, cos_iso.c) on a sine at f: the master's level out over in, dB, after its ramps */
+static double iso_gain_at(double f, double amp)
 {
     uint32_t b, i;
     double ein = 0, eout = 0, ph = 0;
-    memset(&eqs, 0, sizeof eqs);
-    for (b = 0; b < 300u; b++) {
+    for (b = 0; b < 400u; b++) {
         for (i = 0; i < CTL; i++) {
-            int32_t x = (int32_t)(30000.0 * sin(ph));
+            int32_t x = (int32_t)lrint(amp * sin(ph));
             ph += 2.0 * M_PI * f / 44100.0;
             mix_l[i] = mix_r[i] = x; wet[i] = 0;
             if (b >= 200u) ein += (double)x * x;
         }
-        eq_block(CTL);
+        cfx_run(CTL);
         if (b >= 200u) for (i = 0; i < CTL; i++) eout += (double)mix_l[i] * mix_l[i];
     }
-    return 10.0 * log10(eout / ein);
+    return 10.0 * log10(eout / ein + 1e-30);
 }
-static double eq_last;
+static void iso_set(int l, int m, int h) { cos_cput(CC_EQL, l); cos_cput(CC_EQM, m); cos_cput(CC_EQH, h); }
 static void t_iso(void)
 {
-    static const double F[3] = {50, 1000, 12000};       /* (each band's own: under ~200 Hz, the middle, over ~4 kHz) */
+    /* each band's own: well under 200 Hz, the middle's middle (the crossovers' geometric mean), well over 2.9 kHz */
+    static const double F[3] = {40, 762, 16000};
+    static const double SW[12] = {20, 60, 120, 200, 400, 762, 1500, 2900, 5000, 8000, 12000, 18000};
     static const char *const NM[3] = {"LOW", "MID", "HIGH"};
-    int b, v;
-    for (b = 0; b < 3; b++)
-        for (v = -12; v <= 6; v++) {                      /* (every step: what the dial says, measured) */
-            double g;
+    int b, v, k;
+    double last = -200, g;
+    iso_set(0, 0, 0);
+    for (k = 0; k < 12; k++) {                             /* flat: out of the path, the master as it was */
+        g = iso_gain_at(SW[k], 20000);
+        CHECK(fabs(g) < 0.01, "ISOLATOR flat: %+.3f dB at %g Hz", g, SW[k]);
+    }
+    iso_set(-1, -1, -1);                                   /* in the path, all three alike: an all-pass, -1 dB */
+    for (k = 0; k < 12; k++) {
+        g = iso_gain_at(SW[k], 20000);
+        SAY("  ISOLATOR all at -1 dB: %+.2f dB at %g Hz\n", g, SW[k]);
+        CHECK(fabs(g + 1.0) < 0.1, "ISOLATOR all three -1 dB: %+.2f dB at %g Hz (flat)", g, SW[k]);
+    }
+    for (b = 0; b < 3; b++) {
+        last = -200;
+        for (v = ISO_KILL; v <= 6; v++) {                  /* (every step: what the dial says, measured) */
             int16_t *vp;
             char sh[24];
             const param_desc_t *d;
-            memset(eq_v, 0, sizeof eq_v);
-            cos_cput(CC_EQL + (uint32_t)b, v);
-            g = eq_gain_at(F[b]);
+            iso_set(b == 0 ? v : 0, b == 1 ? v : 0, b == 2 ? v : 0);
+            g = iso_gain_at(F[b], v > 0 ? 10000 : 20000);
             d = cos_cdesc(CC_EQL + (uint32_t)b, &vp);
             shown(d, *vp, sh);
-            SAY("  ISOLATOR %-4s shows %-7s: %+.2f dB at %g Hz\n", NM[b], sh, g, F[b]);
-            CHECK(fabs(g - atof(sh)) <= 0.1, "ISOLATOR %s shows %s: %+.2f dB at %g Hz", NM[b], sh, g, F[b]);
-            CHECK(v == -12 || g > eq_last + 0.3, "ISOLATOR %s: a step right is more (%.2f after %.2f)", NM[b], g, eq_last);
-            eq_last = g;
+            SAY("  ISOLATOR %-4s shows %-5s: %+.2f dB at %g Hz\n", NM[b], sh, g, F[b]);
+            /* (MID: the lows' and the highs' slopes still reach its middle, so its deepest cuts are a little short of
+             * the dial: -11.8 for -12, -22.9 for -24, KILL -40 dB) */
+            if (v == ISO_KILL)
+                CHECK(g < (b == 1 ? -38.0 : -50.0), "ISOLATOR %s KILL: %+.1f dB at %g Hz", NM[b], g, F[b]);
+            else
+                CHECK(fabs(g - atof(sh)) <= (b == 1 ? (v < -12 ? 1.2 : 0.3) : 0.2), "ISOLATOR %s shows %s: %+.2f dB at %g Hz", NM[b], sh, g, F[b]);
+            CHECK(g > last + 0.5, "ISOLATOR %s: a step right is more (%.2f after %.2f)", NM[b], g, last);
+            last = g;
         }
-    memset(eq_v, 0, sizeof eq_v);
+    }
+    iso_set(0, 0, 0);
+    cfx_home = CX_BIT(CX_LOWK);                            /* the kills held (HOME's black 9-11): the band out */
+    g = iso_gain_at(40, 20000);
+    CHECK(g < -50.0, "LOW KILL held: %+.1f dB at 40 Hz", g);
+    g = iso_gain_at(1000, 20000);
+    CHECK(fabs(g) < 0.1, "LOW KILL held: the mids as they were (%+.2f dB at 1 kHz)", g);
+    cfx_home = CX_BIT(CX_MIDK);
+    g = iso_gain_at(762, 20000);
+    CHECK(g < -38.0, "MID KILL held: %+.1f dB at 762 Hz", g);
+    cfx_home = CX_BIT(CX_HIK);
+    g = iso_gain_at(16000, 20000);
+    CHECK(g < -50.0, "HIGH KILL held: %+.1f dB at 16 kHz", g);
+    cfx_home = 0;
+    g = iso_gain_at(1000, 20000);
+    CHECK(fabs(g) < 0.01 && !iso.w, "the kills let go: out of the path again (%+.3f dB)", g);
 }
 
 int main(void)

@@ -756,8 +756,33 @@ int main(void)
         for (b = 0; b < 40u; b++) { for (i2 = 0; i2 < 64u; i2++) { L[i2] = R[i2] = 0; W[i2] = 0; } cfx_block(L, R, W, SD, SR, 64); }
         CHECK(!cx.busy, "let go: out");
         cos_cput(CC_EQM, -6); cos_cput(CC_EQH, 4); cos_cput(CC_EQL, -12);
-        CHECK(eq_v[0] == -12 && eq_v[1] == -6 && eq_v[2] == -6 && eq_v[3] == 4 && cos_cdesc(CC_EQM, &vp) && *vp == -6, "ISOLATOR: LOW MID HIGH on the EQ's bands");
-        eq_v[0] = eq_v[1] = eq_v[2] = eq_v[3] = 0;
+        CHECK(iso_v[0] == -12 && iso_v[1] == -6 && iso_v[2] == 4 && cos_cdesc(CC_EQM, &vp) && *vp == -6 &&
+              !(eq_v[0] | eq_v[1] | eq_v[2] | eq_v[3]), "ISOLATOR: LOW MID HIGH its own (cos_iso.c), JIANT's EQ untouched");
+        {                                                 /* a project keeps it ('IS'); one without it opens flat */
+            project_t *q = &proj_scratch;
+            cos_cput(CC_EQL, ISO_KILL);
+            project_capture(q);
+            CHECK(proj_pack(&proj_wire, q), "packed");
+            iso_v[0] = iso_v[1] = iso_v[2] = 0;
+            CHECK(proj_import(q, &proj_wire, PROJ_STORE_SIZE) && q->iso[0] == ISO_KILL && q->iso[1] == -6 && q->iso[2] == 4,
+                  "ISOLATOR: read back in the project (%d %d %d)", q->iso[0], q->iso[1], q->iso[2]);
+            project_restore_runtime(q);
+            CHECK(iso_v[0] == ISO_KILL && iso_v[1] == -6 && iso_v[2] == 4, "ISOLATOR: a load applies it");
+            iso_v[0] = iso_v[1] = iso_v[2] = 0;
+            project_capture(q);
+            CHECK(proj_pack(&proj_wire, q) && proj_import(q, &proj_wire, PROJ_STORE_SIZE) && !(q->iso[0] | q->iso[1] | q->iso[2]),
+                  "ISOLATOR flat: no block, flat back");
+#if COS_SLIM
+            q->iso[0] = q->iso[1] = q->iso[2] = 0;            /* (a 0.5 project: its ISOLATOR was JIANT's EQ) */
+            q->eqv[0] = -6; q->eqv[1] = q->eqv[2] = -3; q->eqv[3] = 2;
+            q->sum = proj_sum(q);
+            project_restore_runtime(q);
+            CHECK(iso_v[0] == -6 && iso_v[1] == -3 && iso_v[2] == 2 && !(eq_v[0] | eq_v[1] | eq_v[2] | eq_v[3]),
+                  "a cursed-os 0.5 project: its EQ becomes the ISOLATOR (%d %d %d)", iso_v[0], iso_v[1], iso_v[2]);
+            iso_v[0] = iso_v[1] = iso_v[2] = 0;
+#endif
+        }
+        iso_v[0] = iso_v[1] = iso_v[2] = 0;
     }
 
 

@@ -5,6 +5,7 @@ cho/pad.fast 1310
 cos/cputest.comp 3267
 cos/cputest.comp.acid 3347
 cos/cputest.comp.fx8 3857
+cos/cputest.comp.iso 3617
 cos/cputest.comp.rumble 3450
 cos/cputest.comp.tape 3390
 dly/full 1327

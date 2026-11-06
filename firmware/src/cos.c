@@ -49,7 +49,7 @@ typedef struct { const char *tab; uint8_t kind, id[4]; } cpg_t;
 #define X 0xFFu
 static const cpg_t CZP_HOME[] = {{"PERFORM", CK_GLO, {ID_BPM, G_SWING, G_DJF, ID_OCT}},
                                 {"PERFORM 2", CK_GLO, {G_DUCK, G_DREL, ID_MUTEQ, X}},
-                                {"ISOLATOR", CK_COS, {CC_EQL, CC_EQM, CC_EQH, X}},   /* (JIANT's master EQ; HOME's black 9-11 the kills) */
+                                {"ISOLATOR", CK_COS, {CC_EQL, CC_EQM, CC_EQH, X}},   /* (cos_iso.c; HOME's black 9-11 the kills) */
                                 {"MACROS", CK_COS, {CC_MAC0, CC_MAC0 + 1u, CC_MAC0 + 2u, CC_MAC3}},
                                 {"MORPH", CK_COS, {CC_MOPOS, CC_MOBARS, X, X}},   /* (cos_morph.c: white 13 A, 14 B) */
                                 {"LOOP", CK_COS, {CC_LVLEN, CC_LVRATE, CC_LVDN, CC_LVSH}}};   /* (JIANT's LIVE, seq_live.c: the
@@ -440,18 +440,11 @@ static const param_desc_t *cos_cdesc(uint32_t id, int16_t **vp)
         *vp = &cz.cc_v[14];
         return &DMC[(id - CC_MAC0) & 3u];
     }
-    if (id >= CC_EQL && id <= CC_EQH) {                  /* HOME > ISOLATOR: the master EQ's bands (fx.c eq_block): LOW, MID (its
-                                                         * two middle bands together), HIGH */
-        /* what each step really does to its band's own (a sine at 50 Hz, 1 kHz, 12 kHz through eq_block: tests/cos_acc_test.c
-         * t_iso): the one-pole split leaves part of a band in its neighbours, so -12 on the EQ's gain is a gentler cut of the
-         * band as heard, -9 dB for LOW and MID, -6 for HIGH (the knob's steps as they were: a project's eq_v the same) */
-        static const char *const ISO_LO[20] = {"-9.3", "-8.7", "-8.2", "-7.4", "-6.7", "-6.0", "-5.3", "-4.5", "-3.5", "-2.6", "-1.8", "-0.8", "0.0", "+0.8", "+1.8", "+2.8", "+3.8", "+4.7", "+5.7", 0};
-        static const char *const ISO_MI[20] = {"-9.8", "-9.1", "-8.4", "-7.5", "-6.7", "-5.9", "-5.2", "-4.4", "-3.4", "-2.5", "-1.8", "-0.8", "0.0", "+0.8", "+1.8", "+2.7", "+3.6", "+4.6", "+5.5", 0};
-        static const char *const ISO_HI[20] = {"-6.0", "-5.6", "-5.3", "-4.8", "-4.4", "-4.0", "-3.6", "-3.0", "-2.4", "-1.8", "-1.3", "-0.6", "0.0", "+0.6", "+1.4", "+2.1", "+2.9", "+3.7", "+4.5", 0};
-        static const param_desc_t DE[3] = {{"LOW", F_INT, -12, 6, 0, ISO_LO, "dB"}, {"MID", F_INT, -12, 6, 0, ISO_MI, "dB"},
-                                           {"HIGH", F_INT, -12, 6, 0, ISO_HI, "dB"}};
-        static const uint8_t B[3] = {0, 1, 3};
-        cz.cc_v[14] = eq_v[B[id - CC_EQL]];
+    if (id >= CC_EQL && id <= CC_EQH) {                  /* HOME > ISOLATOR (cos_iso.c iso_v): LOW MID HIGH, KILL -24 .. +6 dB */
+        static const char *const ISN[33] = {"KILL", "-24", "-23", "-22", "-21", "-20", "-19", "-18", "-17", "-16", "-15", "-14", "-13", "-12", "-11", "-10", "-9", "-8", "-7", "-6", "-5", "-4", "-3", "-2", "-1", "0", "+1", "+2", "+3", "+4", "+5", "+6", 0};
+        static const param_desc_t DE[3] = {{"LOW", F_INT, ISO_KILL, 6, 0, ISN, "dB"}, {"MID", F_INT, ISO_KILL, 6, 0, ISN, "dB"},
+                                           {"HIGH", F_INT, ISO_KILL, 6, 0, ISN, "dB"}};
+        cz.cc_v[14] = iso_v[id - CC_EQL];
         *vp = &cz.cc_v[14];
         return &DE[id - CC_EQL];
     }
@@ -639,10 +632,7 @@ static void cos_cput(uint32_t id, int32_t v)
     } else if (id >= CC_MAC0 && id <= CC_MAC3) {
         macro_v[(id - CC_MAC0) & 3u] = (uint8_t)clamp(v, 0, 127);
     } else if (id >= CC_EQL && id <= CC_EQH) {
-        v = clamp(v, -12, 6);
-        if (id == CC_EQL) eq_v[0] = (int16_t)v;
-        else if (id == CC_EQM) eq_v[1] = eq_v[2] = (int16_t)v;
-        else eq_v[3] = (int16_t)v;
+        iso_v[id - CC_EQL] = (int8_t)clamp(v, ISO_KILL, 6);
     } else if (id >= CC_PCCH && id <= CC_VJCH) {
         uint8_t *x = &favorites.factory[6][19];             /* (TRIO's retired row: 0 there, OFF) */
         if (id == CC_PCCH) { x[0] = (uint8_t)clamp(v, 0, 16); cos_pc_ch = x[0]; }
@@ -2049,7 +2039,7 @@ dials:
 /* the splash (ui_draw.c draw_splash / splash_write under COS_SLIM; main.c's boot loop calls it every ~4 ms for
  * SPL_WRITE + SPL_HOLD ms): black, a few still stars, the name 2x, the version, a 16-block bar filling like a pattern
  * (the block being filled red), READY. Drawn whole once, then only the bar's strip when a block fills */
-#define COS_VERSION "0.5.1"
+#define COS_VERSION "0.6"
 static void cos_px2(int32_t x, int32_t y, const char *s, uint16_t c)      /* (the face 2 x 2) */
 {
     int32_t r, b, b0;

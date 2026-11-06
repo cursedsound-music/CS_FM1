@@ -155,6 +155,7 @@ typedef struct {
     uint8_t rmb[4];                            /* (cursed-os) RUMBLE (rumble.c rmb_v): LEVEL DECAY TONE DUCK ('RB') */
     int16_t mos[2][MO_N];                      /* (cursed-os) MORPH's A and B (cos_morph.c mph), 'MO' */
     uint8_t mo_set, mo_bars, mo_pos, rsv_mo;   /* .. which are stored, BARS, where it was (0 .. 100) */
+    int8_t iso[3], rsv_is;                     /* (cursed-os) the ISOLATOR (cos_iso.c iso_v): LOW MID HIGH dB ('IS') */
     char name[PROJ_NAME_LEN];                  /* the project's name: upper-case ASCII 32..126, 0-padded; "" = none */
     uint32_t sum;
 } project_t;
@@ -307,6 +308,7 @@ static void proj_cos_defaults(project_t *q)
     memcpy(q->rmb, RB_DEF, sizeof q->rmb);
     memset(q->mos, 0, sizeof q->mos);
     q->mo_set = 0; q->mo_bars = 3; q->mo_pos = 0;
+    q->iso[0] = q->iso[1] = q->iso[2] = 0;
 }
 static __attribute__((noinline)) uint32_t proj_x2(project_t *q, const uint8_t *bc, uint32_t pos, uint32_t room)
 {
@@ -448,6 +450,26 @@ static __attribute__((noinline)) uint32_t proj_mo(project_t *q, const uint8_t *b
         for (i = 0; i < MO_N; i++)
             q->mos[x][i] = (int16_t)(b[pos + 5u + (x * MO_N + i) * 2u] | b[pos + 6u + (x * MO_N + i) * 2u] << 8);
     return n;
+}
+
+/* (cursed-os) the ISOLATOR: 'I' 'S' and its three bands (dB + 64), when any is not 0 (a project without it: flat) */
+static __attribute__((noinline)) uint32_t proj_is(project_t *q, const uint8_t *bc, uint32_t pos, uint32_t room)
+{
+    uint8_t *b = (uint8_t *)(uintptr_t)bc;
+    uint32_t k;
+    if (!room) {
+        if (!(q->iso[0] | q->iso[1] | q->iso[2])) return 0;
+        if (b) {
+            b[pos] = 'I'; b[pos + 1u] = 'S';
+            for (k = 0; k < 3u; k++) b[pos + 2u + k] = (uint8_t)(q->iso[k] + 64);
+        }
+        return 5u;
+    }
+    q->iso[0] = q->iso[1] = q->iso[2] = 0;
+    if (pos + 5u > room || b[pos] != 'I' || b[pos + 1u] != 'S')
+        return 0;
+    for (k = 0; k < 3u; k++) q->iso[k] = (int8_t)clamp((int32_t)b[pos + 2u + k] - 64, ISO_KILL, 6);
+    return 5u;
 }
 
 /* (p9) the master's EQ: 'E' 'Q' and its four gains (-12 .. 12, a byte each), when any is set; a project without it
@@ -1075,6 +1097,7 @@ static uint32_t proj_packed_size(const project_t *q)
     n += proj_fp(q, 0, 0, 0);                           /* .. perform.c's effects in it */
     n += proj_rb(q, 0, 0, 0);                           /* (cursed-os) RUMBLE, when set */
     n += proj_mo(q, 0, 0, 0);                           /* (cursed-os) MORPH, when stored */
+    n += proj_is(q, 0, 0, 0);                           /* (cursed-os) the ISOLATOR, when not flat */
     if (q->g[G_DMOD] != GP[G_DMOD].def)                 /* (0.6.86) the delay's MOD's, when not the default */
         n += 3u;
     if (q->g[G_DTYPE] || q->g[G_DPING])                 /* (0.6.90) its TYPE and PING-PONG's */
@@ -1256,6 +1279,7 @@ static int proj_pack(project_store_t *out, const project_t *q)
     pos += proj_fp(q, b, pos, 0);
     pos += proj_rb(q, b, pos, 0);
     pos += proj_mo(q, b, pos, 0);
+    pos += proj_is(q, b, pos, 0);
     memcpy(b + PROJC_PFX_OFF, q->pfx_lane, sizeof q->pfx_lane);
     b[PROJC_PFX_OFF + sizeof q->pfx_lane] = q->pfx_ltgt > 2u ? 0u : q->pfx_ltgt;
     for (i = 0; i < 4u; i++)
@@ -1550,6 +1574,7 @@ static int proj_unpack_c(project_t *q, const uint8_t *b)
     pos += proj_fp(q, b, pos, room);                    /* .. perform.c's in it (else none) */
     pos += proj_rb(q, b, pos, room);                    /* (cursed-os) RUMBLE (else off) */
     pos += proj_mo(q, b, pos, room);                    /* (cursed-os) MORPH (else none) */
+    pos += proj_is(q, b, pos, room);                    /* (cursed-os) the ISOLATOR (else flat) */
     proj_new_tracks(q, nt);                             /* (a FUNC of fewer tracks: the rest at power-on) */
     for (t = nt; t < NTRK; t++)
         memcpy(q->fm6[t], FM6_INIT, FM6_PACKED);
@@ -1851,6 +1876,7 @@ static void project_capture(project_t *p)
     memcpy(p->eqv, eq_v, sizeof p->eqv);                /* (the master's EQ and TAPE) */
     memcpy(p->tapev, tape_v, sizeof p->tapev);
     memcpy(p->rmb, rmb_v, sizeof p->rmb);               /* (cursed-os) RUMBLE */
+    p->iso[0] = iso_v[0]; p->iso[1] = iso_v[1]; p->iso[2] = iso_v[2];   /* (cursed-os) the ISOLATOR */
     memcpy(p->mos, mph.s, sizeof p->mos);               /* (cursed-os) MORPH's A and B */
     p->mo_set = mph.set & 3u; p->mo_bars = mph.bars; p->mo_pos = (uint8_t)((mph.pos + 5) / 10);
     p->fxl_on = cfx_lane_on;
@@ -2107,6 +2133,14 @@ static int project_restore_runtime(const project_t *input)
     memcpy(eq_v, p->eqv, sizeof eq_v);
     memcpy(tape_v, p->tapev, sizeof tape_v);
     memcpy(rmb_v, p->rmb, sizeof rmb_v);
+    iso_v[0] = p->iso[0]; iso_v[1] = p->iso[1]; iso_v[2] = p->iso[2];
+#if COS_SLIM
+    if (!(iso_v[0] | iso_v[1] | iso_v[2]) && (eq_v[0] | eq_v[1] | eq_v[2] | eq_v[3])) {
+        /* (a cursed-os 0.5 project: its ISOLATOR on JIANT's EQ, which the device's cursed-os no longer shows) */
+        iso_v[0] = (int8_t)eq_v[0]; iso_v[1] = (int8_t)eq_v[1]; iso_v[2] = (int8_t)eq_v[3];
+        eq_v[0] = eq_v[1] = eq_v[2] = eq_v[3] = 0;
+    }
+#endif
     memcpy(mph.s, p->mos, sizeof mph.s);
     mph.set = p->mo_set & 3u; mph.bars = p->mo_bars % 6u; mph.pos = (int16_t)(p->mo_pos * 10u); mph.gl = mph.run = 0;
     memcpy((void *)cfx_lane, p->fxl, sizeof p->fxl);
@@ -2160,6 +2194,7 @@ static __attribute__((noinline)) void system_init(void)   /* (snd8: out of its c
     for (i = 0; i < G_COUNT; i++) song.g[i] = GP[i].def;
     tape_v[0] = tape_v[1] = 0;                          /* (snd8) the master's TAPE out */
     eq_v[0] = eq_v[1] = eq_v[2] = eq_v[3] = 0;          /* (p9) its EQ flat */
+    iso_v[0] = iso_v[1] = iso_v[2] = 0;                 /* (cursed-os) the ISOLATOR flat */
     for (i = 0; i < 5u; i++) song.g[KEEP[i]] = kept[i];
     kept[0] = dice_secs;
     chain_defaults(&chain_config);

@@ -283,6 +283,9 @@ int main(void)
     rmb_v[0] = 100; rmb_v[3] = 80;                      /* (RUMBLE on: the kit's tail) */
     vg_section("cos/cputest.comp.rumble");
     rmb_v[0] = 0;
+    iso_v[0] = -12; iso_v[2] = 3;                       /* (the ISOLATOR in the path: cos_iso.c, its seven filters a side) */
+    vg_section("cos/cputest.comp.iso");
+    iso_v[0] = iso_v[2] = 0;
     {
         uint32_t b;
         for (b = 0; b < 200u; b++) mix_block(vo, CTL);   /* (the shares down) */
