@@ -304,7 +304,9 @@ static __attribute__((noinline)) void cfx_block(int32_t *ml, int32_t *mr, int32_
             iso.w = cx_ramp(iso.w, isw);
             for (f2 = 0; f2 < 3u; f2++) iso.g[f2] += clamp(it[f2] - iso.g[f2], -ISO_SLOPE, ISO_SLOPE);
             if (iso.w) {
-                int32_t yl = iso_ch(clamp(l, -(1 << 22), 1 << 22), iso.s[0], iso.g), yr = iso_ch(clamp(r, -(1 << 22), 1 << 22), iso.s[1], iso.g);
+                /* (2^23: room for x 8 and the filters; not 2^22, whose -2^22 is 0xffc00000, a chip ROM address to
+                 * tools/build.py's check) */
+                int32_t yl = iso_ch(clamp(l, -(1 << 23), 1 << 23), iso.s[0], iso.g), yr = iso_ch(clamp(r, -(1 << 23), 1 << 23), iso.s[1], iso.g);
                 l += mulq16(yl - l, (uint32_t)iso.w << 1);
                 r += mulq16(yr - r, (uint32_t)iso.w << 1);
             } else {
