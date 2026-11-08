@@ -11,7 +11,8 @@
  *         pick the lane). A step held + a knob: a parameter lock on that step, of the sound page used last (SRC AMP FLTR
  *         LFO FX); held + REC: its locks go. Locked steps: a dot under them. SEQ held + REC twice (3 s): the track
  *         empty (cos_clear). A synth: steps held + PRESETS their note (in the scale), + black 1 ACCENT, 2 SLIDE;
- *         stopped, REC: STEP INPUT (a key the cursor's note, SEQ a rest, a key held + SEQ a tie: cos_si_*)
+ *         SEQ again: TRIG, STEP (a synth: STEP INPUT, a key the cursor's note, REC a rest, a key held + REC a tie:
+ *         cos_si_*), EUCLID, MODES (JIANT's euclid on the track, OCT+ a new one)
  *   EDIT  SRC 1 / SRC 2: the engine (VOICE: and WORDS, the talking synth: LANG LYRIC THEME ARTIC, OCT+ new words)
  *   ENV   AMP / FLTR / LFO / LFO 2      FX  SEND / DIST
  *   LFO   DRONE: the keys hold notes on the track (up to four), sounding whatever the transport does; REC lets them go
@@ -56,7 +57,16 @@ static const cpg_t CZP_HOME[] = {{"PERFORM", CK_GLO, {ID_BPM, G_SWING, G_DJF, ID
                                 {"MORPH", CK_COS, {CC_MOPOS, CC_MOBARS, X, X}},   /* (cos_morph.c: white 13 A, 14 B) */
                                 {"LOOP", CK_COS, {CC_LVLEN, CC_LVRATE, CC_LVDN, CC_LVSH}}};   /* (JIANT's LIVE, seq_live.c: the
                                                          * track picked; white 15 back in phase) */   /* (the sounds' M1..M4 in the matrix) */   /* (JIANT's master EQ; HOME's black 9-11 the kills) */   /* (DUCK: the kick pumps the rest) */
-static const cpg_t CZP_TRIG[] = {{"TRIG", CK_TRK, {P_SLEN, P_SDIV, P_SSWING, P_SGATE}}};
+/* SEQ: the sequencer's three ways, SEQ again (or SELECT) the next: TRIG the steps by hand, STEP the keys into the steps
+ * one by one (a synth: STEP INPUT, cos_si_*), EUCLID (and its MODES) the track's steps as a euclidean rhythm, a kit's
+ * lanes or a synth's notes in its scale (JIANT's EUCLID, ui_euclid.c; GEN's on a kit) */
+static const cpg_t CZP_TRIG[] = {{"TRIG", CK_TRK, {P_SLEN, P_SDIV, P_SSWING, P_SGATE}},
+                                {"STEP", CK_TRK, {P_SLEN, P_SDIV, P_SSWING, P_SGATE}},
+                                {"EUCLID", CK_EU, {EK_HITS, EK_STEPS, EK_ROT, EK_K4}},
+                                {"MODES", CK_EU, {EK_M0, EK_M0 + 1u, EK_M0 + 2u, EK_M0 + 3u}}};
+static const cpg_t CZP_TRIGK[] = {{"TRIG", CK_TRK, {P_SLEN, P_SDIV, P_SSWING, P_SGATE}},   /* (a kit: no STEP) */
+                                 {"EUCLID", CK_EU, {EK_HITS, EK_STEPS, EK_ROT, EK_K4}},
+                                 {"MODES", CK_EU, {EK_M0, EK_M0 + 1u, EK_M0 + 2u, EK_M0 + 3u}}};
 /* EDIT: the engine's eight (its own page names: cos_tabs), the voice, the matrix's four slots; a VOICE track WORDS
  * third. ENV: the amp, the filter, the envelope's modulation, the two LFO pages */
 #define CZ_MOD(n) {"MOD " #n, CK_TRK, {P_M##n##SRC, P_M##n##DST, P_M##n##AMT, X}}
@@ -165,7 +175,10 @@ static struct {
     uint8_t rec_down, rec_used;                         /* REC held (+ OCT-: the motion cleared); its tap arms, let go */
     uint8_t clr_k;                                      /* SEQ held + REC: the track asked about (+ 1), cos_clear */
     uint8_t si, si_pos;                                 /* STEP INPUT on (SEQ, a synth); its cursor's step (cos_si_*) */
-    uint8_t sv_down, sv_used;                           /* SAVE held (+ OCT+ KEEP, OCT- BACK: cos_keep); its tap: SAVE page */
+    uint8_t sv_down, sv_used;
+    uint8_t sq_down, sq_used;                           /* SEQ held on SEQ (its tap: the next way, cos_pages CZP_TRIG) */
+    uint8_t pg_sel;                                     /* the track the pages were last shown for (cos_pg_follow) */
+    const char *pg_tab[CM_N];                           /* .. and each mode's page then, by name */                           /* SAVE held (+ OCT+ KEEP, OCT- BACK: cos_keep); its tap: SAVE page */
     uint32_t clr_t;                                     /* .. when (fm1_ms) */
     uint32_t set_ms;                                    /* a setting turned (MASTER): saved 2 s after, not every detent */
     uint8_t slot, pn_ok;                                /* SAVE: the slot picked (0..3); the names below read */
@@ -182,9 +195,10 @@ static int cos_dead(const track_t *t, uint32_t id);      /* (below: a parameter 
 static void cos_pages(uint32_t m, const cpg_t **p, uint32_t *n)
 {
     static const cpg_t *const P[CM_N] = {CZP_HOME, CZP_TRIG, CZP_SRC, CZP_AMP, CZP_DRONE, CZP_FX, CZP_GENA, CZP_MIX, CZP_KEY, CZP_PROJ};
-    static const uint8_t N[CM_N] = {6, 1, 8, 9, 2, 6, 4, 10, 1, 1};
+    static const uint8_t N[CM_N] = {6, 4, 8, 9, 2, 6, 4, 10, 1, 1};
     int vo = m == CM_SRC && trk_engp(TSEL) == &ENG_FORMANT;
-    if (m == CM_SRC && cos_kit()) { *p = CZP_SRCD; *n = NELEM(CZP_SRCD); return; }   /* (a kit: KICK, LEVELS, its own ..) */
+    if (m == CM_SRC && cos_kit()) { *p = CZP_SRCD; *n = NELEM(CZP_SRCD); return; }
+    if (m == CM_TRIG && cos_kit()) { *p = CZP_TRIGK; *n = NELEM(CZP_TRIGK); return; }   /* (a kit: KICK, LEVELS, its own ..) */
     if (m == CM_GEN && cos_kit()) { *p = CZP_GENE; *n = 3; return; }
     if (m == CM_GEN && trk_eng(TSEL) != ENGI_ACID) {     /* (the pad: DUB first; the bass, a MONO one: ACID first) */
         int poly = TSEL->p[P_VOICE] == V_POLY;
@@ -944,10 +958,10 @@ static __attribute__((noinline)) void cos_step_note(int32_t d)
     note_name(b + str_len(b), t->step[first].note[0]);
     cos_say(b);
 }
-/* (a synth on SEQ) STEP INPUT, the Syntakt's step recording: REC (stopped) turns it on; the keys are a keyboard then,
- * each one played writes its note into the cursor's step (as it sounds: seq.c kb_map, OCT-/+ the octave) and the cursor
- * moves on; SEQ writes a rest and moves on, SEQ with a key held a tie (the note before goes on); PRESETS moves the cursor;
- * REC again, or another page, ends it. The steps' locks stay */
+/* (a synth on SEQ) STEP INPUT, the Syntakt's step recording, on SEQ's STEP page: the keys are a keyboard, each one
+ * played writes its note into the cursor's step (as it sounds: seq.c kb_map, OCT-/+ the octave) and the cursor moves on;
+ * REC writes a rest and moves on, REC with a key held a tie (the note before goes on); PRESETS moves the cursor. The
+ * steps' locks stay */
 static void cos_si_go(int32_t d)
 {
     uint32_t len = (uint32_t)clamp(TSEL->p[P_SLEN], 1, NSTEP);
@@ -985,12 +999,6 @@ static __attribute__((noinline)) void cos_si_rest(int tie)
     if (tie) s->time = ST_TIE;
     cos_si_said(tie ? "TIE" : "REST");
     cos_si_go(1);
-}
-static void cos_si_set(int on)
-{
-    cz.si = (uint8_t)(on != 0);
-    if (on) { cz.si_pos = (uint8_t)(cz.bank * 16u); cos_say("STEP INPUT: PLAY KEYS"); }
-    else cos_say("STEP INPUT OFF");
 }
 /* (a synth on SEQ) steps held + black 1 / 2: ACCENT / SLIDE on or off (the first one's decides; a rest: nothing) */
 static __attribute__((noinline)) void cos_step_flag(uint32_t f)
@@ -1198,11 +1206,40 @@ static __attribute__((noinline)) void cos_clear(void)
     cos_say("TRACK CLEARED");
 }
 
+/* another track picked: each mode's page found again by its name in that track's list (a kit's SEQ has no STEP, ACID's
+ * EDIT a DEVIL: the same index is another page there); not there, its first */
+static void cos_pg_follow(void)
+{
+    uint32_t m, i, n;
+    const cpg_t *p;
+    if (cz.pg_sel != song.sel) {
+        for (m = 0; m < CM_N; m++) {                     /* (the lists that depend on the track: SEQ EDIT ENV GEN) */
+            if (!cz.pg_tab[m] || (m != CM_TRIG && m != CM_SRC && m != CM_AMP && m != CM_GEN)) continue;
+            cos_pages(m, &p, &n);
+            for (i = 0; i < n && !str_eq(p[i].tab, cz.pg_tab[m]); i++) {}
+            cz.tab[m] = (uint8_t)(i < n ? i : 0u);
+        }
+        cz.pg_sel = (uint8_t)song.sel;
+    }
+    {
+        const cpg_t *q;
+        cos_pages(cz.mode, &q, &n);
+        cz.pg_tab[cz.mode] = q[cz.tab[cz.mode] % (n ? n : 1u)].tab;
+    }
+}
+
 static __attribute__((noinline)) void cos_input(void)
 {
     uint32_t released = 0, pressed = fm1_input_edges(&released), notes = fm1_input_note_edges(), k, b;
     int scl_held = (int)((fm1_in.buttons >> panel.btn[B_SCL]) & 1u);
     int32_t s;
+    cos_pg_follow();
+    {                                                    /* (STEP INPUT: SEQ's STEP page, a synth; its cursor from the
+                                                         * bank shown when it starts) */
+        int on = cz.mode == CM_TRIG && !cos_kit() && str_eq(cos_page()->tab, "STEP");
+        if (on && !cz.si) cz.si_pos = (uint8_t)(cz.bank * 16u);
+        cz.si = (uint8_t)on;
+    }
     song.grid = cos_keys_ui() ? 2u : 0u;                 /* (seq.c: 2, every key silent) */
     kb_mask = perf_mask = 1u << panel.btn[B_FX];         /* (seq.c keyboard_block: FX held, a key is an effect: the pad) */
     if (favorites.factory[15][14] < 2u) {                /* (once: the pad holds, each effect while its key is held; FX +
@@ -1223,13 +1260,13 @@ static __attribute__((noinline)) void cos_input(void)
         }
     }
     fx_lock_on = 0;
-    if (cz.si && (cz.mode != CM_TRIG || cos_kit())) cz.si = 0;   /* (STEP INPUT ends off SEQ, or on a kit) */
     for (k = 0; k < 32u && pressed; k++) {
         if (!((pressed >> k) & 1u)) continue;
         pressed &= ~(1u << k);
         b = panel_btn_of(k);
         if (b == B_PLAY) transport_req = song.playing || seq_counting() ? 2u : 1u;
-        else if (b == B_REC && ((fm1_in.buttons >> panel.btn[B_SEQ]) & 1u)) cos_clear();   /* SEQ held + REC, twice */
+        else if (b == B_REC && ((fm1_in.buttons >> panel.btn[B_SEQ]) & 1u)) { cz.sq_used = 1; cos_clear(); }   /* SEQ held +
+                                                         * REC, twice */
         else if (b == B_REC && cz.mode == CM_DRONE) { cos_drone_clear(); cos_say("DRONE OFF"); }
         else if (b == B_REC && cz.mode == CM_TRIG && cos_held()) {   /* a step held + REC: its locks go */
             uint64_t h = cos_held();
@@ -1238,10 +1275,10 @@ static __attribute__((noinline)) void cos_input(void)
             cz.lk_used = 1;
             cos_say(n ? "LOCKS CLEARED" : "NO LOCKS");
         }
-        else if (b == B_REC && cz.mode == CM_TRIG && !cos_kit() && !cos_held() && (cz.si || !song.playing))
-            cos_si_set(!cz.si);                          /* (SEQ, a synth, stopped: STEP INPUT; playing, REC arms as ever) */
-        else if (b == B_SEQ && cz.mode == CM_TRIG && cz.si)
-            cos_si_rest((fm1_in.notes & ((1u << 27) - 1u)) != 0u);   /* (STEP INPUT: a rest; a key held: a tie) */
+        else if (b == B_REC && cz.si && !cos_held())
+            cos_si_rest((fm1_in.notes & ((1u << 27) - 1u)) != 0u);   /* (STEP: a rest; a key held, a tie) */
+        else if (b == B_SEQ && cz.mode == CM_TRIG) { cz.sq_down = 1; cz.sq_used = 0; }   /* (on SEQ: its tap the next way,
+                                                         * let go; held + REC twice, the clear) */
         else if (b == B_REC && cz.mode == CM_GEN) cos_say(undo_do() ? "NOTHING TO UNDO" : "UNDONE");
         else if (b == B_REC && chain_busy()) cos_say("STOP THE SONG TO RECORD");
         else if (b == B_REC) { cz.rec_down = 1; cz.rec_used = 0; }   /* REC: a tap arms the track (playing, its knobs and keys
@@ -1293,7 +1330,10 @@ static __attribute__((noinline)) void cos_input(void)
         }
         else if (b == B_OCTDN || b == B_OCTUP) {
             int up = b == B_OCTUP;
-            if (cz.mode == CM_TRIG) {
+            if (cz.mode == CM_TRIG && cos_page()->kind == CK_EU) eu_oct(up, 0);   /* (EUCLID: a new variation, the one before) */
+            else if (cz.mode == CM_TRIG && cz.si) song.octave = (int8_t)clamp(song.octave + (up ? 1 : -1), -3, 3);   /* (STEP:
+                                                         * the keyboard's octave) */
+            else if (cz.mode == CM_TRIG) {
                 uint32_t n = cos_banks();
                 cz.bank = (uint8_t)((cz.bank + (up ? 1u : n - 1u)) % n);
             } else if (cos_on_words()) cos_words(up);
@@ -1334,6 +1374,10 @@ static __attribute__((noinline)) void cos_input(void)
     if (cz.ed_down && ((released >> panel.btn[B_EDIT]) & 1u)) {
         cz.ed_down = 0;
         if (!cz.ed_used) cos_mode(CM_SRC);
+    }
+    if (cz.sq_down && ((released >> panel.btn[B_SEQ]) & 1u)) {
+        cz.sq_down = 0;
+        if (!cz.sq_used && cz.mode == CM_TRIG) cos_mode(CM_TRIG);   /* (a tap on SEQ: the next way) */
     }
     if (cz.sv_down && ((released >> panel.btn[B_SAVE]) & 1u)) {
         cz.sv_down = 0;
@@ -1440,7 +1484,10 @@ static __attribute__((noinline)) void cos_input(void)
             }
         } else if (cz.mode == CM_TRIG) {
             if (w < 16u) { if (!cz.tg_down) cz.lk_used = 0; cz.tg_down |= 1u << k; }   /* (the trig on release) */
-            else if (cos_kit() && j < NLANE) cz.lane = (uint8_t)j;
+            else if (cos_kit() && j < NLANE) {
+                cz.lane = (uint8_t)j;
+                if (cos_page()->kind == CK_EU) eu_put(EK_K4, (int32_t)j + 1);   /* (EUCLID: that lane's own) */
+            }
             else if (!cos_kit() && cos_held() && j < 2u) cos_step_flag(j ? SF_SLIDE : SF_ACCENT);   /* (B1 ACCENT, B2 SLIDE) */
         } else if (cz.mode == CM_GEN && cos_kit() && j < NLANE) {
             eu_put(EK_K4, (int32_t)j + 1);                /* (EUCLID: a lane picked) */
@@ -1465,6 +1512,7 @@ static __attribute__((noinline)) void cos_input(void)
     if (ui.msg_t && ui.msg[0]) { cos_say(ui.msg); ui.msg_t = 0; }   /* (what JIANT's code says: on our top line) */
     if (cz.set_ms && fm1_ms - cz.set_ms > 2000u) { cz.set_ms = 0; settings_save(); }
     cos_key_poll();
+    cos_pg_follow();                                     /* (the page now, by name, for the next track picked) */
     ui_polls();                                          /* (what JIANT's frame keeps doing: ui_input.c) */
 }
 
@@ -1775,10 +1823,19 @@ static void cos_lk_box(void)                            /* (steps held: which, a
 static void cos_body_trig1(void);
 static void cos_body_trig(void)
 {
+    if (cz.mode == CM_TRIG && cos_page()->kind == CK_EU && !cos_kit()) {   /* (EUCLID on a synth: its say, the notes
+                                                         * it wrote under; a kit: its lanes, as TRIG) */
+        cos_tx(4, 38, "NOTES IN THE SCALE", C_MID);
+        cos_txr(236, 38, "OCT+ NEW", C_DIM);
+        cz_rtop = 54;
+        cos_body_trig1();
+        cz_rtop = 40;
+        return;
+    }
     cos_body_trig1();
     if (cz.si) {                                         /* (STEP INPUT: what the keys do now) */
         cv_rect(84, 20, 156, 12, C_RED);
-        cos_tx(90, 22, "STEP IN  SEQ: REST", C_BG);
+        cos_tx(90, 22, "KEYS IN  REC: REST", C_BG);
     }
     cos_lk_box();
 }
@@ -2291,7 +2348,7 @@ dials:
 /* the splash (ui_draw.c draw_splash / splash_write under COS_SLIM; main.c's boot loop calls it every ~4 ms for
  * SPL_WRITE + SPL_HOLD ms): black, a few still stars, the name 2x, the version, a 16-block bar filling like a pattern
  * (the block being filled red), READY. Drawn whole once, then only the bar's strip when a block fills */
-#define COS_VERSION "0.7"
+#define COS_VERSION "0.7.1"
 static void cos_px2(int32_t x, int32_t y, const char *s, uint16_t c)      /* (the face 2 x 2) */
 {
     int32_t r, b, b0;

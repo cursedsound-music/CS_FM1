@@ -133,7 +133,10 @@ static const char *why_quiet(uint32_t m, const cpg_t *p, uint32_t k)
     if (m == CM_SRC && str_eq(p->tab, "CHORD")) return "CHORD: what a key plays (live, recorded)";
     if (m == CM_GEN && (str_eq(p->tab, "ACID 3") || str_eq(p->tab, "ACID 4") || str_eq(p->tab, "DUB 3") ||
                         str_eq(p->tab, "MUTATE")) && rb_n == RB) return "GEN: the mutations, every N bars (WIRE_LONG=1)";
-    if (m == CM_GEN && p->kind == CK_EU && str_eq(p->tab, "EUCLID") && k == 3u) return "EUCLID LANE: the lane the next one writes";
+    if ((m == CM_GEN || m == CM_TRIG) && p->kind == CK_EU && str_eq(p->tab, "EUCLID") && k == 3u && cos_kit())
+        return "EUCLID LANE: the lane the next one writes";
+    if (m == CM_TRIG && p->kind == CK_EU && str_eq(p->tab, "EUCLID") && k == 3u && rb_n == RB)
+        return "EUCLID VARY: the bars after the first, which answer it (past this run)";
     if (m == CM_SRC && trk_engp(TSEL) == &ENG_ACID && id == P_DEC && !TSEL->p[P_E6])
         return "ACID DRV TYPE: DRIVE at 0, no drive to shape";
     if (m == CM_GEN && p->kind == CK_DB && id == DK_MOVE && rb_n == RB)
@@ -362,7 +365,7 @@ int main(void)
         }
         for (m = 0; m < CM_N; m++) {
             const cpg_t *pp;
-            if (rb_n == RB_LONG && m != CM_GEN) continue;   /* (WIRE_LONG: GEN's pages, four bars each) */
+            if (rb_n == RB_LONG && m != CM_GEN && m != CM_TRIG) continue;   /* (WIRE_LONG: GEN's and SEQ's pages, four bars each) */
             cos_pages(m, &pp, &n);
             for (t = 0; t < n; t++) {
                 pid_t c = fork();                     /* (each page: its own copy, its group engaged) */

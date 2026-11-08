@@ -1305,44 +1305,70 @@ int main(void)
         cz.bank = 0;
         track_select(0);
     }
-    {   /* STEP INPUT (SEQ, a synth, stopped): REC on; a key writes its note into the cursor's step and moves on; SEQ a
-         * rest; a key held + SEQ a tie; PRESETS the cursor; REC off. The keys sound meanwhile (song.grid 0) */
+    {   /* SEQ's ways: TRIG, STEP, EUCLID, MODES (a kit: no STEP), a tap on SEQ the next. STEP: a key writes its note into
+         * the cursor's step and moves on; REC a rest; a key held + REC a tie; PRESETS the cursor; OCT the octave */
         uint32_t i0;
+        int8_t oc = song.octave;
         track_select(1);
-        cz.mode = CM_TRIG; cz.bank = 0;
+        cz.mode = CM_TRIG; cz.tab[CM_TRIG] = 0; cz.bank = 0;
         if (song.playing) { transport_req = 2; ui_input(); }
         for (i0 = 0; i0 < NSTEP; i0++) step_clear(&TSEL->step[i0]);
-        cos_test_btn(B_REC, 1); cos_test_btn(B_REC, 0);
-        CHECK(cz.si && cz.si_pos == 0u && !(song.rec & 2u), "REC on SEQ, stopped: STEP INPUT on, not armed");
+        cos_test_btn(B_SEQ, 1); cos_test_btn(B_SEQ, 0);
+        CHECK(str_eq(cos_page()->tab, "STEP"), "a tap on SEQ: STEP (%s)", cos_page()->tab);
         cos_input();
-        CHECK(song.grid == 0u, "STEP INPUT: the keys sound (song.grid %u)", song.grid);
-        fm1_in.notes = host_notes = 1u << WK[4]; cos_input(); host_notes = 0; fm1_in.notes = 0; cos_input();   /* (white 5) */
+        CHECK(cz.si && cz.si_pos == 0u && song.grid == 0u, "STEP: STEP INPUT on, the keys sound (%u)", song.grid);
+        fm1_in.notes = host_notes = 1u << WK[4]; cos_input(); host_notes = 0; fm1_in.notes = 0; cos_input();
         CHECK(TSEL->step[0].time == ST_NOTE && TSEL->step[0].note[0] == kb_map(TSEL, WK[4]) && cz.si_pos == 1u,
               "a key: step 1 its note (%u, the key's %u), the cursor on (%u)", TSEL->step[0].note[0], kb_map(TSEL, WK[4]), cz.si_pos);
-        cos_test_btn(B_SEQ, 1); cos_test_btn(B_SEQ, 0);
-        CHECK(TSEL->step[1].time == ST_REST && cz.si_pos == 2u, "SEQ: step 2 a rest, on to 3");
-        fm1_in.notes = host_notes = 1u << BK[2]; cos_input(); host_notes = 0;   /* (black 3 held) */
-        cos_test_btn(B_SEQ, 1); cos_test_btn(B_SEQ, 0);
+        cos_test_btn(B_REC, 1); cos_test_btn(B_REC, 0);
+        CHECK(TSEL->step[1].time == ST_REST && cz.si_pos == 2u && !(song.rec & 2u), "REC: step 2 a rest, on to 3, not armed");
+        fm1_in.notes = host_notes = 1u << BK[2]; cos_input(); host_notes = 0;
+        cos_test_btn(B_REC, 1); cos_test_btn(B_REC, 0);
         fm1_in.notes = 0; cos_input();
-        CHECK(TSEL->step[2].time == ST_NOTE && TSEL->step[2].note[0] == kb_map(TSEL, BK[2]) && TSEL->step[3].time == ST_TIE &&
-              cz.si_pos == 4u, "a key held + SEQ: step 3 the note, step 4 a tie (%u %u)", TSEL->step[2].time, TSEL->step[3].time);
+        CHECK(TSEL->step[2].time == ST_NOTE && TSEL->step[3].time == ST_TIE && cz.si_pos == 4u, "a key held + REC: a tie after it");
         host_ticks += 1000000u; host_enc[panel.enc[EN_PRESET]] = -1; cos_input();
         CHECK(cz.si_pos == 3u, "PRESETS: the cursor back (%u)", cz.si_pos);
-        for (i0 = 0; i0 < 13u; i0++) { cos_test_btn(B_SEQ, 1); cos_test_btn(B_SEQ, 0); }
-        CHECK(cz.si_pos == 16u % (uint32_t)TSEL->p[P_SLEN] && cz.bank == cz.si_pos / 16u, "past the 16th: the next bank, or round (%u, bank %u)", cz.si_pos, cz.bank);
-        cos_test_btn(B_REC, 1); cos_test_btn(B_REC, 0);
-        CHECK(!cz.si, "REC again: STEP INPUT off");
-        cos_input();
-        CHECK(song.grid == 2u, "off: the keys the steps again");
-        cos_test_btn(B_REC, 1); cos_test_btn(B_REC, 0);
-        cz.mode = CM_HOME; cos_input();
-        CHECK(!cz.si, "another page: STEP INPUT off");
-        for (i0 = 0; i0 < trk_live && !drum_track(&trk[i0]); i0++) {}
-        track_select(i0 < trk_live ? i0 : 0); if (!drum_track(TSEL)) set_engine_of(TSEL, ENGI_DRUM);
-        cz.mode = CM_TRIG;
-        cos_test_btn(B_REC, 1); cos_test_btn(B_REC, 0);
-        CHECK(drum_track(TSEL) && !cz.si, "a kit: no STEP INPUT (REC as before)");
+        cos_test_btn(B_OCTUP, 1); cos_test_btn(B_OCTUP, 0);
+        CHECK(song.octave == oc + 1 && cz.bank == 0u, "STEP: OCT+ the octave, not the bank");
+        song.octave = oc;
+        cos_test_btn(B_SEQ, 1); cos_test_btn(B_SEQ, 0); cos_input();
+        CHECK(str_eq(cos_page()->tab, "EUCLID") && !cz.si && song.grid == 2u, "SEQ again: EUCLID, the keys the steps again");
+        {
+            int16_t *vp;
+            const param_desc_t *d = cos_knob(cos_page(), 0, &vp);
+            uint32_t n0 = 0, n1 = 0;
+            for (i0 = 0; i0 < NSTEP; i0++) n0 += TSEL->step[i0].time == ST_NOTE;
+            host_ticks += 1000000u; cos_turn(0, 3);
+            for (i0 = 0; i0 < NSTEP; i0++) n1 += TSEL->step[i0].time == ST_NOTE;
+            CHECK(d && n1 != n0 && n1 > 0u, "EUCLID on a synth: HITS writes its notes (%u -> %u)", n0, n1);
+        }
+        cos_test_btn(B_SEQ, 1); cos_test_btn(B_SEQ, 0);
+        CHECK(str_eq(cos_page()->tab, "MODES"), "then MODES");
+        cos_test_btn(B_SEQ, 1); cos_test_btn(B_SEQ, 0);
+        CHECK(str_eq(cos_page()->tab, "TRIG"), "and TRIG again");
+        {
+            uint8_t t4 = TSEL->step[cz.si_pos].time;
+            cos_test_btn(B_REC, 1); cos_test_btn(B_REC, 0);
+            CHECK(!cz.si && TSEL->step[cz.si_pos].time == t4, "TRIG: REC as ever (no rest written)");
+        }
         song.rec = 0; cz.rec_down = 0;
+        for (i0 = 0; i0 < trk_live && !drum_track(&trk[i0]); i0++) {}
+        track_select(i0 < trk_live ? i0 : 0); if (!drum_track(TSEL)) { set_engine_of(TSEL, ENGI_DRUM); TSEL->engine = ENGI_DRUM; }
+        cz.tab[CM_TRIG] = 0;
+        cos_test_btn(B_SEQ, 1); cos_test_btn(B_SEQ, 0);
+        CHECK(drum_track(TSEL) && str_eq(cos_page()->tab, "EUCLID"), "a kit: TRIG, then EUCLID (no STEP)");
+        {                                                 /* (another track: the same page by its name) */
+            uint32_t kit = song.sel;
+            track_select(1); cos_input();
+            CHECK(str_eq(cos_page()->tab, "EUCLID"), "a synth after the kit's EUCLID: EUCLID (%s)", cos_page()->tab);
+            cos_test_btn(B_SEQ, 1); cos_test_btn(B_SEQ, 0);   /* (MODES) */
+            cos_test_btn(B_SEQ, 1); cos_test_btn(B_SEQ, 0);   /* (TRIG) */
+            cos_test_btn(B_SEQ, 1); cos_test_btn(B_SEQ, 0);   /* (STEP) */
+            CHECK(str_eq(cos_page()->tab, "STEP"), "the synth on STEP");
+            track_select(kit); cos_input();
+            CHECK(str_eq(cos_page()->tab, "TRIG"), "the kit after STEP: TRIG, its first (%s)", cos_page()->tab);
+        }
+        cz.tab[CM_TRIG] = 0;
         cz.mode = CM_HOME; cz.bank = 0;
     }
     {   /* KEEP / BACK (SAVE held + OCT+ / OCT-): the sound and mix back as kept, the mutes, the tempo and the steps as they
