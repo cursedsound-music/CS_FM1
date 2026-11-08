@@ -44,7 +44,7 @@ enum { CC_OUTCH, CC_MOUT, CC_CLOCK, CC_SLOT, CC_TRKS, CC_LOAD, CC_COMP, CC_CATK,
        CC_X2, CC_X2E = CC_X2 + 15, CC_OCT, CC_KICK, CC_KICKE = CC_KICK + 4, CC_LN0, CC_LNE = CC_LN0 + 7, CC_KDRV, CC_BT,
        CC_L1SYNC, CC_L1RATE, CC_L1WAVE, CC_L1MODE, CC_L1PH, CC_L1FADE, CC_L2SYNC, CC_L2RATE, CC_BPM,
        CC_CIN, CC_CTHR, CC_CRAT, CC_CMK, CC_CKNEE, CC_CSC, CC_CMIX, CC_LIN, CC_LREL, CC_LVL, CC_MUTEQ, CC_PCCH, CC_PCOUT, CC_VJCH, CC_EQL, CC_EQM, CC_EQH, CC_MAC0, CC_MAC3 = CC_MAC0 + 3, CC_RB0, CC_RB3 = CC_RB0 + 3, CC_MOPOS, CC_MOBARS, CC_LVLEN, CC_LVRATE, CC_LVDN, CC_LVSH, CC_MCCH, CC_MCCC, CC_MCDIR, CC_MCMAP, CC_MC0, CC_MC3 = CC_MC0 + 3, CC_MOCC,
-       CC_NAME, CC_DSEL, CC_DLV, CC_DWAV, CC_DFLT, CC_DBT, CC_DDRV, CC_DLAY, CC_DFB, CC_DSNP, CC_DE0, CC_DEE = CC_DE0 + DE_N - 1 };
+       CC_NAME, CC_DJF, CC_DSEL, CC_DLV, CC_DWAV, CC_DFLT, CC_DBT, CC_DDRV, CC_DLAY, CC_DFB, CC_DSNP, CC_DE0, CC_DEE = CC_DE0 + DE_N - 1 };
 _Static_assert(CC_DEE < 0xFEu, "the CK_COS ids fit a page's byte (0xFE, 0xFF: OCTAVE, none)");
 _Static_assert(X2_N <= 16u, "CC_X2 .. CC_X2E: room for every trk_x2 field");
 #define ID_MUTEQ 0xFCu                          /* (HOME 2's: MUTE Q, cos_knob) */
@@ -120,7 +120,8 @@ static const cpg_t CZP_AMPA[] = {{"AMP", CK_TRK, {P_ATK, P_DEC, P_SUS, P_REL}},
                                 {"LFO 2", CK_COS, {CC_L2SYNC, CC_L2RATE, CC_X2 + X2_WAVE, CC_X2 + X2_L2MODE}},
                                 {"LFO 2+", CK_COS, {CC_X2 + X2_L2PH, CC_X2 + X2_F2L, X, X}}};
 static const cpg_t CZP_DRONE[] = {{"DRONE", CK_TRK, {P_LEVEL, P_FCUT, P_LRATE, P_LD_FLT}}, {"SPACE", CK_TRK, {P_ATK, P_REL, P_DLY, P_REV}}};
-static const cpg_t CZP_FX[] = {{"SEND", CK_TRK, {P_DIST, P_CHOR, P_DLY, P_REV}}, {"DIST", CK_TRK, {P_DTYPE, P_DTONE, X, X}},
+static const cpg_t CZP_FX[] = {{"DJ", CK_COS, {CC_DJF, CC_EQL, CC_EQM, CC_EQH}},   /* (the mixer's: DJ FILTER, the ISOLATOR) */
+                              {"SEND", CK_TRK, {P_DIST, P_CHOR, P_DLY, P_REV}}, {"DIST", CK_TRK, {P_DTYPE, P_DTONE, X, X}},
                               {"DELAY", CK_GLO, {G_DTIME, G_DFDBK, G_DCOLOR, G_DPING}},    /* (the buses: every track's) */
                               {"DELAY 2", CK_GLO, {G_DMIX, G_DDRV, G_DTYPE, G_DMOD}},     /* (the tape echo: MOD its wow and flutter;
                                                          * FEEDBK past 100 runs away into the clip: the dub spin) */
@@ -205,7 +206,7 @@ static int cos_dead(const track_t *t, uint32_t id);      /* (below: a parameter 
 static void cos_pages(uint32_t m, const cpg_t **p, uint32_t *n)
 {
     static const cpg_t *const P[CM_N] = {CZP_HOME, CZP_TRIG, CZP_SRC, CZP_AMP, CZP_DRONE, CZP_FX, CZP_GENA, CZP_MIX, CZP_KEY, CZP_PROJ};
-    static const uint8_t N[CM_N] = {6, 4, 8, 9, 2, 6, 4, 10, 1, 1};
+    static const uint8_t N[CM_N] = {6, 4, 8, 9, 2, 7, 4, 10, 1, 1};
     int vo = m == CM_SRC && trk_engp(TSEL) == &ENG_FORMANT;
     if (m == CM_SRC && cos_kit()) { *p = CZP_SRCD; *n = NELEM(CZP_SRCD); return; }
     if (m == CM_TRIG && cos_kit()) { *p = CZP_TRIGK; *n = NELEM(CZP_TRIGK); return; }   /* (a kit: KICK, LEVELS, its own ..) */
@@ -548,6 +549,7 @@ static const param_desc_t *cos_cdesc(uint32_t id, int16_t **vp)
         *vp = &cz.cc_v[14];
         return &DMC[(id - CC_MAC0) & 3u];
     }
+    if (id == CC_DJF) { *vp = &song.g[G_DJF]; return &GP[G_DJF]; }   /* (FX > DJ: the master's DJ FILTER, as PERFORM's) */
     if (id >= CC_EQL && id <= CC_EQH) {                  /* HOME > ISOLATOR (cos_iso.c iso_v): LOW MID HIGH, KILL -24 .. +6 dB */
         static const char *const ISN[33] = {"KILL", "-24", "-23", "-22", "-21", "-20", "-19", "-18", "-17", "-16", "-15", "-14", "-13", "-12", "-11", "-10", "-9", "-8", "-7", "-6", "-5", "-4", "-3", "-2", "-1", "0", "+1", "+2", "+3", "+4", "+5", "+6", 0};
         static const param_desc_t DE[3] = {{"LOW", F_INT, ISO_KILL, 6, 0, ISN, "dB"}, {"MID", F_INT, ISO_KILL, 6, 0, ISN, "dB"},
@@ -750,6 +752,8 @@ static void cos_cput(uint32_t id, int32_t v)
         rmb_v[(id - CC_RB0) & 3u] = (uint8_t)clamp(v, 0, 100);
     } else if (id >= CC_MAC0 && id <= CC_MAC3) {
         macro_v[(id - CC_MAC0) & 3u] = (uint8_t)clamp(v, 0, 127);
+    } else if (id == CC_DJF) {
+        motion_djf_set(TSEL, (int16_t)clamp(v, GP[G_DJF].min, GP[G_DJF].max));   /* (REC: recorded too, as PERFORM's) */
     } else if (id >= CC_EQL && id <= CC_EQH) {
         iso_v[id - CC_EQL] = (int8_t)clamp(v, ISO_KILL, 6);
     } else if (id >= CC_PCCH && id <= CC_VJCH) {
@@ -2365,6 +2369,25 @@ static void cos_body_lim(void)
 }
 
 /* FX > RUMBLE: what it is, and its level now (a meter of the return's peak, the kick's pump in it) */
+/* FX > DJ: the DJ FILTER as a mixer's knob (LP left, HP right, the middle off) over the ISOLATOR's three bands */
+static void cos_body_dj(void)
+{
+    static const char *const BN[3] = {"LOW", "MID", "HIGH"};
+    int32_t f = song.g[G_DJF], x = 120 + f * 100 / 64, k;
+    cos_txc(120, 38, CZ_LBL, "DJ FILTER", C_MID);
+    cv_rect(20, 58, 200, 1, C_DARK);
+    cv_rect(120, 52, 1, 13, C_DIM);
+    cv_rect(x - 2, 52, 5, 13, f ? C_RED : C_FG);
+    cos_tx(20, 68, "LP", C_DIM);
+    cos_txr(220, 68, "HP", C_DIM);
+    cos_txc(120, 88, CZ_LBL, "ISOLATOR", C_MID);
+    for (k = 0; k < 3; k++) {                            /* each band: 0 dB the line, KILL empty, -24 .. +6 */
+        int32_t v = iso_v[k], bx = 50 + k * 70, y0 = 128, h = v <= ISO_KILL ? 0 : (v + 24) * 30 / 30;
+        cv_rect(bx - 14, y0 - 24, 28, 1, C_DARK);
+        if (h) cv_rect(bx - 10, y0 - h, 20, h, v ? C_RED : C_FG);
+        cos_txc(bx, y0 + 4, CZ_LBL, v <= ISO_KILL ? "KILL" : BN[k], v <= ISO_KILL ? C_RED : C_DIM);
+    }
+}
 static void cos_body_rumble(void)
 {
     int32_t w = rmb_v[0] ? clamp(rb.pk * 160 / 24000, 0, 160) : 0;
@@ -2478,6 +2501,7 @@ static void cos_scene(void)
     }
     case CM_FX:
         if (cos_page()->kind == CK_COS && cos_page()->id[0] == CC_RB0) cos_body_rumble();
+        else if (cos_page()->kind == CK_COS && cos_page()->id[0] == CC_DJF) cos_body_dj();
         else cos_body_sound();
         break;
     default: cos_body_sound(); break;
@@ -2496,7 +2520,7 @@ dials:
 /* the splash (ui_draw.c draw_splash / splash_write under COS_SLIM; main.c's boot loop calls it every ~4 ms for
  * SPL_WRITE + SPL_HOLD ms): black, a few still stars, the name 2x, the version, a 16-block bar filling like a pattern
  * (the block being filled red), READY. Drawn whole once, then only the bar's strip when a block fills */
-#define COS_VERSION "0.8.0"
+#define COS_VERSION "0.8.1"
 static void cos_px2(int32_t x, int32_t y, const char *s, uint16_t c)      /* (the face 2 x 2) */
 {
     int32_t r, b, b0;

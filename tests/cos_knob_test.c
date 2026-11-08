@@ -126,7 +126,7 @@ int main(void)
         int32_t v0;
         uint32_t t0, s0, p0, tot;
         track_select(0);
-        cz.mode = CM_FX; cz.tab[CM_FX] = 5;               /* (RUMBLE: LEVEL 0) */
+        cz.mode = CM_FX; cz.tab[CM_FX] = 6;               /* (RUMBLE: LEVEL 0) */
         cos_knob(cos_page(), 0, &vp); v0 = *vp;
         host_ticks += 1000000u; host_enc[panel.enc[EN_K1]] = 1; cos_input();
         cos_knob(cos_page(), 0, &vp);
@@ -152,7 +152,7 @@ int main(void)
         int16_t *vp;
         const param_desc_t *d;
         uint32_t i, seen[128] = {0}, ok = 1, n = 0;
-        cz.mode = CM_FX; cz.tab[CM_FX] = 2;               /* (DELAY: TIME knob 1) */
+        cz.mode = CM_FX; cz.tab[CM_FX] = 3;               /* (DELAY: TIME knob 1) */
         d = cos_knob(cos_page(), 0, &vp);
         for (i = 0; i < 200u; i++) { host_ticks += 1000000u; cos_turn(0, -1); }
         CHECK(!strcmp(d->names[*vp - d->min], "1/32"), "all the way left: 1/32 (%s)", d->names[*vp - d->min]);

@@ -832,7 +832,15 @@ int main(void)
         const cpg_t *pp; uint32_t n;
         cz.mode = CM_HOME; song.sel = 3;
         cos_pages(CM_FX, &pp, &n);
-        CHECK(n == 6u && !strcmp(pp[3].tab, "DELAY 2") && !strcmp(pp[5].tab, "RUMBLE") && pp[3].id[0] == G_DMIX && pp[3].id[3] == G_DMOD, "FX: DELAY 2 after DELAY");
+        CHECK(n == 7u && !strcmp(pp[4].tab, "DELAY 2") && !strcmp(pp[6].tab, "RUMBLE") && pp[4].id[0] == G_DMIX && pp[4].id[3] == G_DMOD, "FX: DELAY 2 after DELAY");
+        CHECK(!strcmp(pp[0].tab, "DJ") && pp[0].id[0] == CC_DJF && pp[0].id[1] == CC_EQL, "FX's first page: DJ (DJ FILTER, the ISOLATOR)");
+        {
+            int16_t *vp, djf = song.g[G_DJF];
+            const param_desc_t *d = cos_cdesc(CC_DJF, &vp);
+            cos_cput(CC_DJF, 30);
+            CHECK(d && vp == &song.g[G_DJF] && song.g[G_DJF] == 30, "DJ FILTER on FX > DJ turns the master's (%d)", song.g[G_DJF]);
+            song.g[G_DJF] = djf;
+        }
         song.g[G_DTIME] = 1; song.g[G_DFDBK] = 40;
         db_put(DK_DLY, 1);
         CHECK(song.g[G_DTIME] == (int16_t)DT_DOT && song.g[G_DFDBK] == 70, "DUB 3 DELAY 1/8D (%d, %d)", song.g[G_DTIME], song.g[G_DFDBK]);
