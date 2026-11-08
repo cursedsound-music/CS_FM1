@@ -6,8 +6,9 @@
  *   6 TAPE STOP (the master slows to a halt in a beat)  7 GLITCH (perform.c)  8 LPF  9 HPF (perform.c's sweeps)
  *   10 DRIVE (a soft clip, hard)  11 CRUSH (fewer bits, a held sample)  12 DLY THROW (the dry mix into the delay, its
  *   feedback up; let go, the echoes ring on)  13 REV WASH (the mix into the reverb, larger; the dry pulled back)
- *   14 FREEZE (the delay holds what it has, nothing new in)  15 HP RISER (a resonant high-pass up over 4 bars; let go:
- *   the drop)  16 NOISE RISER (white noise swelling up over 4 bars)
+ *   14 FREEZE (the mix that plays as it is pressed, one delay time of it, into the delay, then held round: nothing new
+ *   in)  15 HP RISER (a resonant high-pass up over 4 bars, 120 Hz .. 6 kHz; let go: the drop)  16 NOISE RISER (white
+ *   noise swelling up over 4 bars, heard from the start: -20 dB under its top, the top ~-10 dBFS)
  * The black keys: 1..6 the tracks muted (perform.c), 7 KICK KILL (the kit's kicks: no new hits), 8 LOW KILL (the lows
  * under ~200 Hz out, as a DJ mixer's), 9 DRUMS ONLY (every track that is not a kit muted), 10 LOOP 3, 11 LOOP 7.
  * Out of the RAM code: fx.c lev_block runs it (cfx_block, in the image) after the leveler has measured the mix; the
@@ -48,6 +49,7 @@ static struct {
     int32_t chl, chr;                         /* CRUSH: the held sample */
     uint32_t cn, nrnd;                        /* .. its count; NOISE's generator */
     uint32_t ht, nt;                          /* HP RISER's, NOISE RISER's samples since they began */
+    uint32_t ft;                              /* FREEZE's samples since it began (the first delay time: the mix in) */
     int32_t hz[4], nz[2];                     /* .. their filters (Chamberlin: low, band; L R for HP RISER) */
     uint32_t tt, wst;                         /* THROW's, WASH's offsets: samples they stay after the key goes */
     /* TAPE STOP */
@@ -144,6 +146,8 @@ static __attribute__((noinline)) void cfx_edges(uint32_t on, uint32_t was)
         cx.ht = 0;
         cx.hz[0] = cx.hz[1] = cx.hz[2] = cx.hz[3] = 0;
     }
+    if ((on & ~was) & CX_BIT(CX_FREEZE))
+        cx.ft = 0;
     if ((on & ~was) & CX_BIT(CX_NOISE)) {
         cx.nt = 0;
         cx.nz[0] = cx.nz[1] = 0;
@@ -193,11 +197,13 @@ static __attribute__((noinline)) void cfx_tape(int32_t *pl, int32_t *pr)
     *pr = r + mulq16(yr - r, (uint32_t)cx.tw << 1);
 }
 
+static uint32_t delay_samples(void);           /* (fx.c: the delay's time now, samples) */
 /* fx.c lev_block, each block while an effect is at work or a share is still on: the mix (mix_l, mix_r, wet) in place */
 static __attribute__((noinline)) void cfx_block(int32_t *ml, int32_t *mr, int32_t *wt, int32_t *sd, int32_t *sr, uint32_t n)
 {
     uint32_t on = perf_kill ? 0u : cfx_held | cfx_latched | cfx_auto | cfx_home | cfx_lane_bits(n), was = cx.on, i, base, P, gp, bar4, hp, np, f2, gph;
     int32_t hf = 0, hd = 0, nf = 0, ng = 0, duck;
+    uint32_t flen = (on & CX_BIT(CX_FREEZE)) ? delay_samples() : 0u;   /* (FREEZE: what it takes in) */
     int32_t it[3];                            /* the ISOLATOR's targets: its knobs, the kills held */
     int isw;
     it[0] = iso_target(iso_v[0], (on & CX_BIT(CX_LOWK)) != 0u);
@@ -220,17 +226,21 @@ static __attribute__((noinline)) void cfx_block(int32_t *ml, int32_t *mr, int32_
     np = cx.nt / ((bar4 >> 12) + 1u);
     if (hp > 4096u) hp = 4096u;
     if (np > 4096u) np = 4096u;
-    if (on & CX_BIT(CX_HPR) || cx.wh) {       /* HP RISER: 40 Hz .. ~4.5 kHz, slow then fast, the resonance growing */
-        uint32_t q = (hp + ((hp * hp) >> 12)) >> 1, fc = (uint32_t)((40u * (uint64_t)cx_exp2(q * 1741u >> 12)) >> 16);
+    if (on & CX_BIT(CX_HPR) || cx.wh) {       /* HP RISER: 120 Hz .. ~6 kHz, slow then fast, the resonance growing (was
+                                                * 40 Hz up: its first bar unheard, found on a device) */
+        uint32_t q = (hp + ((hp * hp) >> 12)) >> 1, fc = (uint32_t)((120u * (uint64_t)cx_exp2(q * 1445u >> 12)) >> 16);
         hf = (int32_t)(fc * 2334u / 1000u);   /* (2 pi fc / fs, Q14) */
         hd = 16000 - (int32_t)(hp * 10000u >> 12);
         if (hf > 11500) hf = 11500;
     }
-    if (on & CX_BIT(CX_NOISE) || cx.wn) {     /* NOISE RISER: a band 300 Hz .. 6 kHz, louder and louder */
-        uint32_t fc = (uint32_t)((300u * (uint64_t)cx_exp2(np * 1106u >> 12)) >> 16);
+    if (on & CX_BIT(CX_NOISE) || cx.wn) {     /* NOISE RISER: a band 600 Hz .. 6 kHz, louder and louder (600: over the
+                                                * bass from the start, not under it) */
+        uint32_t fc = (uint32_t)((600u * (uint64_t)cx_exp2(np * 850u >> 12)) >> 16);
         nf = (int32_t)(fc * 2334u / 1000u);
         if (nf > 12000) nf = 12000;
-        ng = (int32_t)((np * np) >> 12) * 3 / 2;   /* (Q12: at the top x1.5 on the band, ~-14 dBFS) */
+        ng = (int32_t)((1700u * cx_exp2(np * 666u >> 12)) >> 16);   /* (Q12: 0.41 .. 2.5 on the band, as dB a straight
+                                                * rise of 16: heard at once, ~-10 dBFS at the top; was np^2 x 1.5, -66 dB
+                                                * under the mix for its first second, found on a device) */
     }
     for (i = 0; i < n; i++) {
         int32_t l = ml[i], r = mr[i], m = (l + r) >> 1;
@@ -246,8 +256,11 @@ static __attribute__((noinline)) void cfx_block(int32_t *ml, int32_t *mr, int32_
             l = mulq16(l, (uint32_t)duck << 1);
             r = mulq16(r, (uint32_t)duck << 1);
         }
-        if (on & CX_BIT(CX_FREEZE))
-            sd[i] = 0;
+        if (on & CX_BIT(CX_FREEZE)) {         /* FREEZE: the mix into the delay for one delay time, then nothing new
+                                                * (an empty delay had nothing to hold: found on a device) */
+            sd[i] = cx.ft < flen ? sd[i] + m : 0;
+            cx.ft++;
+        }
         l += wt[i];
         r += wt[i];
         wt[i] = 0;

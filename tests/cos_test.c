@@ -481,10 +481,15 @@ int main(void)
         CHECK(SD[63] == 0 && cfx_goff[GF_DFDBK] == 48, "let go: nothing more in, the echoes ring on");
         for (b = 0; b < 16u * P / 64u + 2u; b++) { for (i2 = 0; i2 < 64u; i2++) { L[i2] = R[i2] = 0; W[i2] = SD[i2] = SR[i2] = 0; } cfx_block(L, R, W, SD, SR, 64); }
         CHECK(cfx_goff[GF_DFDBK] == 0 && !cx.busy, "a bar on: the delay as it was");
-        cfx_held = CX_BIT(CX_FREEZE);
+        cfx_held = CX_BIT(CX_FREEZE);                     /* (FREEZE: one delay time of the mix in, then nothing new) */
         for (i2 = 0; i2 < 64u; i2++) { L[i2] = R[i2] = 8000; W[i2] = 0; SD[i2] = 500; }
         cfx_block(L, R, W, SD, SR, 64);
-        CHECK(SD[10] == 0 && cfx_goff[GF_DFDBK] == 60, "FREEZE: the send shut, feedback at 100");
+        CHECK(SD[10] == 8500 && cfx_goff[GF_DFDBK] == 60, "FREEZE: the mix in first, feedback at 100 (%d)", SD[10]);
+        for (b = 0; b < delay_samples() / 64u + 2u; b++) {
+            for (i2 = 0; i2 < 64u; i2++) { L[i2] = R[i2] = 8000; W[i2] = 0; SD[i2] = 500; }
+            cfx_block(L, R, W, SD, SR, 64);
+        }
+        CHECK(SD[10] == 0 && cfx_goff[GF_DFDBK] == 60, "FREEZE, a delay time on: the send shut, held round (%d)", SD[10]);
         cfx_held = CX_BIT(CX_WASH);
         for (i2 = 0; i2 < 64u; i2++) { L[i2] = R[i2] = 8000; W[i2] = SR[i2] = 0; }
         for (b = 0; b < 4u; b++) cfx_block(L, R, W, SD, SR, 64);
