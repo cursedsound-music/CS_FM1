@@ -10,7 +10,7 @@
  *   SEQ   TRIG: the track's steps        white keys: trigs (on release)   OCT-/+: the bank of 16   (a kit: black keys
  *         pick the lane). A step held + a knob: a parameter lock on that step, of the sound page used last (SRC AMP FLTR
  *         LFO FX); held + REC: its locks go. Locked steps: a dot under them. SEQ held + REC twice (3 s): the track
- *         empty (cos_clear)
+ *         empty (cos_clear). A synth: steps held + PRESETS their note (in the scale), + black 1 ACCENT, 2 SLIDE
  *   EDIT  SRC 1 / SRC 2: the engine (VOICE: and WORDS, the talking synth: LANG LYRIC THEME ARTIC, OCT+ new words)
  *   ENV   AMP / FLTR / LFO / LFO 2      FX  SEND / DIST
  *   LFO   DRONE: the keys hold notes on the track (up to four), sounding whatever the transport does; REC lets them go
@@ -900,6 +900,49 @@ static void cos_trig(uint32_t w)
     s->vel = 100;
 }
 static uint32_t cos_banks(void) { return ((uint32_t)clamp(TSEL->p[P_SLEN], 1, NSTEP) + 15u) / 16u; }
+static uint64_t cos_held(void);
+/* (a synth on SEQ) steps held + PRESETS: their notes up or down the track's scale (SCL's key, ACID 3's SCALE; an
+ * empty step becomes the root first), C0 .. C7; the first one's note on the top line */
+static __attribute__((noinline)) void cos_step_note(int32_t d)
+{
+    track_t *t = TSEL;
+    uint64_t h = cos_held();
+    uint32_t i, first = NSTEP;
+    char b[24];
+    for (i = 0; i < NSTEP; i++) {
+        step_t *s = &t->step[i];
+        if (!((h >> i) & 1u)) continue;
+        if (s->time != ST_NOTE || !s->n) {
+            step_clear(s);
+            s->time = ST_NOTE; s->n = 1; s->vel = 100;
+            s->note[0] = (uint8_t)(36 + (t->p[P_ROOT] % 12 + 12) % 12);
+        } else
+            s->note[0] = (uint8_t)clamp(scale_steps(t, s->note[0], d), 12, 96);
+        if (first == NSTEP) first = i;
+    }
+    if (first == NSTEP) return;
+    cz.lk_used = 1;                                      /* (the step's key let go: no trig) */
+    str_cpy(b, "STEP ", 6);
+    fmt_int(b + 5, (int32_t)first + 1);
+    str_cpy(b + str_len(b), ": ", 3);
+    note_name(b + str_len(b), t->step[first].note[0]);
+    cos_say(b);
+}
+/* (a synth on SEQ) steps held + black 1 / 2: ACCENT / SLIDE on or off (the first one's decides; a rest: nothing) */
+static __attribute__((noinline)) void cos_step_flag(uint32_t f)
+{
+    track_t *t = TSEL;
+    uint64_t h = cos_held();
+    uint32_t i, on = 2u;
+    for (i = 0; i < NSTEP; i++) {
+        step_t *s = &t->step[i];
+        if (!((h >> i) & 1u) || s->time != ST_NOTE || !s->n) continue;
+        if (on == 2u) on = !(s->flags & f);
+        s->flags = (uint8_t)(on ? s->flags | f : s->flags & ~f);
+    }
+    cz.lk_used = 1;
+    cos_say(on == 2u ? "A REST: NO NOTE" : f == SF_ACCENT ? (on ? "ACCENT ON" : "ACCENT OFF") : (on ? "SLIDE ON" : "SLIDE OFF"));
+}
 
 /* ACID's track: the first one on the ACID engine (the 303); none: the last live one that is neither a kit nor VOICE
  * becomes ACID's TB CLASSIC (an UNDO point first; REC on GEN undoes it) */
@@ -1180,6 +1223,8 @@ static __attribute__((noinline)) void cos_input(void)
             preset_engine_jump(s > 0 ? 1 : -1);
             ui.msg_t = 0;
             cos_sound_say();
+        } else if (cz.mode == CM_TRIG && cos_held() && !cos_kit()) {
+            cos_step_note(s > 0 ? 1 : -1);               /* (steps held, a synth: their notes) */
         } else if (cz.mode == CM_TRIG && !cos_held()) {  /* TRIG: the bank of 16 */
             uint32_t n = cos_banks();
             cz.bank = (uint8_t)clamp((int32_t)cz.bank + (s > 0 ? 1 : -1), 0, (int32_t)n - 1);
@@ -1255,6 +1300,7 @@ static __attribute__((noinline)) void cos_input(void)
         } else if (cz.mode == CM_TRIG) {
             if (w < 16u) { if (!cz.tg_down) cz.lk_used = 0; cz.tg_down |= 1u << k; }   /* (the trig on release) */
             else if (cos_kit() && j < NLANE) cz.lane = (uint8_t)j;
+            else if (!cos_kit() && cos_held() && j < 2u) cos_step_flag(j ? SF_SLIDE : SF_ACCENT);   /* (B1 ACCENT, B2 SLIDE) */
         } else if (cz.mode == CM_GEN && cos_kit() && j < NLANE) {
             eu_put(EK_K4, (int32_t)j + 1);                /* (EUCLID: a lane picked) */
         }
@@ -1562,6 +1608,22 @@ static void cos_lk_box(void)                            /* (steps held: which, a
     str_cpy(b, "STEP ", 6);
     b[5] = (char)('0' + (st + 1u) / 10u); b[6] = (char)('0' + (st + 1u) % 10u); b[7] = 0;
     if (n > 1u) { b[7] = '+'; b[8] = (char)('0' + (n - 1u) % 10u); b[9] = 0; }
+    if (!cos_kit()) {                                    /* (a synth: the first held step's note, ACCENT, SLIDE: cos_step_note) */
+        const step_t *s = &TSEL->step[st];
+        int nt = s->time == ST_NOTE && s->n;
+        if (n == 1u) {
+            str_cpy(b + 7, " ", 2);
+            if (nt) note_name(b + 8, s->note[0]); else str_cpy(b + 8, "REST", 5);
+        }
+        cv_rect(28, 58, 184, 76, C_BG);
+        cv_frame(28, 58, 184, 76, C_RED);
+        cos_txc(120, 64, CZ_TALL, b, C_FG);
+        cos_tx(44, 90, "B1 ACCENT", nt && (s->flags & SF_ACCENT) ? C_RED : C_DIM);
+        cos_tx(132, 90, "B2 SLIDE", nt && (s->flags & SF_SLIDE) ? C_RED : C_DIM);
+        cos_txc(120, 106, CZ_LBL, "PRESETS: THE NOTE", C_MID);
+        cos_txc(120, 120, CZ_LBL, "KNOB LOCK  REC CLEAR", C_DIM);
+        return;
+    }
     cv_rect(28, 62, 184, 52, C_BG);
     cv_frame(28, 62, 184, 52, C_RED);
     cos_txc(120, 70, CZ_TALL, b, C_FG);
@@ -2068,7 +2130,7 @@ dials:
 /* the splash (ui_draw.c draw_splash / splash_write under COS_SLIM; main.c's boot loop calls it every ~4 ms for
  * SPL_WRITE + SPL_HOLD ms): black, a few still stars, the name 2x, the version, a 16-block bar filling like a pattern
  * (the block being filled red), READY. Drawn whole once, then only the bar's strip when a block fills */
-#define COS_VERSION "0.6.1"
+#define COS_VERSION "0.6.2"
 static void cos_px2(int32_t x, int32_t y, const char *s, uint16_t c)      /* (the face 2 x 2) */
 {
     int32_t r, b, b0;

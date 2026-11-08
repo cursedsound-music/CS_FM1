@@ -1269,6 +1269,42 @@ int main(void)
         }
         track_select(0);
     }
+    {   /* a synth on SEQ: a step held + PRESETS its note up the scale (a rest: the root first), + B1 ACCENT, + B2 SLIDE;
+         * the key let go: no trig (the step stays) */
+        step_t *st;
+        int32_t root;
+        track_select(1);                                  /* (ACID) */
+        cz.mode = CM_TRIG; cz.bank = 0;
+        st = &TSEL->step[2];
+        step_clear(st);
+        root = 36 + (TSEL->p[P_ROOT] % 12 + 12) % 12;
+        fm1_in.notes = host_notes = 1u << WK[2]; cos_input(); host_notes = 0;   /* (step 3 held) */
+        host_ticks += 1000000u; host_enc[panel.enc[EN_PRESET]] = 1; cos_input();
+        CHECK(st->time == ST_NOTE && st->n == 1u && st->note[0] == root, "a rest + PRESETS: the root (%u, %d)", st->note[0], root);
+        host_ticks += 1000000u; host_enc[panel.enc[EN_PRESET]] = 1; cos_input();
+        host_ticks += 1000000u; host_enc[panel.enc[EN_PRESET]] = 1; cos_input();
+        CHECK(st->note[0] == scale_steps(TSEL, root, 2), "+ PRESETS twice: two up the scale (%u)", st->note[0]);
+        host_ticks += 1000000u; host_enc[panel.enc[EN_PRESET]] = -1; cos_input();
+        CHECK(st->note[0] == scale_steps(TSEL, root, 1), "PRESETS back: one down (%u)", st->note[0]);
+        fm1_in.notes |= 1u << BK[0]; host_notes = 1u << BK[0]; cos_input(); host_notes = 0;
+        fm1_in.notes &= ~(1u << BK[0]); cos_input();
+        CHECK(st->flags & SF_ACCENT, "+ B1: ACCENT on");
+        fm1_in.notes |= 1u << BK[1]; host_notes = 1u << BK[1]; cos_input(); host_notes = 0;
+        fm1_in.notes &= ~(1u << BK[1]); cos_input();
+        CHECK((st->flags & (SF_ACCENT | SF_SLIDE)) == (SF_ACCENT | SF_SLIDE), "+ B2: SLIDE on (%u)", st->flags);
+        fm1_in.notes |= 1u << BK[0]; host_notes = 1u << BK[0]; cos_input(); host_notes = 0;
+        fm1_in.notes &= ~(1u << BK[0]); cos_input();
+        CHECK(!(st->flags & SF_ACCENT) && (st->flags & SF_SLIDE), "+ B1 again: ACCENT off");
+        fm1_in.notes = 0; cos_input();                    /* (the step let go) */
+        CHECK(st->time == ST_NOTE && st->note[0] == scale_steps(TSEL, root, 1), "let go: the step stays, no trig (%u)", st->time);
+        fm1_in.notes = host_notes = 1u << WK[2]; cos_input(); host_notes = 0;
+        fm1_in.notes = 0; cos_input();
+        CHECK(st->time != ST_NOTE, "a tap without PRESETS: the step off, as before");
+        host_ticks += 1000000u; host_enc[panel.enc[EN_PRESET]] = 1; cos_input();
+        CHECK(cz.bank == 1u || cos_banks() == 1u, "nothing held: PRESETS the bank of 16, as before (%u)", cz.bank);
+        cz.bank = 0;
+        track_select(0);
+    }
     printf("cos_test: %s (%d failures)\n", fails ? "FAILED" : "ok", fails);
     return fails != 0;
 }
