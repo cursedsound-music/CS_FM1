@@ -9,6 +9,8 @@
  * ACID    KNOB 1 DENSITY, 2 SLIDE, 3 ACCENT, 4 OCTAVE        (amounts 0..100)
  * ACID 2  KNOB 1 STEPS (4..64), 2 NOTES (pool size), 3 TIE, 4 LOCK (OFF, RHYTHM, NOTES, R+N: what OCT+ keeps)
  * ACID 3  KNOB 1 EVERY (OFF, 1..8 bars), 2 AMOUNT, 3 ROOT (AUTO, C..B), 4 SCALE (AUTO, MIN, PHRY, DOR, HARM, MAJ, PEN)
+ * ACID 4  (cursed-os) KNOB 1 LOCK, 2 ROTATE (0 .. STEPS - 1: the line's start that many steps later, the steps as they
+ *         are now, hand edits and step locks with them; a new throw or a mutation keeps the offset)
  * OCT+ on ACID / ACID 2: a new throw of the parts LOCK does not keep; OCT- walks back through the last eight throws.
  * OCT+ on ACID 3: a mutation now (AMOUNT % of the steps thrown again from a mutation seed); OCT- back to the anchor.
  * EVERY > OFF: a mutation every EVERY bars, on the bar (turn EVERY back to OFF to freeze the line where it is).
@@ -18,14 +20,14 @@
 #define AC_HIST 8u
 typedef struct { uint16_t r, n, f; } acs_t;            /* the three parts' seeds */
 typedef struct {
-    uint8_t on, dens, slide, acc, oct, steps, notes, tie, lock, every, amt, root, scale, ctr, bar;
+    uint8_t on, dens, slide, acc, oct, steps, notes, tie, lock, every, amt, root, scale, ctr, bar, rot;
     uint16_t ms;                                        /* the mutation seed (0: the anchor, as thrown) */
     acs_t s, hist[AC_HIST];
     uint8_t nh;                                         /* throws in hist */
 } ac_t;
 static ac_t ac[NTRK] COS_RAM;
 static uint32_t ac_ms COS_RAM;                                  /* (the last hand gesture: an UNDO point after 2 s) */
-enum { AK_DENS, AK_SLIDE, AK_ACC, AK_OCT, AK_STEPS, AK_NOTES, AK_TIE, AK_LOCK, AK_EVERY, AK_AMT, AK_ROOT, AK_SCALE, AK_N };
+enum { AK_DENS, AK_SLIDE, AK_ACC, AK_OCT, AK_STEPS, AK_NOTES, AK_TIE, AK_LOCK, AK_EVERY, AK_AMT, AK_ROOT, AK_SCALE, AK_ROT, AK_N };
 enum { AL_OFF, AL_RHY, AL_NOT, AL_RN };
 static const uint8_t AC_SCL[7] = {0, 2, 8, 3, 7, 1, 6};   /* SCALE's choices: AUTO, then N_SCALE / SCALE_MASK indices */
 static const uint8_t AC_EVERY[6] = {0, 1, 2, 4, 8, 16};
@@ -87,6 +89,33 @@ static uint32_t ac_pool(uint32_t sn, uint32_t want, uint32_t np, int32_t *deg)
     return n;
 }
 
+/* (cursed-os) steps a..b-1 of s in reverse (the rotation's three reversals: no second copy of the steps) */
+static void ac_rev(step_t *s, uint32_t a, uint32_t b)
+{
+    while (a + 1u < b) {
+        step_t x = s[a];
+        s[a] = s[--b];
+        s[b] = x;
+        a++;
+    }
+}
+/* track t's first n steps turned r later (step i to (i + r) mod n); lk: the step locks on them too (automation stays) */
+static void ac_turn(track_t *t, uint32_t n, uint32_t r, uint32_t lk)
+{
+    uint32_t k = trk_index(t), i, f;
+    if (n < 2u || !(r %= n)) return;
+    f = motion_guard();                                  /* (the steps and their locks turned between two samples) */
+    ac_rev(t->step, 0, n);
+    ac_rev(t->step, 0, r);
+    ac_rev(t->step, r, n);
+    for (i = 0; lk && i < motion.count; i++) {
+        motion_event_t *e = &motion.event[i];
+        if (MOTION_TRK(e) == k && (e->param & MOTION_LOCK) && MOTION_STEP(e) < n)
+            e->place = (uint8_t)((e->place & 0xC0u) | (MOTION_STEP(e) + r) % n);
+    }
+    motion_unguard(f);
+}
+
 /* track k's line written again from its settings */
 static void ac_gen(uint32_t k, uint32_t hand)
 {
@@ -142,6 +171,7 @@ static void ac_gen(uint32_t k, uint32_t hand)
         if (ac_ch(sf, i, 0x20u, a->acc)) { s->flags |= SF_ACCENT; s->vel = 120; }
         if (nx < n && on[nx] == 1u && ac_ch(sf, i, 0x21u, a->slide)) s->flags |= SF_SLIDE;   /* (into the next note) */
     }
+    ac_turn(t, n, a->rot % n, 0);                           /* (ROTATE: the start where it was put) */
     load_end(t);
     pat_sig[k % NTRK] = ~steps_sig(t);                   /* (the user's steps now) */
     ui.force = 1;
@@ -153,7 +183,7 @@ static param_desc_t ac_d COS_RAM;
 static __attribute__((noinline)) const param_desc_t *ac_desc(uint32_t k, int16_t **valp)
 {
     static const char *const LB[AK_N] = {"DENSITY", "SLIDE", "ACCENT", "JUMPS", "STEPS", "NOTES", "TIE", "LOCK", "EVERY",
-                                         "AMOUNT", "ROOT", "SCALE"};
+                                         "AMOUNT", "ROOT", "SCALE", "ROTATE"};
     static const char *const LK[] = {"OFF", "RHYTHM", "NOTES", "R+N", 0};
     static const char *const EV[] = {"OFF", "1 BAR", "2 BARS", "4 BARS", "8 BARS", "16 BARS", 0};
     static const char *const RT[] = {"AUTO", "C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B", 0};
@@ -173,6 +203,7 @@ static __attribute__((noinline)) const param_desc_t *ac_desc(uint32_t k, int16_t
     case AK_EVERY: ac_d.fmt = F_ENUM; ac_d.max = 5; ac_d.names = EV; ac_v[k] = a->every; break;
     case AK_AMT: ac_v[k] = a->amt; break;
     case AK_ROOT: ac_d.fmt = F_ENUM; ac_d.max = 12; ac_d.names = RT; ac_v[k] = a->root; break;
+    case AK_ROT: ac_d.max = a->steps > 1u ? a->steps - 1 : 0; ac_v[k] = (int16_t)(a->rot % (a->steps ? a->steps : 1u)); break;
     default: ac_d.fmt = F_ENUM; ac_d.max = 6; ac_d.names = SC; ac_v[k] = a->scale; break;
     }
     *valp = &ac_v[k];
@@ -184,10 +215,27 @@ static __attribute__((noinline)) void ac_put(uint32_t k, int32_t v)
 {
     ac_t *a = ac_of(song.sel);
     uint8_t *f[AK_N] = {&a->dens, &a->slide, &a->acc, &a->oct, &a->steps, &a->notes, &a->tie, &a->lock, &a->every,
-                        &a->amt, &a->root, &a->scale};
-    static const uint8_t LO[AK_N] = {0, 0, 0, 0, 4, 1, 0, 0, 0, 0, 0, 0}, HI[AK_N] = {100, 100, 100, 100, 64, 7, 100, 3, 5, 100, 12, 6};
+                        &a->amt, &a->root, &a->scale, &a->rot};
+    static const uint8_t LO[AK_N] = {0, 0, 0, 0, 4, 1, 0, 0, 0, 0, 0, 0, 0},
+                         HI[AK_N] = {100, 100, 100, 100, 64, 7, 100, 3, 5, 100, 12, 6, 63};
+    uint32_t was = a->rot, n;
     k %= AK_N;
+    if (k == AK_ROT) {                                   /* (cursed-os) ROTATE: the steps there now turned, not thrown again */
+        track_t *t = TSEL;
+        if (drum_track(t)) { ui_message("ACID: PICK A MELODIC TRACK"); return; }
+        if (chain_busy()) { ui_message("SONG PLAYS: STOP IT TO EDIT"); return; }
+        a->rot = (uint8_t)clamp(v, 0, a->steps > 1u ? a->steps - 1 : 0);
+        n = (uint32_t)clamp(t->p[P_SLEN], 1, NSTEP);
+        ui.force = 1;
+        if (a->rot == was) return;
+        if (fm1_ms - ac_ms > 2000u) undo_mark();
+        ac_ms = fm1_ms;
+        ac_turn(t, n, (a->rot + n * 64u - was) % n, 1);   /* (not a pattern load: that would drop the track's motion) */
+        pat_sig[song.sel % NTRK] = ~steps_sig(t);
+        return;
+    }
     *f[k] = (uint8_t)clamp(v, LO[k], HI[k]);
+    if (k == AK_STEPS && a->rot >= a->steps) a->rot = (uint8_t)(a->steps - 1u);
     ui.force = 1;
     if (k == AK_LOCK || k == AK_EVERY || (k == AK_AMT && !a->ms))
         return;
@@ -269,6 +317,7 @@ static __attribute__((noinline)) void graph_acid(const track_t *t)
     if (i < sizeof SCALE_MASK / sizeof SCALE_MASK[0]) { str_cpy(b + str_len(b), " ", 2); str_cpy(b + str_len(b), N_SCALE[i], 8); }
     cv_text(x0, 2, &AF_X, b, T_TEXT);
     if (a->lock) cv_text(x0 + 70, 2, &AF_X, LK[a->lock & 3u], T_MID);
+    if (a->rot % len) { str_cpy(b, "ROT ", sizeof b); fmt_int(b + 4, (int32_t)(a->rot % len)); cv_text(x0 + 140, 2, &AF_X, b, T_MID); }
     if (a->ms) cv_text_r(x0 + w, 2, &AF_X, "MUT", T_ACCENT, T_SURF);
     if (rows > 4u) rows = 4u;
     rh = (h - y0 - 2) / (int32_t)rows;

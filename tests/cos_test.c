@@ -1415,6 +1415,47 @@ int main(void)
         CHECK(TSEL->p[P_SUS] == 0 || TSEL->preset == 5u, "a preset's SUB: 0 but DEEP SUB's (%d)", TSEL->p[P_SUS]);
         cz.mode = CM_HOME;
     }
+    {   /* ACID 4 > ROTATE: the line's start moved, the steps as they are (a hand edit, a step lock with them); a new
+         * throw keeps the offset; back to 0: as it was */
+        static step_t was[NSTEP];
+        uint32_t ok = 1, n, j, r;
+        int16_t lv = 0;
+        track_select(4);
+        if (drum_track(TSEL)) set_engine_of(TSEL, ENGI_ANALOG);
+        while (motion.count) motion_delete_event(&trk[4], MOTION_STEP(&motion.event[0]), MOTION_ID(&motion.event[0]));
+        ac_put(AK_ROT, 0);
+        ac_put(AK_STEPS, 16);
+        n = (uint32_t)TSEL->p[P_SLEN];
+        TSEL->step[2].time = ST_NOTE; TSEL->step[2].n = 1; TSEL->step[2].note[0] = 77;   /* (a hand edit) */
+        motion_set_lock(TSEL, 2, P_LEVEL, 33);
+        memcpy(was, TSEL->step, sizeof was);
+        ac_put(AK_ROT, 3);
+        for (j = 0; j < n; j++) ok &= !memcmp(&TSEL->step[(j + 3u) % n], &was[j], sizeof was[0]);
+        CHECK(n == 16u && ok, "ROTATE 3: every step 3 later, the last ones round to the start");
+        CHECK(TSEL->step[5].note[0] == 77 && motion_lock_get(TSEL, 5, P_LEVEL, &lv) && lv == 33 &&
+              !motion_lock_get(TSEL, 2, P_LEVEL, &lv), "the hand edit and its lock moved with it");
+        ac_put(AK_ROT, 1);
+        for (j = 0, ok = 1; j < n; j++) ok &= !memcmp(&TSEL->step[(j + 1u) % n], &was[j], sizeof was[0]);
+        CHECK(ok, "back to 1: 1 later");
+        ac_put(AK_ROT, 0);
+        CHECK(!memcmp(TSEL->step, was, n * sizeof was[0]) && motion_lock_get(TSEL, 2, P_LEVEL, &lv), "0: as it was");
+        ac_put(AK_DENS, 70);
+        memcpy(was, TSEL->step, sizeof was);
+        ac_put(AK_ROT, 5);
+        ac_put(AK_DENS, 71); ac_put(AK_DENS, 70);              /* (the line thrown again from the same seeds) */
+        for (j = 0, ok = 1; j < n; j++) {                      /* (what plays: a cleared step keeps old bytes) */
+            const step_t *x = &TSEL->step[(j + 5u) % n], *y = &was[j];
+            ok &= x->time == y->time && (x->time != ST_NOTE || (x->n == y->n && x->note[0] == y->note[0] &&
+                                                                x->flags == y->flags && x->vel == y->vel));
+        }
+        CHECK(ok, "the line written again: the offset kept");
+        ac_put(AK_STEPS, 4);
+        r = ac_of(4)->rot;
+        CHECK(r == 3u, "STEPS under ROTATE: ROTATE at the last step (%u)", r);
+        ac_put(AK_ROT, 0); ac_put(AK_STEPS, 16);
+        while (motion.count) motion_delete_event(&trk[4], MOTION_STEP(&motion.event[0]), MOTION_ID(&motion.event[0]));
+        cz.mode = CM_HOME;
+    }
     {   /* the keyboards drawn (KEY, DRONE) as the FM-1's keys: from F, a black one where the panel has one */
         uint32_t ok = 1, j, bl;
         for (k = 0; k < 27u; k++) {
