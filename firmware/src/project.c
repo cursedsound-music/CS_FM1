@@ -2320,18 +2320,16 @@ static void song_index_boot(void);
 #if FELUCCA_FLASH
 static uint32_t flash_id;                /* (cursedsound) the id read at boot: GLO > SYSTEM shows it, and NO FLASH */
 /* (cursedsound) the flash parts the FM-1 may carry: JIANT checked only Puya's P25Q80 (0x856014), and an FM-1 with
- * another 1 MiB SPI NOR (a later batch) saved nothing ("SAVED (NO FLASH)", found on a device). Every one of these
- * takes the same commands as the P25Q80 (9F id, 05 status, 06 write enable, 20 4 KiB erase, 02 page program, 03
- * read); its capacity byte 1 MiB (0x14) or more (only the first MiB is used). Others stay RAM-only, as before */
+ * another 1 MiB SPI NOR (a later batch) saved nothing ("SAVED (NO FLASH)") and, worse, refused every update over USB
+ * (main.c: ota_session only with flash_ok), so only the chip's boot mode could bring a new build: found on a device.
+ * Any part that answers a plausible id now: a maker byte (not 0 or FF, an unread bus) and 1 .. 16 MiB. The update loader
+ * already writes the FM-1's flash with these same commands (9F id, 05 status, 06 write enable, 20 4 KiB erase, 02 page
+ * program, 03 read) and checks no id at all: a part it has installed on takes them. A write that does not hold fails its
+ * read-back (storage.c: SAVE ERROR), it does not go unnoticed */
 static int flash_id_ok(uint32_t id)
 {
-    static const uint8_t MF[] = {0x85, 0xC8, 0xEF, 0x5E, 0x0B, 0x68, 0x20, 0x1C, 0x9D, 0xC2, 0xA1, 0xBA};
-    /* Puya, GigaDevice, Winbond, Zbit, XTX, Boya, XMC, EON, ISSI, Macronix, Fudan, Zetta */
-    uint32_t i, cap = id & 0xFFu;
-    if (cap < 0x14u || cap > 0x18u) return 0;
-    for (i = 0; i < sizeof MF; i++)
-        if ((id >> 16) == MF[i]) return 1;
-    return 0;
+    uint32_t mf = id >> 16, cap = id & 0xFFu;
+    return mf != 0u && mf != 0xFFu && cap >= 0x14u && cap <= 0x18u;
 }
 /* "NO FLASH ID 5E6014": what a save without flash says, so the part can be told */
 static void flash_say_none(char *b)
