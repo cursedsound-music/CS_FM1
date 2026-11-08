@@ -135,6 +135,9 @@ static const char *const CM_NAME[CM_N] = {"HOME", "TRIG", "SRC", "AMP", "DRONE",
 static const uint8_t CM_BTN[CM_N] = {B_HOME, B_SEQ, B_EDIT, B_ENV, B_LFO, B_FX, B_ARP, B_GLO, B_SCL, B_SAVE};
 static const uint8_t WK[16] = {0, 2, 4, 6, 7, 9, 11, 12, 14, 16, 18, 19, 21, 23, 24, 26};   /* the white keys */
 static const uint8_t BK[11] = {1, 3, 5, 8, 10, 13, 15, 17, 20, 22, 25};                    /* the black keys */
+/* the keys drawn on screen (KEY, DRONE), from F as the FM-1's own: F F# G G# A A# B C C# D D# E, 1 a black one (was C's
+ * pattern from F: the black keys a place off, A shown where E is on a C keyboard; tests/cos_test.c checks it against BK) */
+static const uint8_t COS_BLF[12] = {0, 1, 0, 1, 0, 1, 0, 0, 1, 0, 1, 0};
 static const char *const COS_LN[NLANE] = {"BD", "SD", "CP", "CH", "OH", "TM", "RS", "CB"};
 
 static struct {
@@ -1788,7 +1791,7 @@ static void cos_body_sound(void)
 /* KEY: the song's key large (the next one in red while it waits for the bar) and an octave of keys from F, the key lit */
 static void cos_body_key(void)
 {
-    static const uint8_t BL[12] = {0, 1, 0, 1, 0, 0, 1, 0, 1, 0, 1, 0};   /* from F: F F# G G# A A# B C C# D D# E */
+    const uint8_t *BL = COS_BLF;
     uint32_t i, cur = cos_key(), nx = cz.key_next ? cz.key_next - 1u : 99u;
     char b[24];
     str_cpy(b, COS_NN[cur], sizeof b);
@@ -1812,7 +1815,7 @@ static void cos_body_key(void)
  * plays on through PLAY and STOP */
 static void cos_body_drone(void)
 {
-    static const uint8_t BL[12] = {0, 1, 0, 1, 0, 0, 1, 0, 1, 0, 1, 0};   /* from F */
+    const uint8_t *BL = COS_BLF;
     char b[24];
     uint32_t i, k, wi;
     int32_t base = 41 + 12 * cz.dr_oct;
@@ -2130,7 +2133,7 @@ dials:
 /* the splash (ui_draw.c draw_splash / splash_write under COS_SLIM; main.c's boot loop calls it every ~4 ms for
  * SPL_WRITE + SPL_HOLD ms): black, a few still stars, the name 2x, the version, a 16-block bar filling like a pattern
  * (the block being filled red), READY. Drawn whole once, then only the bar's strip when a block fills */
-#define COS_VERSION "0.6.2"
+#define COS_VERSION "0.6.3"
 static void cos_px2(int32_t x, int32_t y, const char *s, uint16_t c)      /* (the face 2 x 2) */
 {
     int32_t r, b, b0;

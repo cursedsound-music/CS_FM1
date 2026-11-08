@@ -1305,6 +1305,14 @@ int main(void)
         cz.bank = 0;
         track_select(0);
     }
+    {   /* the keyboards drawn (KEY, DRONE) as the FM-1's keys: from F, a black one where the panel has one */
+        uint32_t ok = 1, j, bl;
+        for (k = 0; k < 27u; k++) {
+            for (j = bl = 0; j < 11u; j++) bl |= BK[j] == k;
+            ok &= COS_BLF[k % 12u] == bl;
+        }
+        CHECK(ok, "the keys on screen: black where the FM-1's are");
+    }
     printf("cos_test: %s (%d failures)\n", fails ? "FAILED" : "ok", fails);
     return fails != 0;
 }
