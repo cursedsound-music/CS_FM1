@@ -1305,6 +1305,85 @@ int main(void)
         cz.bank = 0;
         track_select(0);
     }
+    {   /* STEP INPUT (SEQ, a synth, stopped): REC on; a key writes its note into the cursor's step and moves on; SEQ a
+         * rest; a key held + SEQ a tie; PRESETS the cursor; REC off. The keys sound meanwhile (song.grid 0) */
+        uint32_t i0;
+        track_select(1);
+        cz.mode = CM_TRIG; cz.bank = 0;
+        if (song.playing) { transport_req = 2; ui_input(); }
+        for (i0 = 0; i0 < NSTEP; i0++) step_clear(&TSEL->step[i0]);
+        cos_test_btn(B_REC, 1); cos_test_btn(B_REC, 0);
+        CHECK(cz.si && cz.si_pos == 0u && !(song.rec & 2u), "REC on SEQ, stopped: STEP INPUT on, not armed");
+        cos_input();
+        CHECK(song.grid == 0u, "STEP INPUT: the keys sound (song.grid %u)", song.grid);
+        fm1_in.notes = host_notes = 1u << WK[4]; cos_input(); host_notes = 0; fm1_in.notes = 0; cos_input();   /* (white 5) */
+        CHECK(TSEL->step[0].time == ST_NOTE && TSEL->step[0].note[0] == kb_map(TSEL, WK[4]) && cz.si_pos == 1u,
+              "a key: step 1 its note (%u, the key's %u), the cursor on (%u)", TSEL->step[0].note[0], kb_map(TSEL, WK[4]), cz.si_pos);
+        cos_test_btn(B_SEQ, 1); cos_test_btn(B_SEQ, 0);
+        CHECK(TSEL->step[1].time == ST_REST && cz.si_pos == 2u, "SEQ: step 2 a rest, on to 3");
+        fm1_in.notes = host_notes = 1u << BK[2]; cos_input(); host_notes = 0;   /* (black 3 held) */
+        cos_test_btn(B_SEQ, 1); cos_test_btn(B_SEQ, 0);
+        fm1_in.notes = 0; cos_input();
+        CHECK(TSEL->step[2].time == ST_NOTE && TSEL->step[2].note[0] == kb_map(TSEL, BK[2]) && TSEL->step[3].time == ST_TIE &&
+              cz.si_pos == 4u, "a key held + SEQ: step 3 the note, step 4 a tie (%u %u)", TSEL->step[2].time, TSEL->step[3].time);
+        host_ticks += 1000000u; host_enc[panel.enc[EN_PRESET]] = -1; cos_input();
+        CHECK(cz.si_pos == 3u, "PRESETS: the cursor back (%u)", cz.si_pos);
+        for (i0 = 0; i0 < 13u; i0++) { cos_test_btn(B_SEQ, 1); cos_test_btn(B_SEQ, 0); }
+        CHECK(cz.si_pos == 16u % (uint32_t)TSEL->p[P_SLEN] && cz.bank == cz.si_pos / 16u, "past the 16th: the next bank, or round (%u, bank %u)", cz.si_pos, cz.bank);
+        cos_test_btn(B_REC, 1); cos_test_btn(B_REC, 0);
+        CHECK(!cz.si, "REC again: STEP INPUT off");
+        cos_input();
+        CHECK(song.grid == 2u, "off: the keys the steps again");
+        cos_test_btn(B_REC, 1); cos_test_btn(B_REC, 0);
+        cz.mode = CM_HOME; cos_input();
+        CHECK(!cz.si, "another page: STEP INPUT off");
+        for (i0 = 0; i0 < trk_live && !drum_track(&trk[i0]); i0++) {}
+        track_select(i0 < trk_live ? i0 : 0); if (!drum_track(TSEL)) set_engine_of(TSEL, ENGI_DRUM);
+        cz.mode = CM_TRIG;
+        cos_test_btn(B_REC, 1); cos_test_btn(B_REC, 0);
+        CHECK(drum_track(TSEL) && !cz.si, "a kit: no STEP INPUT (REC as before)");
+        song.rec = 0; cz.rec_down = 0;
+        cz.mode = CM_HOME; cz.bank = 0;
+    }
+    {   /* KEEP / BACK (SAVE held + OCT+ / OCT-): the sound and mix back as kept, the mutes, the tempo and the steps as they
+         * are; a SAVE tap still the SAVE page */
+        int16_t cut, lvl, bpm = song.g[G_BPM];
+        uint8_t st0;
+        track_select(1);
+        cz.mode = CM_HOME;
+        cut = TSEL->p[P_E0]; lvl = trk[2].p[P_LEVEL];
+        cos_test_btn(B_SAVE, 1); cos_test_btn(B_OCTUP, 1); cos_test_btn(B_OCTUP, 0); cos_test_btn(B_SAVE, 0);
+        CHECK(cz.mode == CM_HOME && keep.ok, "SAVE + OCT+: kept, still on HOME (%u)", cz.mode);
+        TSEL->p[P_E0] = (int16_t)(cut + 20); trk[2].p[P_LEVEL] = (int16_t)(lvl / 2); iso_v[0] = -12; macro_v[1] = 99;
+        trk[3].p[P_MUTE] = 1; song.g[G_BPM] = (int16_t)(bpm + 7);
+        st0 = TSEL->step[5].time; TSEL->step[5].time = st0 == ST_NOTE ? ST_REST : ST_NOTE;
+        cos_test_btn(B_SAVE, 1); cos_test_btn(B_OCTDN, 1); cos_test_btn(B_OCTDN, 0); cos_test_btn(B_SAVE, 0);
+        CHECK(TSEL->p[P_E0] == cut && trk[2].p[P_LEVEL] == lvl && iso_v[0] == 0 && macro_v[1] != 99,
+              "SAVE + OCT-: the sound and mix back (%d %d %d)", TSEL->p[P_E0], trk[2].p[P_LEVEL], iso_v[0]);
+        CHECK(trk[3].p[P_MUTE] == 1 && song.g[G_BPM] == bpm + 7 && TSEL->step[5].time != st0,
+              "BACK: the mutes, the tempo, the steps as they are");
+        trk[3].p[P_MUTE] = 0; song.g[G_BPM] = bpm; TSEL->step[5].time = st0;
+        cos_test_btn(B_SAVE, 1); cos_test_btn(B_SAVE, 0);
+        CHECK(cz.mode == CM_PROJ, "a SAVE tap: the SAVE page");
+        cz.mode = CM_HOME;
+    }
+    {   /* ACID's DEVIL page (EDIT): ACC DEC, DRV TYPE, SUB, KEY TRK on the envelope's slots; not on ENV */
+        const cpg_t *pp;
+        uint32_t n, t2, found = 0, amp = 0;
+        uint32_t ai;
+        for (ai = 0; ai < trk_live && trk_eng(&trk[ai]) != ENGI_ACID; ai++) {}
+        if (ai >= trk_live) { ai = 1; track_select(ai); set_engine_of(TSEL, ENGI_ACID); TSEL->engine = ENGI_ACID; }
+        track_select(ai);
+        cos_pages(CM_SRC, &pp, &n);
+        for (t2 = 0; t2 < n; t2++) found |= str_eq(pp[t2].tab, "DEVIL");
+        cos_pages(CM_AMP, &pp, &n);
+        for (t2 = 0; t2 < n; t2++) amp |= pp[t2].id[0] == P_ATK;
+        CHECK(trk_eng(TSEL) == ENGI_ACID && found && !amp, "ACID: EDIT > DEVIL there, ENV's AMP not");
+        CHECK(str_eq(track_desc(TSEL, P_SUS)->label, "SUB") && str_eq(track_desc(TSEL, P_DEC)->label, "DRVTYPE"),
+              "DEVIL's names on ACID's envelope slots");
+        CHECK(TSEL->p[P_SUS] == 0 || TSEL->preset == 5u, "a preset's SUB: 0 but DEEP SUB's (%d)", TSEL->p[P_SUS]);
+        cz.mode = CM_HOME;
+    }
     {   /* the keyboards drawn (KEY, DRONE) as the FM-1's keys: from F, a black one where the panel has one */
         uint32_t ok = 1, j, bl;
         for (k = 0; k < 27u; k++) {

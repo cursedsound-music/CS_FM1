@@ -305,6 +305,9 @@ static const param_desc_t *track_desc(const track_t *t, uint32_t id)
         const param_desc_t *d = e->desc ? e->desc(t, id - P_E0) : 0;   /* a mode-dependent label / names */
         return d ? d : &e->edit[id - P_E0];
     }
+    if (id >= P_ATK && id <= P_REL && ENGINES[eng_idx(t->eng_req)] == &ENG_ACID)   /* (cursedsound) ACID's DEVIL page in
+                                                         * the envelope's slots its own envelopes leave (eng_acid.c) */
+        return &ACID_X[id - P_ATK];
     if (id == P_LRTRG && ENGINES[eng_idx(t->eng_req)] == &ENG_LOFI)   /* (0.6.12) LOFI's RTRG in DIGITAL's slot */
         return &LOFI_RTRG;
     if (id == P_TCHAN && !(FELUCCA_FM4 && t->eng_req % NENGINES == ENGI_DIGITAL))   /* (0.6.37) SHIFT's CHANCE */

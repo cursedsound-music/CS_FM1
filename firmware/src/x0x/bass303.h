@@ -86,6 +86,9 @@ typedef struct { float x1, y1; } bass303_ap_t;                         /* halfba
 
 typedef struct bass303 {
     uint8_t pot[BASS303_NPARAMS];
+    float soft_out;          /* (cursedsound) SOFT's makeup after its clipper (bass303_set DRIVE; was s_inv: 13 dB down at
+                              * full drive, now about level with RAT) */
+    float sub_lv, sub_ph;    /* (cursedsound) the sub: a sine an octave down, its level (0 off) and phase (bass303_set_sub) */
 
     /* derived from the pots (bass303_set) */
     float cutoff;            /* nominal cutoff, Hz */
@@ -173,4 +176,5 @@ void bass303_set_lite(bass303_t *b, int on);
 int bass303_nparams(void);
 const x0x_param_t *bass303_param(int i);
 void bass303_set(bass303_t *b, int i, int value);
+void bass303_set_sub(bass303_t *b, int value);     /* (cursedsound) the sub's level, 0 .. 127 (0 off) */
 int bass303_get(const bass303_t *b, int i);

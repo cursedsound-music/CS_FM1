@@ -134,6 +134,8 @@ static const char *why_quiet(uint32_t m, const cpg_t *p, uint32_t k)
     if (m == CM_GEN && (str_eq(p->tab, "ACID 3") || str_eq(p->tab, "ACID 4") || str_eq(p->tab, "DUB 3") ||
                         str_eq(p->tab, "MUTATE")) && rb_n == RB) return "GEN: the mutations, every N bars (WIRE_LONG=1)";
     if (m == CM_GEN && p->kind == CK_EU && str_eq(p->tab, "EUCLID") && k == 3u) return "EUCLID LANE: the lane the next one writes";
+    if (m == CM_SRC && trk_engp(TSEL) == &ENG_ACID && id == P_DEC && !TSEL->p[P_E6])
+        return "ACID DRV TYPE: DRIVE at 0, no drive to shape";
     if (m == CM_GEN && p->kind == CK_DB && id == DK_MOVE && rb_n == RB)
         return "DUB MOVE: the loop's later chords, past this run (WIRE_LONG=1: heard)";
     if (m == CM_GEN && p->kind == CK_AC && id == AK_LOCK) return "ACID 4 LOCK: what the next OCT+ keeps (tests/acid_test.c)";

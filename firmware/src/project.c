@@ -1923,7 +1923,15 @@ static int project_save_as(uint32_t slot, const char *name)
     proj_name_get(proj_name, (const uint8_t *)p->name);
     proj_cur = (uint8_t)(slot & 3u);
     live.cur = (int8_t)(slot & 3u);
+#if FELUCCA_FLASH
+    {
+        char b[20];
+        flash_say_none(b);                              /* (cursedsound: which part it found) */
+        ui_message(b);
+    }
+#else
     ui_message("SAVED (NO FLASH)");
+#endif
     return 0;
 }
 static int project_save(uint32_t slot) { return project_save_as(slot, 0); }
@@ -2309,12 +2317,39 @@ static uint32_t persist_retry_ms;
 static void song_index_load(void);                /* song_main.c */
 static void song_index_boot(void);
 
+#if FELUCCA_FLASH
+static uint32_t flash_id;                /* (cursedsound) the id read at boot: GLO > SYSTEM shows it, and NO FLASH */
+/* (cursedsound) the flash parts the FM-1 may carry: JIANT checked only Puya's P25Q80 (0x856014), and an FM-1 with
+ * another 1 MiB SPI NOR (a later batch) saved nothing ("SAVED (NO FLASH)", found on a device). Every one of these
+ * takes the same commands as the P25Q80 (9F id, 05 status, 06 write enable, 20 4 KiB erase, 02 page program, 03
+ * read); its capacity byte 1 MiB (0x14) or more (only the first MiB is used). Others stay RAM-only, as before */
+static int flash_id_ok(uint32_t id)
+{
+    static const uint8_t MF[] = {0x85, 0xC8, 0xEF, 0x5E, 0x0B, 0x68, 0x20, 0x1C, 0x9D, 0xC2, 0xA1, 0xBA};
+    /* Puya, GigaDevice, Winbond, Zbit, XTX, Boya, XMC, EON, ISSI, Macronix, Fudan, Zetta */
+    uint32_t i, cap = id & 0xFFu;
+    if (cap < 0x14u || cap > 0x18u) return 0;
+    for (i = 0; i < sizeof MF; i++)
+        if ((id >> 16) == MF[i]) return 1;
+    return 0;
+}
+/* "NO FLASH ID 5E6014": what a save without flash says, so the part can be told */
+static void flash_say_none(char *b)
+{
+    static const char HX[] = "0123456789ABCDEF";
+    uint32_t k;
+    str_cpy(b, "NO FLASH ID ", 13);
+    for (k = 0; k < 6u; k++) b[12u + k] = HX[(flash_id >> (20u - 4u * k)) & 15u];
+    b[18] = 0;
+}
+#endif
 static void persist_boot(void)                    /* before settings_init / panel_init */
 {
 #if FELUCCA_FLASH
     persist_t p;
     uint32_t f = irq_save();
-    flash_ok = FL_FAR(fl_jedec_ram)() == 0x856014u;       /* the expected 1 MiB part, else stay RAM-only */
+    flash_id = FL_FAR(fl_jedec_ram)();
+    flash_ok = (uint8_t)flash_id_ok(flash_id);          /* a known 1 MiB part, else stay RAM-only (storage_hw.c) */
     irq_restore(f);
     if (!flash_ok)
         return;

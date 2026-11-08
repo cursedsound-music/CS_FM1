@@ -118,6 +118,7 @@ void acid_hw_init(bass303_t *b)
     bass303_set(b, BASS303_VOLUME, 110);          /* (-8 dB: as loud as the other engines' basses) */
 }
 void acid_hw_set(bass303_t *b, int pot, int v) { bass303_set(b, pot, v); }
+void acid_hw_sub(bass303_t *b, int v) { bass303_set_sub(b, v); }   /* (cursedsound) the sub's level */
 void acid_hw_note_on(bass303_t *b, int note, int accent, int slide) { bass303_note_on(b, note, accent, slide); }
 void acid_hw_note_off(bass303_t *b) { bass303_note_off(b); }
 /* n samples (n <= 64) at the pitch the phase increment inc gives (2^32 a cycle at 44.1 kHz: the slew's target), as

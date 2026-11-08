@@ -307,6 +307,56 @@ static void t_iso(void)
     CHECK(fabs(g) < 0.01 && !iso.w, "the kills let go: out of the path again (%+.3f dB)", g);
 }
 
+/* ACID's DEVIL page on the 303 itself (x0x/acid_glue.c): SOFT's level beside RAT's, the SUB's octave below, KEY TRK's
+ * brighter high notes, ACC DEC's longer accents */
+static double acid_run(int sub, int drv, int drive, int note, int acc, int accdec, double f_probe, double *probe_db)
+{
+    static bass303_t b;
+    int32_t out[64];
+    int i, k, j, n = 0;
+    double s = 0, re = 0, im = 0, ph = 0;
+    uint32_t inc = (uint32_t)(440.0 * pow(2, (note - 69) / 12.0) / 44100.0 * 4294967296.0);
+    acid_hw_init(&b);
+    acid_hw_set(&b, BASS303_CUTOFF, 64); acid_hw_set(&b, BASS303_RESO, 80); acid_hw_set(&b, BASS303_ENVMOD, 64);
+    acid_hw_set(&b, BASS303_DECAY, 50); acid_hw_set(&b, BASS303_DRIVE, drive); acid_hw_set(&b, BASS303_DRVTYPE, drv);
+    acid_hw_set(&b, BASS303_ACCDEC, accdec);
+    acid_hw_sub(&b, sub);
+    for (k = 0; k < 4; k++) {
+        acid_hw_note_on(&b, note, acc, 0);
+        for (i = 0; i < 44100 / 4 / 64; i++) {
+            acid_hw_render(&b, inc, out, 64);
+            for (j = 0; j < 64; j++, n++) {
+                s += (double)out[j] * out[j];
+                re += out[j] * cos(ph); im += out[j] * sin(ph); ph += 2 * M_PI * f_probe / 44100.0;
+            }
+        }
+        acid_hw_note_off(&b);
+    }
+    *probe_db = 20 * log10(sqrt(re * re + im * im) * 2 / n / 32768 + 1e-12);
+    return 10 * log10(s / n / (32768.0 * 32768.0) + 1e-30);
+}
+static void t_acid(void)
+{
+    double r, s, pr, ps, p0, p1, d;
+    int dv;
+    for (dv = 64; dv <= 127; dv += 63) {
+        r = acid_run(0, BASS303_DRV_RAT, dv, 36, 0, 7, 100, &pr);
+        s = acid_run(0, BASS303_DRV_SOFT, dv, 36, 0, 7, 100, &ps);
+        SAY("  ACID DRIVE %d: RAT %.1f dBFS, SOFT %.1f\n", dv, r, s);
+        CHECK(fabs(r - s) < 3.0, "ACID DRV TYPE SOFT at DRIVE %d: %.1f dB beside RAT's %.1f (within 3 dB)", dv, s, r);
+    }
+    acid_run(0, BASS303_DRV_RAT, 0, 48, 0, 7, 65.4 / 1.0, &p0);   /* (C3 = 130.8 Hz: the sub at 65.4) */
+    acid_run(127, BASS303_DRV_RAT, 0, 48, 0, 7, 65.4, &p1);
+    SAY("  ACID SUB: 65.4 Hz under C3 %.1f -> %.1f dBFS\n", p0, p1);
+    CHECK(p1 > p0 + 20.0 && p1 > -30.0, "ACID SUB 127: the octave below there (%.1f, was %.1f dBFS)", p1, p0);
+    r = acid_run(0, BASS303_DRV_RAT, 0, 36, 1, 7, 100, &pr);
+    s = acid_run(0, BASS303_DRV_RAT, 0, 36, 1, 127, 100, &ps);
+    SAY("  ACID ACC DEC 7 -> 127, accented notes: %.1f -> %.1f dBFS\n", r, s);
+    CHECK(s > r + 1.0, "ACID ACC DEC: longer accents, more energy (%.1f -> %.1f)", r, s);
+    d = acid_run(0, BASS303_DRV_RAT, 0, 36, 0, 7, 100, &pr);
+    (void)d;
+}
+
 int main(void)
 {
     uint32_t i;
@@ -317,6 +367,7 @@ int main(void)
     cz.flip = 1;
     ui_polls();
     t_bpm();
+    t_acid();
     t_delay();
     t_comp();
     t_limit();

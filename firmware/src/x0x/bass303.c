@@ -41,6 +41,9 @@ static bass303_fixed_t bass303_k;     /* the coefficients every instance shares 
 
 /* ---- parameters ------------------------------------------------------------------------ */
 
+#ifndef SOFT_K
+#define SOFT_K (-0.2f)                         /* (cursedsound: SOFT level with RAT at DRIVE 64 .. 127, measured) */
+#endif
 static const char *const wave_names[] = { "Saw", "Sqr" };
 static const char *const drv_names[] = { "Off", "Soft", "RAT" };
 
@@ -217,6 +220,7 @@ void bass303_set(bass303_t *b, int i, int v)
         b->drv_amt = n;
         b->s_gain = c_db2lin(24.0f * n);
         b->s_inv = 1.0f / b->s_gain;
+        b->soft_out = c_db2lin(SOFT_K * 24.0f * n);
         rat_coeffs(b);
         break;
     case BASS303_DRVTYPE:
@@ -572,7 +576,7 @@ static BASS303_PASS void drive_soft(bass303_t *b, float *out, int n)
     up_pass(b, out, u, n);
     for (i = 0; i < 2 * n; i++)
         u[i] = fm_tanhf(u[i] + 0.15f) - 0.14888503f;
-    down_pass(b, u, out, n, b->s_inv);
+    down_pass(b, u, out, n, b->soft_out);
     bq_pass(&bass303_k.s_post, &b->s_post, out, n, 1.0f);
     dcb_pass(b, out, n);
 }
@@ -821,6 +825,29 @@ static BASS303_PASS void run_ladder(bass303_t *b, const bass303_cs_t *cs, float 
 }
 
 /* pass 1: the voice, nos values a sample into osb */
+/* (cursedsound) the sub: a sine an octave under the oscillator, after the filter (not shaped by it: the low end stays
+ * whole at any CUTOFF), under the amp envelope and the drive as the rest. It follows the slewed pitch (a slide), at
+ * half the oscillator's increment; added at the oversampled rate (a sine: nothing to alias) */
+static void run_sub(bass303_t *b, const bass303_cs_t *cs, float *osb, int n, int nos)
+{
+    float p = b->sub_ph, lv = b->sub_lv;
+    int j, o;
+    for (j = 0; j < n; j++) {
+        float d = cs[j].inc * 0.5f;
+        for (o = 0; o < nos; o++) {
+            p += d;
+            if (p >= 1.0f) p -= 1.0f;
+            osb[j * nos + o] += lv * fm_sin_pi((p - 0.5f) * FM_TWO_PI);
+        }
+    }
+    b->sub_ph = p;
+}
+void bass303_set_sub(bass303_t *b, int v)
+{
+    v = v < 0 ? 0 : v > 127 ? 127 : v;
+    b->sub_lv = (float)v * (0.45f / 127.0f);
+}
+
 static void run_voice(bass303_t *b, float *ab, float *osb, int n, int nos)
 {
     bass303_cs_t cs[BASS303_SUB];
@@ -835,6 +862,8 @@ static void run_voice(bass303_t *b, float *ab, float *osb, int n, int nos)
         osc_samples(b, cs, osb, n, nos, b->wave);
         ladder_samples(b, cs, osb, n, nos);
     }
+    if (b->sub_lv > 0.0f)
+        run_sub(b, cs, osb, n, nos);
 }
 
 /* pass 2: the amp de-clicked (200 Hz Butterworth), times the volume, in place */

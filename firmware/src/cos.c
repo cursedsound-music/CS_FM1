@@ -10,7 +10,8 @@
  *   SEQ   TRIG: the track's steps        white keys: trigs (on release)   OCT-/+: the bank of 16   (a kit: black keys
  *         pick the lane). A step held + a knob: a parameter lock on that step, of the sound page used last (SRC AMP FLTR
  *         LFO FX); held + REC: its locks go. Locked steps: a dot under them. SEQ held + REC twice (3 s): the track
- *         empty (cos_clear). A synth: steps held + PRESETS their note (in the scale), + black 1 ACCENT, 2 SLIDE
+ *         empty (cos_clear). A synth: steps held + PRESETS their note (in the scale), + black 1 ACCENT, 2 SLIDE;
+ *         stopped, REC: STEP INPUT (a key the cursor's note, SEQ a rest, a key held + SEQ a tie: cos_si_*)
  *   EDIT  SRC 1 / SRC 2: the engine (VOICE: and WORDS, the talking synth: LANG LYRIC THEME ARTIC, OCT+ new words)
  *   ENV   AMP / FLTR / LFO / LFO 2      FX  SEND / DIST
  *   LFO   DRONE: the keys hold notes on the track (up to four), sounding whatever the transport does; REC lets them go
@@ -63,6 +64,12 @@ static const cpg_t CZP_SRC[] = {{"SRC 1", CK_TRK, {P_E0, P_E1, P_E2, P_E3}}, {"S
                                {"VOICE", CK_TRK, {P_VOICE, P_GLIDE, P_DETUNE, ID_OCT}},
                                {"CHORD", CK_TRK, {P_CHRD, P_CVOI, P_CSTR, X}},   /* (a key plays a chord: seq.c chord_build) */
                                CZ_MOD(1), CZ_MOD(2), CZ_MOD(3), CZ_MOD(4)};
+static const cpg_t CZP_SRCA[] = {{"SRC 1", CK_TRK, {P_E0, P_E1, P_E2, P_E3}}, {"SRC 2", CK_TRK, {P_E4, P_E5, P_E6, P_E7}},
+                                {"DEVIL", CK_TRK, {P_ATK, P_DEC, P_SUS, P_REL}},   /* (ACID: ACC DEC, DRV TYPE, SUB, KEY TRK in
+                                                         * the envelope's slots: eng_acid.c ACID_X) */
+                                {"VOICE", CK_TRK, {P_VOICE, P_GLIDE, P_DETUNE, ID_OCT}},
+                                {"CHORD", CK_TRK, {P_CHRD, P_CVOI, P_CSTR, X}},
+                                CZ_MOD(1), CZ_MOD(2), CZ_MOD(3), CZ_MOD(4)};
 static const cpg_t CZP_SRCV[] = {{"SRC 1", CK_TRK, {P_E0, P_E1, P_E2, P_E3}}, {"SRC 2", CK_TRK, {P_E4, P_E5, P_E6, P_E7}},
                                 {"WORDS", CK_TRK, {P_VLANG, P_VLYR, X, X}},   /* (THEME, ARTIC: on the first page) */
                                 {"VOICE", CK_TRK, {P_VOICE, P_GLIDE, P_DETUNE, ID_OCT}},
@@ -157,6 +164,8 @@ static struct {
     uint8_t home_down, home_used, home_tab;             /* HOME held (the tempo's button): on HOME its tap, the next page, let go */
     uint8_t rec_down, rec_used;                         /* REC held (+ OCT-: the motion cleared); its tap arms, let go */
     uint8_t clr_k;                                      /* SEQ held + REC: the track asked about (+ 1), cos_clear */
+    uint8_t si, si_pos;                                 /* STEP INPUT on (SEQ, a synth); its cursor's step (cos_si_*) */
+    uint8_t sv_down, sv_used;                           /* SAVE held (+ OCT+ KEEP, OCT- BACK: cos_keep); its tap: SAVE page */
     uint32_t clr_t;                                     /* .. when (fm1_ms) */
     uint32_t set_ms;                                    /* a setting turned (MASTER): saved 2 s after, not every detent */
     uint8_t slot, pn_ok;                                /* SAVE: the slot picked (0..3); the names below read */
@@ -183,6 +192,7 @@ static void cos_pages(uint32_t m, const cpg_t **p, uint32_t *n)
         *n = poly ? NELEM(CZP_GENS) : NELEM(CZP_GENM);
         return;
     }
+    if (m == CM_SRC && trk_engp(TSEL) == &ENG_ACID) { *p = CZP_SRCA; *n = NELEM(CZP_SRCA); return; }   /* (+ DEVIL) */
     *p = vo ? CZP_SRCV : m == CM_AMP && trk_engp(TSEL) == &ENG_ANALOG ? CZP_AMPA : P[m % CM_N];
     *n = N[m % CM_N] + (uint32_t)vo;                                      /* (VOICE: WORDS too) */
     if (m == CM_AMP) {                                   /* (a page all of whose knobs the engine does not use: left out,
@@ -194,6 +204,8 @@ static void cos_pages(uint32_t m, const cpg_t **p, uint32_t *n)
             uint32_t live = q->kind != CK_TRK;
             for (j = 0; j < 4u && !live; j++)
                 live = q->id[j] != 0xFFu && !cos_dead(TSEL, q->id[j]);
+            if (q->id[0] == P_ATK && q->kind == CK_TRK && trk_engp(TSEL) == &ENG_ACID) live = 0;   /* (ACID: those are
+                                                         * EDIT > DEVIL's) */
             if (live) keep[o++] = *q;
         }
         if (o != *n) { *p = keep; *n = o; }
@@ -715,7 +727,8 @@ static int cos_dead(const track_t *t, uint32_t id)
     if (e == &ENG_DRUM)
         return id == P_ATK || id == P_DEC || id == P_SUS || id == P_REL || id == P_ED_PIT || id == P_ED_SHP ||
                id == P_GLIDE || id == P_SGATE || id == P_SCALE || id == P_QUANT;   /* (and no scale: hits) */
-    if (e->ownenv && (id == P_ATK || id == P_DEC || id == P_SUS || (id == P_REL && e != &ENG_STRING) ||
+    if (e->ownenv && (((id == P_ATK || id == P_DEC || id == P_SUS || id == P_REL) && e != &ENG_ACID &&
+                       (id != P_REL || e != &ENG_STRING)) ||
                       id == P_ED_FLT || id == P_ED_PIT || id == P_ED_SHP))
         return 1;
     if (e == &ENG_ACID && (id == P_DETUNE || id == P_LD_SHP))
@@ -931,6 +944,54 @@ static __attribute__((noinline)) void cos_step_note(int32_t d)
     note_name(b + str_len(b), t->step[first].note[0]);
     cos_say(b);
 }
+/* (a synth on SEQ) STEP INPUT, the Syntakt's step recording: REC (stopped) turns it on; the keys are a keyboard then,
+ * each one played writes its note into the cursor's step (as it sounds: seq.c kb_map, OCT-/+ the octave) and the cursor
+ * moves on; SEQ writes a rest and moves on, SEQ with a key held a tie (the note before goes on); PRESETS moves the cursor;
+ * REC again, or another page, ends it. The steps' locks stay */
+static void cos_si_go(int32_t d)
+{
+    uint32_t len = (uint32_t)clamp(TSEL->p[P_SLEN], 1, NSTEP);
+    cz.si_pos = (uint8_t)(((int32_t)cz.si_pos % (int32_t)len + d + (int32_t)len) % (int32_t)len);
+    cz.bank = (uint8_t)(cz.si_pos / 16u);
+}
+static void cos_si_said(const char *what)                /* "STEP 5: D2", "STEP 6: REST" */
+{
+    char b[24];
+    str_cpy(b, "STEP ", 6);
+    fmt_int(b + 5, (int32_t)cz.si_pos + 1);
+    str_cpy(b + str_len(b), ": ", 3);
+    str_cpy(b + str_len(b), what, 8);
+    cos_say(b);
+}
+static __attribute__((noinline)) void cos_si_key(uint32_t k)
+{
+    track_t *t = TSEL;
+    step_t *s = &t->step[cz.si_pos % NSTEP];
+    uint32_t n = kb_map(t, k);
+    char nm[8];
+    if (n == KB_SILENT || n > 127u) return;
+    if (s->time != ST_NOTE) step_clear(s);
+    s->time = ST_NOTE; s->n = 1; s->note[0] = (uint8_t)n; s->vel = 100;
+    s->flags &= (uint8_t)~(SF_ACCENT | SF_SLIDE);
+    note_name(nm, n);
+    cos_si_said(nm);
+    cos_si_go(1);
+}
+static __attribute__((noinline)) void cos_si_rest(int tie)
+{
+    track_t *t = TSEL;
+    step_t *s = &t->step[cz.si_pos % NSTEP];
+    step_clear(s);
+    if (tie) s->time = ST_TIE;
+    cos_si_said(tie ? "TIE" : "REST");
+    cos_si_go(1);
+}
+static void cos_si_set(int on)
+{
+    cz.si = (uint8_t)(on != 0);
+    if (on) { cz.si_pos = (uint8_t)(cz.bank * 16u); cos_say("STEP INPUT: PLAY KEYS"); }
+    else cos_say("STEP INPUT OFF");
+}
 /* (a synth on SEQ) steps held + black 1 / 2: ACCENT / SLIDE on or off (the first one's decides; a rest: nothing) */
 static __attribute__((noinline)) void cos_step_flag(uint32_t f)
 {
@@ -1035,7 +1096,7 @@ static void cos_mode(uint32_t m)
 /* the keys are the interface's (silent) on HOME, TRIG and a kit's GEN; elsewhere they play the track */
 static int cos_keys_ui(void)
 {
-    return cz.mode == CM_HOME || cz.mode == CM_TRIG || cz.mode == CM_KEY || cz.mode == CM_PROJ || cz.mode == CM_DRONE || (cz.mode == CM_GEN && cos_kit()) ||
+    return cz.mode == CM_HOME || (cz.mode == CM_TRIG && !cz.si) || cz.mode == CM_KEY || cz.mode == CM_PROJ || cz.mode == CM_DRONE || (cz.mode == CM_GEN && cos_kit()) ||
            ((fm1_in.buttons >> panel.btn[B_SCL]) & 1u);
 }
 
@@ -1048,6 +1109,68 @@ static __attribute__((noinline)) void cos_sound_say(void)
     if (str_len(b) + 1u + str_len(n) <= 18u) { str_cpy(b + str_len(b), ":", 2); str_cpy(b + str_len(b), n, 20); }
     else str_cpy(b, n, 19);
     cos_say(b);
+}
+
+/* KEEP and BACK, Elektron's FUNC + YES (a temporary save) and FUNC + NO (reload): SAVE held + OCT+ keeps the sound as it
+ * is, in RAM; SAVE held + OCT- brings it back, while it plays (nothing stops, nothing is written to flash). What it keeps:
+ * every track's engine, sound and its parameters (but its MUTE), the kit (DRUM-X), FILTER 2 and LFO 2, the macros, RUMBLE,
+ * the ISOLATOR and the EQ, and the globals (the FX, the DJ FILTER .. but the tempo, the clock and the settings). Not the
+ * steps: SAVE's slots keep those. Gone at power-off */
+static const uint8_t KEEP_NOT[] = {G_BPM, G_CLOCK, G_TUNE, G_MIDI, G_ROUTE, G_INFO, G_SLOT, G_LOAD, G_SAVE, G_ENGSEL,
+                                   G_CLRSEQ, G_INITSND};
+static struct {
+    uint8_t ok, eng[NTRK], pre[NTRK], usr[NTRK];
+    int16_t p[NTRK][P_COUNT];
+    int16_t g[G_COUNT];
+    int8_t x2[NTRK][X2_N];
+    uint8_t mac[4], rmb[4];
+    int8_t iso[3];
+    int16_t eq[4];
+    dx_lane_t dx[8];
+} keep __attribute__((section(".pool")));               /* (~1.9 KB of the pool's spare) */
+static __attribute__((noinline)) void cos_keep(int back)
+{
+    uint32_t k, i;
+    if (!back) {
+        for (k = 0; k < NTRK; k++) {
+            keep.eng[k] = trk[k].eng_req; keep.pre[k] = trk[k].preset; keep.usr[k] = trk[k].user;
+            memcpy(keep.p[k], trk[k].p, sizeof keep.p[k]);
+        }
+        memcpy(keep.g, song.g, sizeof keep.g);
+        memcpy(keep.x2, (const void *)trk_x2, sizeof keep.x2);
+        memcpy(keep.mac, (const void *)macro_v, sizeof keep.mac);
+        memcpy(keep.rmb, (const void *)rmb_v, sizeof keep.rmb);
+        memcpy(keep.iso, (const void *)iso_v, sizeof keep.iso);
+        memcpy(keep.eq, eq_v, sizeof keep.eq);
+        memcpy(keep.dx, dx_kit, sizeof keep.dx);
+        keep.ok = 1;
+        cos_say("SOUND KEPT");
+        return;
+    }
+    if (!keep.ok) { cos_say("NOTHING KEPT"); return; }
+    for (k = 0; k < NTRK; k++)
+        if (trk[k].eng_req != keep.eng[k]) set_engine_of(&trk[k], keep.eng[k]);   /* (another engine meanwhile) */
+    fm1_irq_off();                                      /* (one block sees the whole of it) */
+    for (k = 0; k < NTRK; k++) {
+        int16_t mute = trk[k].p[P_MUTE];
+        memcpy(trk[k].p, keep.p[k], sizeof keep.p[k]);
+        trk[k].p[P_MUTE] = mute;                        /* (the mutes stay as they are) */
+        trk[k].preset = keep.pre[k]; trk[k].user = keep.usr[k];
+    }
+    {
+        int16_t g[NELEM(KEEP_NOT)];
+        for (i = 0; i < NELEM(KEEP_NOT); i++) g[i] = song.g[KEEP_NOT[i]];
+        memcpy(song.g, keep.g, sizeof keep.g);
+        for (i = 0; i < NELEM(KEEP_NOT); i++) song.g[KEEP_NOT[i]] = g[i];
+    }
+    memcpy((void *)trk_x2, keep.x2, sizeof keep.x2);
+    memcpy((void *)macro_v, keep.mac, sizeof keep.mac);
+    memcpy((void *)rmb_v, keep.rmb, sizeof keep.rmb);
+    memcpy((void *)iso_v, keep.iso, sizeof keep.iso);
+    memcpy(eq_v, keep.eq, sizeof keep.eq);
+    memcpy(dx_kit, keep.dx, sizeof keep.dx);
+    fm1_irq_on();
+    cos_say("BACK TO KEPT");
 }
 
 /* SEQ held + REC: the selected track emptied, on a second press within 3 s (the first one asks: no pattern wiped by a
@@ -1100,6 +1223,7 @@ static __attribute__((noinline)) void cos_input(void)
         }
     }
     fx_lock_on = 0;
+    if (cz.si && (cz.mode != CM_TRIG || cos_kit())) cz.si = 0;   /* (STEP INPUT ends off SEQ, or on a kit) */
     for (k = 0; k < 32u && pressed; k++) {
         if (!((pressed >> k) & 1u)) continue;
         pressed &= ~(1u << k);
@@ -1114,6 +1238,10 @@ static __attribute__((noinline)) void cos_input(void)
             cz.lk_used = 1;
             cos_say(n ? "LOCKS CLEARED" : "NO LOCKS");
         }
+        else if (b == B_REC && cz.mode == CM_TRIG && !cos_kit() && !cos_held() && (cz.si || !song.playing))
+            cos_si_set(!cz.si);                          /* (SEQ, a synth, stopped: STEP INPUT; playing, REC arms as ever) */
+        else if (b == B_SEQ && cz.mode == CM_TRIG && cz.si)
+            cos_si_rest((fm1_in.notes & ((1u << 27) - 1u)) != 0u);   /* (STEP INPUT: a rest; a key held: a tie) */
         else if (b == B_REC && cz.mode == CM_GEN) cos_say(undo_do() ? "NOTHING TO UNDO" : "UNDONE");
         else if (b == B_REC && chain_busy()) cos_say("STOP THE SONG TO RECORD");
         else if (b == B_REC) { cz.rec_down = 1; cz.rec_used = 0; }   /* REC: a tap arms the track (playing, its knobs and keys
@@ -1121,6 +1249,8 @@ static __attribute__((noinline)) void cos_input(void)
                                                          * cleared */
         else if (b == B_SCL) { cz.scl_down = 1; cz.scl_used = 0; }   /* (its tap acts when let go: held, it is a shift) */
         else if (b == B_EDIT) { cz.ed_down = 1; cz.ed_used = 0; }    /* (the same: held, PRESETS steps engines) */
+        else if (b == B_SAVE) { cz.sv_down = 1; cz.sv_used = 0; }    /* (the same: held, OCT+ KEEP / OCT- BACK) */
+        else if (cz.sv_down && (b == B_OCTUP || b == B_OCTDN)) { cz.sv_used = 1; cos_keep(b == B_OCTDN); }
         else if (b == B_FX) { cz.fx_down = 1; cz.fx_used = 0; cz.hot = 0; }   /* (held: the FX pad; a tap: the FX page) */
         else if (b == B_HOME) {                          /* (to HOME at once, PERFORM while held: the tempo's button, K1 BPM;
                                                          * let go: the page before, or on a tap on HOME the next one) */
@@ -1205,6 +1335,10 @@ static __attribute__((noinline)) void cos_input(void)
         cz.ed_down = 0;
         if (!cz.ed_used) cos_mode(CM_SRC);
     }
+    if (cz.sv_down && ((released >> panel.btn[B_SAVE]) & 1u)) {
+        cz.sv_down = 0;
+        if (!cz.sv_used) cos_mode(CM_PROJ);             /* (a tap: the SAVE page, as before) */
+    }
     if (cz.scl_down && ((released >> panel.btn[B_SCL]) & 1u)) {
         cz.scl_down = 0;
         if (!cz.scl_used) cos_mode(CM_KEY);
@@ -1226,6 +1360,8 @@ static __attribute__((noinline)) void cos_input(void)
             preset_engine_jump(s > 0 ? 1 : -1);
             ui.msg_t = 0;
             cos_sound_say();
+        } else if (cz.mode == CM_TRIG && cz.si && !cos_held()) {
+            cos_si_go(s > 0 ? 1 : -1);                   /* (STEP INPUT: the cursor) */
         } else if (cz.mode == CM_TRIG && cos_held() && !cos_kit()) {
             cos_step_note(s > 0 ? 1 : -1);               /* (steps held, a synth: their notes) */
         } else if (cz.mode == CM_TRIG && !cos_held()) {  /* TRIG: the bank of 16 */
@@ -1259,6 +1395,8 @@ static __attribute__((noinline)) void cos_input(void)
             cos_key_ask(k);
         } else if (cz.mode == CM_DRONE) {
             cos_drone_key(k);
+        } else if (cz.mode == CM_TRIG && cz.si) {
+            cos_si_key(k);                               /* (STEP INPUT: the note into the cursor's step) */
         } else if (cz.mode == CM_PROJ) {
             if (w < 4u) cz.slot = (uint8_t)w;
             else if (w >= 8u && !chain_busy()) {           /* (white 9 .. 16: the set list's songs 1 .. 8) */
@@ -1528,6 +1666,7 @@ static void cos_foot(void)
         else if (v == 2u) cv_rect(x + 1, y + 1, 11, 11, C_FG);
         else if (v == 3u) cv_rect(x + 1, y + 5, 11, 3, C_DIM);
         if (st == now) cv_rect(x, y - 3, 13, 2, C_RED);
+        if (cz.si && cz.mode == CM_TRIG && st == cz.si_pos) { cv_frame(x - 1, y - 1, 15, 15, C_RED); cv_frame(x, y, 13, 13, C_RED); }
         if (st < len && ((lks >> st) & 1u)) cv_rect(x + 5, y + 14, 3, 2, C_FG);   /* (its locks) */
     }
 }
@@ -1634,7 +1773,15 @@ static void cos_lk_box(void)                            /* (steps held: which, a
 }
 
 static void cos_body_trig1(void);
-static void cos_body_trig(void) { cos_body_trig1(); cos_lk_box(); }
+static void cos_body_trig(void)
+{
+    cos_body_trig1();
+    if (cz.si) {                                         /* (STEP INPUT: what the keys do now) */
+        cv_rect(84, 20, 156, 12, C_RED);
+        cos_tx(90, 22, "STEP IN  SEQ: REST", C_BG);
+    }
+    cos_lk_box();
+}
 static void cos_body_trig1(void)
 {
     const track_t *t = TSEL;
@@ -2064,6 +2211,10 @@ static void cos_body_link(void)
 }
 
 /* GLO > SYSTEM: what TRACKS and LOAD do */
+#if FELUCCA_FLASH
+static uint8_t flash_ok;                                 /* (storage_hw.c's, included after) */
+static void flash_say_none(char *b);
+#endif
 static void cos_body_sys(void)
 {
     cos_tx(8, 40, "TRACKS: 4, 5 OR 6 PLAYING", C_FG);
@@ -2078,6 +2229,13 @@ static void cos_body_sys(void)
         str_cpy(b + str_len(b), "% LATE ", 9); fmt_int(n, (int32_t)load_diag.late); str_cpy(b + str_len(b), n, 8);
         cos_tx(8, 122, b, load_diag.late ? C_RED : C_MID);
         cos_tx(8, 136, "BT MIDI: A BLE-MIDI LINK", C_DIM);
+#if FELUCCA_FLASH
+        if (!flash_ok) {                                 /* (no flash found: SAVE keeps the music only until power-off;
+                                                         * storage_hw.c flash_id_ok: the part it read) */
+            flash_say_none(b);
+            cos_tx(8, 150, b, C_RED);
+        }
+#endif
     }
 }
 
@@ -2133,7 +2291,7 @@ dials:
 /* the splash (ui_draw.c draw_splash / splash_write under COS_SLIM; main.c's boot loop calls it every ~4 ms for
  * SPL_WRITE + SPL_HOLD ms): black, a few still stars, the name 2x, the version, a 16-block bar filling like a pattern
  * (the block being filled red), READY. Drawn whole once, then only the bar's strip when a block fills */
-#define COS_VERSION "0.6.3"
+#define COS_VERSION "0.7"
 static void cos_px2(int32_t x, int32_t y, const char *s, uint16_t c)      /* (the face 2 x 2) */
 {
     int32_t r, b, b0;
@@ -2216,7 +2374,7 @@ static __attribute__((noinline)) void cos_leds(void)
     led_put(nl, panel.btn[CM_BTN[cz.mode]], 1);
     led_put(nl, panel.btn[B_REC], song.rec != 0u);
     for (k = 0; k < NB; k++) led_put(nd, panel.btn[k], 1);
-    if (cz.mode == CM_TRIG || cz.mode == CM_HOME) {
+    if ((cz.mode == CM_TRIG && !cz.si) || cz.mode == CM_HOME) {
         for (k = 0; k < 16u; k++) {
             uint32_t st = cz.bank * 16u + k;
             int on = cz.mode == CM_HOME ? k == song.sel : st < len && (cos_step(t, st, cos_kit() ? cz.lane : NLANE) != 0u) != (st == now);
