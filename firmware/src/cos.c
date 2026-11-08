@@ -9,7 +9,8 @@
  *   HOME  the six tracks' steps          white keys 1-6: pick a track   black keys 1-6: mute
  *   SEQ   TRIG: the track's steps        white keys: trigs (on release)   OCT-/+: the bank of 16   (a kit: black keys
  *         pick the lane). A step held + a knob: a parameter lock on that step, of the sound page used last (SRC AMP FLTR
- *         LFO FX); held + REC: its locks go. Locked steps: a dot under them
+ *         LFO FX); held + REC: its locks go. Locked steps: a dot under them. SEQ held + REC twice (3 s): the track
+ *         empty (cos_clear)
  *   EDIT  SRC 1 / SRC 2: the engine (VOICE: and WORDS, the talking synth: LANG LYRIC THEME ARTIC, OCT+ new words)
  *   ENV   AMP / FLTR / LFO / LFO 2      FX  SEND / DIST
  *   LFO   DRONE: the keys hold notes on the track (up to four), sounding whatever the transport does; REC lets them go
@@ -152,6 +153,8 @@ static struct {
     uint8_t ed_down, ed_used;                           /* EDIT held (+ PRESETS: the next engine); its tap acts let go */
     uint8_t home_down, home_used, home_tab;             /* HOME held (the tempo's button): on HOME its tap, the next page, let go */
     uint8_t rec_down, rec_used;                         /* REC held (+ OCT-: the motion cleared); its tap arms, let go */
+    uint8_t clr_k;                                      /* SEQ held + REC: the track asked about (+ 1), cos_clear */
+    uint32_t clr_t;                                     /* .. when (fm1_ms) */
     uint32_t set_ms;                                    /* a setting turned (MASTER): saved 2 s after, not every detent */
     uint8_t slot, pn_ok;                                /* SAVE: the slot picked (0..3); the names below read */
     char pn[4][13];                     /* .. each slot's name ("": empty) */
@@ -1001,6 +1004,31 @@ static __attribute__((noinline)) void cos_sound_say(void)
     cos_say(b);
 }
 
+/* SEQ held + REC: the selected track emptied, on a second press within 3 s (the first one asks: no pattern wiped by a
+ * slip in a set). Every step and its locks; a generator's mutation EVERY off for it (else the next would fill it
+ * again). GEN's REC undoes it (undo_mark) */
+static __attribute__((noinline)) void cos_clear(void)
+{
+    uint32_t k = song.sel % NTRK, i;
+    track_t *t = TSEL;
+    if (cz.clr_k != k + 1u || fm1_ms - cz.clr_t > 3000u) {
+        cz.clr_k = (uint8_t)(k + 1u);
+        cz.clr_t = fm1_ms;
+        cos_say("AGAIN TO CLEAR");
+        return;
+    }
+    cz.clr_k = 0;
+    undo_mark();
+    for (i = 0; i < NSTEP; i++) {
+        (void)motion_clear_locks(t, i);
+        step_clear(&t->step[i]);
+    }
+    if (ac[k].on) ac[k].every = 0;
+    if (db[k].on) db[k].every = 0;
+    if (eu[k].on) eu[k].mu[0] = 0;
+    cos_say("TRACK CLEARED");
+}
+
 static __attribute__((noinline)) void cos_input(void)
 {
     uint32_t released = 0, pressed = fm1_input_edges(&released), notes = fm1_input_note_edges(), k, b;
@@ -1031,6 +1059,7 @@ static __attribute__((noinline)) void cos_input(void)
         pressed &= ~(1u << k);
         b = panel_btn_of(k);
         if (b == B_PLAY) transport_req = song.playing || seq_counting() ? 2u : 1u;
+        else if (b == B_REC && ((fm1_in.buttons >> panel.btn[B_SEQ]) & 1u)) cos_clear();   /* SEQ held + REC, twice */
         else if (b == B_REC && cz.mode == CM_DRONE) { cos_drone_clear(); cos_say("DRONE OFF"); }
         else if (b == B_REC && cz.mode == CM_TRIG && cos_held()) {   /* a step held + REC: its locks go */
             uint64_t h = cos_held();
@@ -2039,7 +2068,7 @@ dials:
 /* the splash (ui_draw.c draw_splash / splash_write under COS_SLIM; main.c's boot loop calls it every ~4 ms for
  * SPL_WRITE + SPL_HOLD ms): black, a few still stars, the name 2x, the version, a 16-block bar filling like a pattern
  * (the block being filled red), READY. Drawn whole once, then only the bar's strip when a block fills */
-#define COS_VERSION "0.6"
+#define COS_VERSION "0.6.1"
 static void cos_px2(int32_t x, int32_t y, const char *s, uint16_t c)      /* (the face 2 x 2) */
 {
     int32_t r, b, b0;

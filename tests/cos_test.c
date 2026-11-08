@@ -1240,6 +1240,35 @@ int main(void)
         CHECK(cos_ext10() == 0u && !cos_follows(), "its own tempo again");
     }
 
+    {   /* SEQ held + REC: the track emptied on the second press within 3 s; the first only asks; GEN's REC undoes it */
+        uint32_t tr, n0, n1, rec0 = song.rec;
+        for (tr = 0; tr < 2u; tr++) {                     /* (the kit and ACID) */
+            track_select(tr);
+            cz.mode = CM_TRIG;
+            for (i = 0; i < 8u; i++) {                    /* (some steps, a lock) */
+                step_t *st = &TSEL->step[i * 2u];
+                if (drum_track(TSEL)) st->hit |= 1u; else { st->time = ST_NOTE; st->n = 1; st->note[0] = 48; }
+            }
+            for (i = n0 = 0; i < NSTEP; i++) n0 += TSEL->step[i].time != ST_REST || TSEL->step[i].hit;
+            cos_test_btn(B_SEQ, 1);
+            cos_test_btn(B_REC, 1); cos_test_btn(B_REC, 0);
+            for (i = n1 = 0; i < NSTEP; i++) n1 += TSEL->step[i].time != ST_REST || TSEL->step[i].hit;
+            CHECK(n0 >= 8u && n1 == n0 && song.rec == rec0, "SEQ + REC once (T%u): it asks, nothing cleared, REC not armed (%u %u)", tr + 1u, n0, n1);
+            fm1_ms += 4000u;                              /* (too late: it asks again) */
+            cos_test_btn(B_REC, 1); cos_test_btn(B_REC, 0);
+            for (i = n1 = 0; i < NSTEP; i++) n1 += TSEL->step[i].time != ST_REST || TSEL->step[i].hit;
+            CHECK(n1 == n0, "SEQ + REC after 4 s: asks again (%u)", n1);
+            fm1_ms += 1000u;
+            cos_test_btn(B_REC, 1); cos_test_btn(B_REC, 0);
+            cos_test_btn(B_SEQ, 0);
+            for (i = n1 = 0; i < NSTEP; i++) n1 += TSEL->step[i].time != ST_REST || TSEL->step[i].hit;
+            CHECK(n1 == 0u && song.rec == rec0, "SEQ + REC twice (T%u): the track empty (%u steps left)", tr + 1u, n1);
+            CHECK(undo_do() == 0, "undo after a clear");
+            for (i = n1 = 0; i < NSTEP; i++) n1 += TSEL->step[i].time != ST_REST || TSEL->step[i].hit;
+            CHECK(n1 == n0, "the clear undone (%u of %u)", n1, n0);
+        }
+        track_select(0);
+    }
     printf("cos_test: %s (%d failures)\n", fails ? "FAILED" : "ok", fails);
     return fails != 0;
 }
