@@ -40,6 +40,9 @@ typedef struct {                                         /* a hit */
     uint32_t ph4;                                        /* (0.6.49) LAYER's oscillator phase */
     uint8_t live, trig, choke;
     uint16_t hpos, hsum, hseed;
+    uint32_t at;                                         /* (cursed-os) half-rate samples since the hit (the AHDSR's
+                                                          * ATTACK and HOLD) */
+    uint8_t lg;                                          /* .. its lane (bits 0..2) and the key / step held (bit 7) */
     int16_t mo1;                                         /* (0.9.9-snd1) FEEDBK: the output a sample before mo (the mean
                                                           * of the two fed back; in the struct's padding) */                          /* (0.7.9) CLAP's HANDS: half-rate samples since the hit, the
                                                           * hands come in so far (Q12, over the hit's own), this hit's dice */
@@ -171,6 +174,15 @@ static uint8_t dx_tone;
  * at a moment of its own (~3 .. 45 ms after it, the dice thrown again each hit: no tempo in it) and at a level of its
  * own, then dying as the hit does: a few people clapping, then a crowd. 0: the clap as it was */
 static uint8_t dx_hands;
+/* (cursed-os) each drum's own envelope and sends (EDIT > ENV, ENV 2, SEND on a kit; the project's 'DE' block, 0 before):
+ * ATTACK, HOLD (0: none, else the ADSR's times, TIME_MS_X10: 1.1 ms .. 10 s), SUSTAIN (0: the hit falls away as ever;
+ * else the level it stays at while its key or step is held), RELEASE (with SUSTAIN: its fall after, the same times),
+ * and its CHORUS, DELAY, REVERB sends (0: the kit's, FX > SEND; 1 + n: its own n, 0..127). DECAY is the sound's own
+ * (its patches) */
+enum { DE_ATK, DE_HLD, DE_SUS, DE_REL, DE_SCH, DE_SDL, DE_SRV, DE_N };
+static uint8_t dx_de[8][DE_N];
+/* ATTACK / HOLD 1..127 -> half-rate samples (the ADSR's times); 0: none */
+static uint32_t dx_ahs(uint32_t x) { return x ? TIME_MS_X10[x & 127u] * 2205u / 1000u : 0u; }
 static dx_lane_t dx_kit[8];                              /* (defined below with the factory kit: the BP knows its lanes) */
 /* (JIANT 0.6.49) EDIT > LAYER, each sound's (the kit's: project.c keeps it, FUNC's 'D' 'L' block; 0 before it): low
  * nibble LAYER, a second oscillator (a triangle) at sqrt 2 of the pitch (the most out of tune with it there is) frequency-modulated
@@ -211,7 +223,8 @@ static __attribute__((noinline)) void dx_run(const dx_lane_t *L, dx_voice_t *v, 
     int32_t q[DXP_N], p16, depth, ea1, en1, ep1, og, ng, ga, dga, gn, dgn, kd, inc, dinc;
     uint32_t i, k, wave = L->mode & 3u, flt = (L->mode >> 2) & 3u, ta, tn, tp, kb, inc1;
     tsvf_t c;
-    uint32_t nf = n, ln = L >= dx_kit && L < dx_kit + 8 ? (uint32_t)(L - dx_kit) : 0u;
+    uint32_t nf = n, ln = v->lg & 7u;                    /* (cursed-os: the lane drum_render set; was L's place in
+                                                          * dx_kit: 0 for an ACOUSTIC copy) */
     int32_t lay = (int32_t)DX_LAY_L(dx_lay[ln]), lfb = (int32_t)DX_TONE_FB(dx_tone) + (int32_t)DX_LAY_FB(dx_lay[ln]);
     if (!v->live && !v->trig) {
         for (i = 0; i < n; i++)
@@ -251,12 +264,31 @@ static __attribute__((noinline)) void dx_run(const dx_lane_t *L, dx_voice_t *v, 
         if (!v->rng)
             v->rng = 0x2545F491;
         v->hpos = v->hsum = 0;
+        v->at = 0;
         v->hseed = (uint16_t)(((uint32_t)v->rng * 2654435761u) >> 16);   /* (not drawn from the noise: OFF as it was) */
         v->inc = pitch_inc((uint32_t)clamp(p16 + depth, 0, 2047));
     }
     kb = v->choke ? dv_kb(1500u) : dv_kb(ta);            /* (a choked hit: gone in ~5 ms) */
     ea1 = mulq16(v->ea, kb);
     en1 = mulq16(v->en, v->choke ? kb : dv_kb(tn));
+    const uint8_t *de = dx_de[v->lg & 7u];
+    uint32_t aA = dx_ahs(de[DE_ATK]), aH = dx_ahs(de[DE_HLD]);
+    if (!v->choke && (aA | aH | de[DE_SUS])) {           /* (cursed-os) the drum's AHDSR around its own DECAY */
+        if (v->at < aA + aH) {                 /* ATTACK, HOLD: the hit at its top, not falling yet */
+            ea1 = v->ea;
+            en1 = v->en;
+        } else if (de[DE_SUS] && (v->lg & 0x80u)) {      /* held: down to SUSTAIN, staying there */
+            int32_t S = (int32_t)de[DE_SUS] << 23;
+            if (v->ea > S) ea1 = S + mulq16(v->ea - S, kb);
+            else ea1 = v->ea;
+            if (v->en > S) en1 = S + mulq16(v->en - S, dv_kb(tn));
+            else en1 = v->en;
+        } else if (de[DE_SUS]) {                         /* let go: RELEASE */
+            uint32_t kr = dv_kb(TIME_MS_X10[de[DE_REL] & 127u] * 100u);   /* (its tau, us) */
+            ea1 = mulq16(v->ea, kr);
+            en1 = mulq16(v->en, kr);
+        }
+    }
     ep1 = (int32_t)(((uint32_t)v->ep * dv_kb(tp)) >> 16);
     {
         uint32_t pm = (L->mode >> 5) & 3u;
@@ -281,8 +313,20 @@ static __attribute__((noinline)) void dx_run(const dx_lane_t *L, dx_voice_t *v, 
         int32_t g1 = mulq15(ng, en1 >> 15) << 8;
         if (ln == DV_CLAP && dx_hands && (v->hpos < 1200u || v->hsum))   /* (0.7.9) HANDS: more hands in the noise */
             gn = dx_hands_step(v, n, gn, &g1, en1);
+        if (aA && v->at < aA) {                          /* (cursed-os) ATTACK: both gains up from 0, linearly */
+            uint32_t t1 = v->at + n, sh = aA >= 65536u ? 4u : 0u;   /* (no 64-bit divide: 32 bits, scaled down) */
+            int32_t a0 = (int32_t)(((v->at >> sh) * 32767u) / (aA >> sh));
+            int32_t a1 = t1 >= aA ? 32767 : (int32_t)(((t1 >> sh) * 32767u) / (aA >> sh));
+            int32_t e1 = ga + dga * (int32_t)n;
+            ga = mulq15(ga >> 8, a0) << 8;
+            dga = ((mulq15(e1 >> 8, a1) << 8) - ga) / (int32_t)n;
+            gn = mulq15(gn >> 8, a0) << 8;
+            g1 = mulq15(g1 >> 8, a1) << 8;
+        }
         dgn = (g1 - gn) / (int32_t)n;
     }
+    if (v->at < 0x40000000u)
+        v->at += n;
     inc = (int32_t)(v->inc >> 4) * 2;                    /* (>> 4: the step fits; x 2: half rate) */
     dinc = ((int32_t)(inc1 >> 4) * 2 - inc) / (int32_t)n;
     if (og) {                                            /* the oscillator */

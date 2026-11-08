@@ -2517,6 +2517,10 @@ static inline __attribute__((always_inline)) void mix_part(track_t *t, uint32_t 
             int32_t *const sx[3] = {sc, sd, sr};
             drum_mix(ol, or_, n, lq, dl, gl, dgl, gr, dgr, pm0, pm1, sx);
         }
+        int32_t c0 = c, d0 = d, r0 = r;                 /* (cursed-os) a kit's sends go from each hit (eng_drum.c
+                                                         * drum_feed: drum_mix above), not from the kit's sum */
+        if (ENGINES[t->engine] == &ENG_DRUM)
+            c = d = r = 0;
         for (i = 0; i < n; i++, lq += dl, gl += dgl, gr += dgr) {
             int32_t x = ((b[i] >> 2) * (lq >> 8)) >> 10, a = x < 0 ? -x : x;   /* pre-shift: 8 loud voices */
             int32_t xs = clamp(x, -xmax, xmax);         /* sends: mulq15 would overflow */
@@ -2538,7 +2542,7 @@ static inline __attribute__((always_inline)) void mix_part(track_t *t, uint32_t 
                 stem_pre(pre, ol, or_, n);
                 st = NPART;
             }
-            uin_mix(ol, or_, sc, sd, sr, n, lq0, dl, gl0, dgl, gr0, dgr, c, d, r, pm1, &pk);
+            uin_mix(ol, or_, sc, sd, sr, n, lq0, dl, gl0, dgl, gr0, dgr, c0, d0, r0, pm1, &pk);
         }
         t->peak = pk;
         if (fx_stems)

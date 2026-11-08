@@ -117,6 +117,7 @@ static const char *why_quiet(uint32_t m, const cpg_t *p, uint32_t k)
     uint32_t id = p->id[k];
     if (p->kind == CK_COS) {
         if (id == CC_SLOT) return "SAVE: the slot a press saves to";
+        if (id == CC_NAME) return "SAVE: the name the next save takes";
         if (id == CC_MCCH || id == CC_MCDIR || id == CC_MCMAP || (id >= CC_MC0 && id <= CC_MC3) || id == CC_MOCC)
             return "LINK 2/3: the macros' and MORPH's MIDI CCs";
         if (id == CC_PCCH || id == CC_PCOUT || id == CC_VJCH) return "LINK: program changes and the VJ notes";
@@ -126,6 +127,10 @@ static const char *why_quiet(uint32_t m, const cpg_t *p, uint32_t k)
         if (id == CC_MOPOS) return "MORPH A-B: nothing stored to morph between";
         if (id == CC_OUTCH) return "MIDI OUT CH";
         if (id == CC_TRKS) return "TRACKS: how many play (5 already)";
+        if (id == CC_DSEL) return "DRUM: which drum the knobs edit (cos_test.c)";
+        if (id == CC_DE0 + DE_SUS) return "SUSTAIN: only while a step or key holds the drum (the test's steps are short)";
+        if (id == CC_DSNP && dx_kit[dx_ui_lane & 7u].a[DXP_NOISE] < 16u)
+            return "SNAP: the noise's envelope, and this drum has little noise";
     }
     if (p->kind == CK_GLO && (id == G_CLOCK || id == G_CLOCK)) return "MIDI: the clock and MIDI out";
     if (m == CM_DRONE) return "DRONE: plays while keys hold notes";

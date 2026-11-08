@@ -432,11 +432,23 @@ static int32_t param_turn(const param_desc_t *d, int32_t v, int32_t steps)
 
 static uint8_t fmt_named;        /* the last param_format was a name (F_ENUM, even "4"): ui_draw.c's digits do not roll it */
 
+/* (cursed-os) a kit's drum's own (drumx_voice.c dx_de, cos.c EDIT > ENV / ENV 2 / SEND): at the bottom of ATTACK and
+ * HOLD none (OFF), of SUSTAIN none (the hit falls away: OFF), of a SEND the kit's (KIT); the sends' stored 0 is KIT */
+static const param_desc_t DX_DE_D[DE_N] = {
+    {"ATTACK", F_TIME, 0, 127, 0, 0, 0}, {"HOLD", F_TIME, 0, 127, 0, 0, 0}, {"SUSTAIN", F_PCT, 0, 127, 0, 0, 0},
+    {"RELEASE", F_TIME, 0, 127, 0, 0, 0}, {"CHORUS", F_PCT, -1, 127, -1, 0, 0}, {"DELAY", F_PCT, -1, 127, -1, 0, 0},
+    {"REVERB", F_PCT, -1, 127, -1, 0, 0}};
+
 /* value string (<= 5 chars) and unit for a parameter value */
 static void param_format(const param_desc_t *d, int32_t v, char *val, const char **unit)
 {
     *unit = "";
     fmt_named = d->fmt == F_ENUM;
+    if (d >= DX_DE_D && d < DX_DE_D + DE_N && v <= d->min && d != &DX_DE_D[DE_REL]) {
+        str_cpy(val, d->min < 0 ? "KIT" : "OFF", 6);
+        fmt_named = 1;
+        return;
+    }
     if (d == &FMT_WDESC[0] && v <= 0) {                 /* (0.8.5) VOICE's words: POS 0, each note the next */
         str_cpy(val, "AUTO", 6);
         fmt_named = 1;

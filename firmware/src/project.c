@@ -156,6 +156,7 @@ typedef struct {
     int16_t mos[2][MO_N];                      /* (cursed-os) MORPH's A and B (cos_morph.c mph), 'MO' */
     uint8_t mo_set, mo_bars, mo_pos, rsv_mo;   /* .. which are stored, BARS, where it was (0 .. 100) */
     int8_t iso[3], rsv_is;                     /* (cursed-os) the ISOLATOR (cos_iso.c iso_v): LOW MID HIGH dB ('IS') */
+    uint8_t dx_de[8][DE_N];                    /* (cursed-os) each drum's AHDSR and sends (drumx_voice.c dx_de): 'DE' */
     char name[PROJ_NAME_LEN];                  /* the project's name: upper-case ASCII 32..126, 0-padded; "" = none */
     uint32_t sum;
 } project_t;
@@ -309,6 +310,7 @@ static void proj_cos_defaults(project_t *q)
     memset(q->mos, 0, sizeof q->mos);
     q->mo_set = 0; q->mo_bars = 3; q->mo_pos = 0;
     q->iso[0] = q->iso[1] = q->iso[2] = 0;
+    memset(q->dx_de, 0, sizeof q->dx_de);
 }
 static __attribute__((noinline)) uint32_t proj_x2(project_t *q, const uint8_t *bc, uint32_t pos, uint32_t room)
 {
@@ -470,6 +472,32 @@ static __attribute__((noinline)) uint32_t proj_is(project_t *q, const uint8_t *b
         return 0;
     for (k = 0; k < 3u; k++) q->iso[k] = (int8_t)clamp((int32_t)b[pos + 2u + k] - 64, ISO_KILL, 6);
     return 5u;
+}
+
+/* (cursed-os) each drum's AHDSR and sends: 'D' 'E' and the 8 x DE_N bytes, when any is set (else: none, the kit's) */
+static __attribute__((noinline)) uint32_t proj_de(project_t *q, const uint8_t *bc, uint32_t pos, uint32_t room)
+{
+    uint8_t *b = (uint8_t *)(uintptr_t)bc;
+    uint32_t k, i, n = 2u + sizeof q->dx_de;
+    if (!room) {
+        for (k = 0; k < sizeof q->dx_de && !((const uint8_t *)q->dx_de)[k]; k++) {}
+        if (k == sizeof q->dx_de) return 0;
+        if (b) {
+            b[pos] = 'D'; b[pos + 1u] = 'E';
+            memcpy(b + pos + 2u, q->dx_de, sizeof q->dx_de);
+        }
+        return n;
+    }
+    memset(q->dx_de, 0, sizeof q->dx_de);
+    if (pos + n > room || b[pos] != 'D' || b[pos + 1u] != 'E')
+        return 0;
+    for (k = 0; k < 8u; k++)
+        for (i = 0; i < DE_N; i++)
+            q->dx_de[k][i] = b[pos + 2u + k * DE_N + i] & (i >= DE_SCH ? 255u : 127u);
+    for (k = 0; k < 8u; k++)
+        for (i = DE_SCH; i < DE_N; i++)
+            if (q->dx_de[k][i] > 128u) q->dx_de[k][i] = 128u;
+    return n;
 }
 
 /* (p9) the master's EQ: 'E' 'Q' and its four gains (-12 .. 12, a byte each), when any is set; a project without it
@@ -1098,6 +1126,7 @@ static uint32_t proj_packed_size(const project_t *q)
     n += proj_rb(q, 0, 0, 0);                           /* (cursed-os) RUMBLE, when set */
     n += proj_mo(q, 0, 0, 0);                           /* (cursed-os) MORPH, when stored */
     n += proj_is(q, 0, 0, 0);                           /* (cursed-os) the ISOLATOR, when not flat */
+    n += proj_de(q, 0, 0, 0);                           /* (cursed-os) the drums' own AHDSR and sends, when set */
     if (q->g[G_DMOD] != GP[G_DMOD].def)                 /* (0.6.86) the delay's MOD's, when not the default */
         n += 3u;
     if (q->g[G_DTYPE] || q->g[G_DPING])                 /* (0.6.90) its TYPE and PING-PONG's */
@@ -1280,6 +1309,7 @@ static int proj_pack(project_store_t *out, const project_t *q)
     pos += proj_rb(q, b, pos, 0);
     pos += proj_mo(q, b, pos, 0);
     pos += proj_is(q, b, pos, 0);
+    pos += proj_de(q, b, pos, 0);
     memcpy(b + PROJC_PFX_OFF, q->pfx_lane, sizeof q->pfx_lane);
     b[PROJC_PFX_OFF + sizeof q->pfx_lane] = q->pfx_ltgt > 2u ? 0u : q->pfx_ltgt;
     for (i = 0; i < 4u; i++)
@@ -1575,6 +1605,7 @@ static int proj_unpack_c(project_t *q, const uint8_t *b)
     pos += proj_rb(q, b, pos, room);                    /* (cursed-os) RUMBLE (else off) */
     pos += proj_mo(q, b, pos, room);                    /* (cursed-os) MORPH (else none) */
     pos += proj_is(q, b, pos, room);                    /* (cursed-os) the ISOLATOR (else flat) */
+    pos += proj_de(q, b, pos, room);                    /* (cursed-os) the drums' AHDSR and sends (else none) */
     proj_new_tracks(q, nt);                             /* (a FUNC of fewer tracks: the rest at power-on) */
     for (t = nt; t < NTRK; t++)
         memcpy(q->fm6[t], FM6_INIT, FM6_PACKED);
@@ -1757,6 +1788,7 @@ static project_t proj_scratch __attribute__((section(".pool")));   /* (0.8.5: th
                                                          * lane modes; 0.6.78 .. 0.8.4 LOWBUF) */   /* decoded main-loop work, never audio ISR (0.6: pool) */
 static char proj_name[PROJ_NAME_LEN + 1u]    /* the name of the music as it is now (loaded, saved, the editor's */
     __attribute__((section(".pool")));       /* runtime restore); "" = none. A save takes it unless one is given */
+static char *proj_name_buf(void) { return proj_name; }   /* (cursed-os: SAVE's NAME) */
 #define PROJ_NO_SLOT 0xFFu
 static uint8_t proj_cur = PROJ_NO_SLOT;      /* the slot the music was loaded from or last saved to (a rename of it
                                               * renames the music too); PROJ_NO_SLOT none (the editor's restore) */
@@ -1856,6 +1888,7 @@ static void project_capture(project_t *p)
     p->dx_hands = (uint8_t)(dx_hands | dx_glue << 4);   /* (0.7.9; snd1: GLUE) */
     memcpy(p->dx_snd, dx_snd, sizeof p->dx_snd);        /* (0.6.48) */
     memcpy(p->dx_lay, dx_lay, sizeof p->dx_lay);        /* (0.6.49) */
+    memcpy(p->dx_de, dx_de, sizeof p->dx_de);           /* (cursed-os) */
     {                                                   /* (0.6.52) FUGUE */
         uint32_t a, h;
         for (a = 0; a < NTRK; a++)
@@ -2037,6 +2070,7 @@ static void sound_put(project_t *p, uint32_t k)
         dx_glue = p->dx_hands >> 4;
         memcpy(dx_snd, p->dx_snd, sizeof dx_snd);
         memcpy(dx_lay, p->dx_lay, sizeof dx_lay);
+        memcpy(dx_de, p->dx_de, sizeof dx_de);
     }
     fm1_irq_on();
     if (t == TSEL)
@@ -2085,6 +2119,7 @@ static int project_restore_runtime(const project_t *input)
     dx_glue = p->dx_hands >> 4;                         /* (snd1: its GLUE) */
     memcpy(dx_snd, p->dx_snd, sizeof dx_snd);           /* (0.6.48: its SENDs) */
     memcpy(dx_lay, p->dx_lay, sizeof dx_lay);           /* (0.6.49: its LAYERs) */
+    memcpy(dx_de, p->dx_de, sizeof dx_de);              /* (cursed-os: its drums' AHDSR and sends) */
     fg_load(p);                                         /* (0.6.52: its FUGUE) */
     memcpy(pfx_lane, p->pfx_lane, sizeof pfx_lane);    /* (the section's punch-in lane) */
     pfx_ltgt = p->pfx_ltgt > 2u ? 0u : p->pfx_ltgt;
@@ -2224,6 +2259,7 @@ static __attribute__((noinline)) void system_init(void)   /* (snd8: out of its c
     dx_glue = 0;
     memset(dx_snd, 0, sizeof dx_snd);
     memcpy(dx_lay, DX_LAY_DEF, sizeof dx_lay);
+    memset(dx_de, 0, sizeof dx_de);
     memset(fg_set, 0, sizeof fg_set);                   /* (0.6.52) no FUGUE */
     live_reset();                                       /* (p2) no LIVE modifier (seq_live.c) */
     dx_mute_set(0);

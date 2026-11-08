@@ -310,7 +310,7 @@ int main(void)
         song.sel = 0; set_engine_of(TSEL, ENGI_DRUM);
         CHECK(!cos_cdesc(CC_OCT, &vp), "a kit: no OCTAVE");
         cos_pages(CM_SRC, &pp, &n);
-        CHECK(!strcmp(pp[0].tab, "KICK") && !strcmp(pp[2].tab, "LEVELS"), "a kit's EDIT: KICK first, LEVELS");
+        CHECK(!strcmp(pp[0].tab, "DRUM") && !strcmp(pp[6].tab, "LEVELS"), "a kit's EDIT: DRUM first, LEVELS");
         {
             int32_t a0 = dx_kit[0].a[DXP_DECAY], b0 = dx_kit[0].b[DXP_DECAY];
             const param_desc_t *d = cos_cdesc(CC_KICK + DXP_DECAY, &vp);
@@ -1454,6 +1454,182 @@ int main(void)
         CHECK(r == 3u, "STEPS under ROTATE: ROTATE at the last step (%u)", r);
         ac_put(AK_ROT, 0); ac_put(AK_STEPS, 16);
         while (motion.count) motion_delete_event(&trk[4], MOTION_STEP(&motion.event[0]), MOTION_ID(&motion.event[0]));
+        cz.mode = CM_HOME;
+    }
+    {   /* (0.8) a kit's drums each their own: SENDS (KIT: the kit's FX > SEND; 0 dry: the kick on its own), the AHDSR,
+         * the drum picked (DRUM, its key) for its sound's knobs; a project keeps them ('DE') */
+        static int32_t o[2 * CTL];
+        int64_t ed[3] = {0, 0, 0}, er[3] = {0, 0, 0}, ex[3] = {0, 0, 0};
+        uint32_t run, b2, i2, k2, bs2;
+        int16_t *vp;
+        trk_live = 5;
+        set_engine_of(&trk[0], ENGI_DRUM); trk[0].engine = trk[0].eng_req;
+        for (k2 = 0; k2 < NTRK; k2++) trk[k2].p[P_MUTE] = k2 != 0u;
+        track_select(0);
+        memset(dx_de, 0, sizeof dx_de);
+        for (i2 = 0; i2 < 16u; i2++) {
+            step_t *s2 = &trk[0].step[i2];
+            memset(s2, 0, sizeof *s2);
+            s2->time = i2 % 4u ? ST_REST : ST_NOTE;
+            s2->vel = 110;
+            s2->hit = i2 % 4u ? 0u : 1u;                   /* (the kick alone) */
+        }
+        trk[0].p[P_SLEN] = 16; trk[0].p[P_DLY] = 100; trk[0].p[P_REV] = 100; trk[0].p[P_CHOR] = 0;
+        song.g[G_BPM] = 128; bpm_frac = 0; song.g[G_DUCK] = 0; rmb_v[0] = 0; rmb_v[3] = 0;
+        bs2 = beat_samples();
+        for (run = 0; run < 3u; run++) {
+            if (run == 1u) { dx_de[0][DE_SDL] = 1; dx_de[0][DE_SRV] = 1; }   /* the kick's own sends: 0, dry */
+            if (run == 2u) { dx_de[0][DE_SDL] = 0; dx_de[0][DE_SRV] = 128; trk[0].p[P_DLY] = 0; }   /* KIT (0), own 127 */
+            transport_req = 1; ui_input();
+            for (b2 = 0; b2 < 4u * bs2 / CTL; b2++) {
+                memset(o, 0, sizeof o);
+                mix_block(o, CTL);
+                for (i2 = 0; i2 < CTL; i2++) {
+                    ed[run] += (int64_t)send_d[i2] * send_d[i2];
+                    er[run] += (int64_t)send_r[i2] * send_r[i2];
+                    ex[run] += (int64_t)mix_l[i2] * mix_l[i2];
+                }
+            }
+            transport_req = 2; ui_input();
+            for (b2 = 0; b2 < 300u; b2++) { memset(o, 0, sizeof o); mix_block(o, CTL); }
+        }
+        printf("  (DRUM SENDS: delay %lld / %lld / %lld, reverb %lld / %lld / %lld, out %lld / %lld)\n", (long long)ed[0],
+               (long long)ed[1], (long long)ed[2], (long long)er[0], (long long)er[1], (long long)er[2], (long long)ex[0],
+               (long long)ex[1]);
+        CHECK(ed[0] > 0 && er[0] > 0, "the kit's FX > SEND: the kick in the delay and the reverb");
+        CHECK(ed[1] == 0 && er[1] == 0 && ex[1] > ex[0] / 4, "the kick's own SENDS 0: dry, still heard");
+        CHECK(ed[2] == 0 && er[2] > er[0] / 2, "KIT with the kit's DELAY 0: none; its own REVERB 127: in");
+        memset(dx_de, 0, sizeof dx_de);
+        trk[0].p[P_DLY] = trk[0].p[P_REV] = 0;
+        {   /* a step's GATE reaches the drum: SUSTAIN while the step lasts, then its RELEASE */
+            drum_lane_t *K = drum_kit_of(&trk[0]);
+            uint32_t held = 0, after = 0;
+            dx_de[0][DE_SUS] = 100; dx_de[0][DE_REL] = 30;
+            transport_req = 1; ui_input();
+            for (b2 = 0; b2 < bs2 / CTL; b2++) {           /* (a beat: the kick's step, then three empty ones) */
+                memset(o, 0, sizeof o);
+                mix_block(o, CTL);
+                if (b2 * CTL < bs2 / 8u) held += (K[0].x.lg & 0x80u) != 0u;
+                if (b2 * CTL > bs2 / 2u) after += (K[0].x.lg & 0x80u) != 0u;
+            }
+            transport_req = 2; ui_input();
+            for (b2 = 0; b2 < 300u; b2++) { memset(o, 0, sizeof o); mix_block(o, CTL); }
+            CHECK(held > 0u && after == 0u, "the step's gate held the kick, then let it go (%u, %u)", held, after);
+            dx_de[0][DE_SUS] = dx_de[0][DE_REL] = 0;
+        }
+        {   /* the AHDSR on a hit: ATTACK softens its start, HOLD keeps it up, SUSTAIN while held, RELEASE after */
+            dx_voice_t v0, v1;
+            int32_t y[CTL], p0 = 0, p1 = 0, n2;
+            uint32_t blk;
+            memset(&v0, 0, sizeof v0); memset(&v1, 0, sizeof v1);
+            dx_trigger(&v0); dx_trigger(&v1);
+            dx_de[0][DE_ATK] = 70;                         /* (~67 ms) */
+            v1.lg = 0; v0.lg = 0;
+            {
+                uint8_t sv = dx_de[0][DE_ATK];
+                dx_de[0][DE_ATK] = 0;
+                dx_run(&dx_kit[0], &v0, 64, 0, 0, 0, 0, 0, 0, y, CTL);
+                for (i2 = 0; i2 < CTL; i2++) p0 = y[i2] > p0 ? y[i2] : -y[i2] > p0 ? -y[i2] : p0;
+                dx_de[0][DE_ATK] = sv;
+            }
+            dx_run(&dx_kit[0], &v1, 64, 0, 0, 0, 0, 0, 0, y, CTL);
+            for (i2 = 0; i2 < CTL; i2++) p1 = y[i2] > p1 ? y[i2] : -y[i2] > p1 ? -y[i2] : p1;
+            CHECK(p1 * 8 < p0, "ATTACK: the hit's first block far softer (%d vs %d)", p1, p0);
+            dx_de[0][DE_ATK] = 0;
+            /* SUSTAIN 64, held 2 s: still sounding at about its level; let go, RELEASE short: gone */
+            memset(&v1, 0, sizeof v1); dx_trigger(&v1);
+            dx_de[0][DE_SUS] = 64; dx_de[0][DE_REL] = 20;
+            v1.lg = 0x80;
+            for (blk = 0; blk < 2u * 44100u / CTL; blk++) dx_run(&dx_kit[0], &v1, 64, 0, 0, 0, 0, 0, 0, y, CTL);
+            n2 = v1.ea >> 23;
+            CHECK(v1.live && n2 >= 60 && n2 <= 66, "SUSTAIN: held, the hit stays at its level (%d of 127)", n2);
+            v1.lg = 0;
+            for (blk = 0; blk < 44100u / 2u / CTL; blk++) dx_run(&dx_kit[0], &v1, 64, 0, 0, 0, 0, 0, 0, y, CTL);
+            CHECK(!v1.live, "let go: RELEASE, and over");
+            /* without SUSTAIN the key held changes nothing: the hit falls as ever */
+            memset(&v0, 0, sizeof v0); memset(&v1, 0, sizeof v1); dx_trigger(&v0); dx_trigger(&v1);
+            dx_de[0][DE_SUS] = 0; v1.lg = 0x80;
+            for (blk = 0; blk < 200u; blk++) { dx_run(&dx_kit[0], &v0, 64, 0, 0, 0, 0, 0, 0, y, CTL); dx_run(&dx_kit[0], &v1, 64, 0, 0, 0, 0, 0, 0, y, CTL); }
+            CHECK(v0.ea == v1.ea && v0.en == v1.en, "SUSTAIN OFF: a one-shot, held or not");
+            /* HOLD: the top kept that long */
+            memset(&v1, 0, sizeof v1); dx_trigger(&v1);
+            dx_de[0][DE_HLD] = 80;                         /* (~150 ms) */
+            for (blk = 0; blk < 100u; blk++) dx_run(&dx_kit[0], &v1, 64, 0, 0, 0, 0, 0, 0, y, CTL);
+            CHECK(v1.ea == 1 << 30, "HOLD: the hit at its top 100 blocks on");
+            memset(dx_de, 0, sizeof dx_de);
+        }
+        {   /* the drum picked: KNOB 1 or its key; its sound's knobs on it, both MORPH ends */
+            int32_t a1 = dx_kit[1].a[DXP_PITCH], b1 = dx_kit[1].b[DXP_PITCH], k0 = dx_kit[0].a[DXP_PITCH];
+            const param_desc_t *d;
+            cos_cput(CC_DSEL, 1);
+            CHECK(dx_ui_lane == 1u && cos_cdesc(CC_DSEL, &vp) && *vp == 1, "DRUM: SNARE picked");
+            d = cos_cdesc(CC_KICK + DXP_PITCH, &vp);
+            cos_cput(CC_KICK + DXP_PITCH, *vp + 5);
+            CHECK(d && dx_kit[1].a[DXP_PITCH] == clamp(a1 + 5, 0, 127) && dx_kit[1].b[DXP_PITCH] == clamp(b1 + 5, 0, 127) &&
+                  dx_kit[0].a[DXP_PITCH] == k0, "PITCH on the SNARE (both ends), the KICK as it was");
+            dx_kit[1].a[DXP_PITCH] = (uint8_t)a1; dx_kit[1].b[DXP_PITCH] = (uint8_t)b1;
+            cos_cput(CC_DWAV, 2); cos_cput(CC_DFLT, 2); cos_cput(CC_DDRV, 1); cos_cput(CC_DSNP, 0);
+            CHECK((dx_kit[1].mode & 3u) == 2u && ((dx_kit[1].mode >> 2) & 3u) == 2u && (dx_kit[1].mode & DX_DRIVE) &&
+                  !(dx_kit[1].mode & 0x10u), "WAVE METAL, FILTER HP, DRIVE ON, SNAP OFF on the SNARE");
+            cos_cput(CC_DE0 + DE_SRV, 90); cos_cput(CC_DE0 + DE_SDL, -1);
+            CHECK(dx_de[1][DE_SRV] == 91 && dx_de[1][DE_SDL] == 0, "REVERB 90 its own; DELAY KIT");
+            {
+                char w[8]; const char *u;
+                const param_desc_t *dd = cos_cdesc(CC_DE0 + DE_SDL, &vp);
+                param_format(dd, *vp, w, &u);
+                CHECK(str_eq(w, "KIT"), "DELAY reads KIT (%s)", w);
+                dd = cos_cdesc(CC_DE0 + DE_ATK, &vp);
+                param_format(dd, *vp, w, &u);
+                CHECK(str_eq(w, "OFF"), "ATTACK at 0 reads OFF (%s)", w);
+            }
+            cos_cput(CC_DE0 + DE_SUS, 50);
+            {                                              /* a project keeps them */
+                project_t *q = &proj_scratch;
+                uint8_t was[8][DE_N];
+                memcpy(was, dx_de, sizeof was);
+                project_capture(q);
+                CHECK(proj_pack(&proj_wire, q), "packed");
+                memset(dx_de, 0, sizeof dx_de);
+                CHECK(proj_import(q, &proj_wire, PROJ_STORE_SIZE) && !memcmp(q->dx_de, was, sizeof was), "the drums' own: read back");
+                project_restore_runtime(q);
+                CHECK(!memcmp(dx_de, was, sizeof was), "the drums' own: a load applies them");
+            }
+            cos_cput(CC_DSEL, 0);
+            memset(dx_de, 0, sizeof dx_de);
+            cos_dput(CC_DWAV, DXW_FM); cos_dput(CC_DFLT, DXF_BP); cos_dput(CC_DDRV, 0);   /* (the snare? no: KICK now) */
+            memcpy(dx_kit, DX_KIT_DEF, sizeof dx_kit);
+            /* its key struck on EDIT: picked */
+            cz.mode = CM_SRC;
+            last_note = 36; dx_follow();
+            last_note = 42; dx_follow();
+            CHECK(dx_ui_lane == drum_lane(42), "a key struck (HAT CL) on EDIT: picked (%u)", dx_ui_lane);
+            dx_ui_lane = 0;
+            cz.mode = CM_HOME;
+        }
+    }
+    {   /* SAVE: KNOB 1 every song's slots (1A .. 8D: 32), KNOB 2 a name drawn (the same turn: the same name), a music
+         * with no name named as it is saved */
+        int16_t *vp;
+        char n1[13], n2[13];
+        song.playing = 0;
+        cz.mode = CM_PROJ;
+        cos_cput(CC_SLOT, 6);                               /* (song 2's B) */
+        CHECK(song_cur == 1u && cz.slot == 1u && cos_cdesc(CC_SLOT, &vp) && *vp == 6, "SLOT 6: SONG 2, B (%u %u)", song_cur, cz.slot);
+        CHECK(cos_cdesc(CC_SLOT, &vp)->max == 32, "32 slots on KNOB 1");
+        cos_cput(CC_NAME, 3);
+        str_cpy(n1, proj_name, sizeof n1);
+        cos_cput(CC_NAME, 4); cos_cput(CC_NAME, 3);
+        str_cpy(n2, proj_name, sizeof n2);
+        CHECK(n1[0] && str_eq(n1, n2) && str_len(n1) <= 12u && strchr(n1, ' '), "NAME: two words, back to the same (%s)", n1);
+        cos_cput(CC_NAME, 4);
+        CHECK(!str_eq(n1, proj_name), "NAME: another turn, another name (%s)", proj_name);
+        proj_name[0] = 0;
+        cos_proj_oct(1);
+        CHECK(proj_name[0] != 0, "a music with no name: named as it is saved (%s)", proj_name);
+        cos_proj_scan();
+        CHECK(str_eq(cz.pn[1], proj_name), "the slot shows its name (%s)", cz.pn[1]);
+        cos_cput(CC_SLOT, 1);
+        CHECK(song_cur == 0u && cz.slot == 0u, "SLOT 1: SONG 1, A");
         cz.mode = CM_HOME;
     }
     {   /* the keyboards drawn (KEY, DRONE) as the FM-1's keys: from F, a black one where the panel has one */
