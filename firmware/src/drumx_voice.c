@@ -223,8 +223,8 @@ static __attribute__((noinline)) void dx_run(const dx_lane_t *L, dx_voice_t *v, 
     int32_t q[DXP_N], p16, depth, ea1, en1, ep1, og, ng, ga, dga, gn, dgn, kd, inc, dinc;
     uint32_t i, k, wave = L->mode & 3u, flt = (L->mode >> 2) & 3u, ta, tn, tp, kb, inc1;
     tsvf_t c;
-    uint32_t nf = n, ln = v->lg & 7u;                    /* (cursed-os: the lane drum_render set; was L's place in
-                                                          * dx_kit: 0 for an ACOUSTIC copy) */
+    uint32_t nf = n, ln = L >= dx_kit && L < dx_kit + 8 ? (uint32_t)(L - dx_kit) : v->lg & 7u;   /* (cursed-os: an
+                                                          * ACOUSTIC copy's, the lane drum_render set; was 0) */
     int32_t lay = (int32_t)DX_LAY_L(dx_lay[ln]), lfb = (int32_t)DX_TONE_FB(dx_tone) + (int32_t)DX_LAY_FB(dx_lay[ln]);
     if (!v->live && !v->trig) {
         for (i = 0; i < n; i++)
@@ -271,7 +271,7 @@ static __attribute__((noinline)) void dx_run(const dx_lane_t *L, dx_voice_t *v, 
     kb = v->choke ? dv_kb(1500u) : dv_kb(ta);            /* (a choked hit: gone in ~5 ms) */
     ea1 = mulq16(v->ea, kb);
     en1 = mulq16(v->en, v->choke ? kb : dv_kb(tn));
-    const uint8_t *de = dx_de[v->lg & 7u];
+    const uint8_t *de = dx_de[ln];
     uint32_t aA = dx_ahs(de[DE_ATK]), aH = dx_ahs(de[DE_HLD]);
     if (!v->choke && (aA | aH | de[DE_SUS])) {           /* (cursed-os) the drum's AHDSR around its own DECAY */
         if (v->at < aA + aH) {                 /* ATTACK, HOLD: the hit at its top, not falling yet */

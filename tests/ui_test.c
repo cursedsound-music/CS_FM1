@@ -1019,7 +1019,11 @@ static void dximg_hit(uint32_t note, int16_t img, int64_t *el, int64_t *er, int6
     ui_power_on();
     t = &trk[0];
     song.master_q12 = 4096;
-    for (k = 1; k < NTRK; k++) trk[k].p[P_MUTE] = 1;
+    for (k = 1; k < NTRK; k++) {                         /* (cursed-os 0.8: a kit's FX > SEND feeds the buses from each
+                                                         * hit, so another kit's (T4's) sends would light dx_xon too) */
+        trk[k].p[P_MUTE] = 1;
+        trk[k].p[P_REV] = trk[k].p[P_DLY] = trk[k].p[P_CHOR] = 0;
+    }
     set_engine_of(t, ENGI_DRUM);
     t->engine = t->eng_req;
     t->p[P_REV] = t->p[P_DLY] = t->p[P_CHOR] = t->p[P_DIST] = 0;
