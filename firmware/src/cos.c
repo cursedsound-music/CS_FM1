@@ -44,7 +44,7 @@ enum { CC_OUTCH, CC_MOUT, CC_CLOCK, CC_SLOT, CC_TRKS, CC_LOAD, CC_COMP, CC_CATK,
        CC_X2, CC_X2E = CC_X2 + 15, CC_OCT, CC_KICK, CC_KICKE = CC_KICK + 4, CC_LN0, CC_LNE = CC_LN0 + 7, CC_KDRV, CC_BT,
        CC_L1SYNC, CC_L1RATE, CC_L1WAVE, CC_L1MODE, CC_L1PH, CC_L1FADE, CC_L2SYNC, CC_L2RATE, CC_BPM,
        CC_CIN, CC_CTHR, CC_CRAT, CC_CMK, CC_CKNEE, CC_CSC, CC_CMIX, CC_LIN, CC_LREL, CC_LVL, CC_MUTEQ, CC_PCCH, CC_PCOUT, CC_VJCH, CC_EQL, CC_EQM, CC_EQH, CC_MAC0, CC_MAC3 = CC_MAC0 + 3, CC_RB0, CC_RB3 = CC_RB0 + 3, CC_MOPOS, CC_MOBARS, CC_LVLEN, CC_LVRATE, CC_LVDN, CC_LVSH, CC_MCCH, CC_MCCC, CC_MCDIR, CC_MCMAP, CC_MC0, CC_MC3 = CC_MC0 + 3, CC_MOCC,
-       CC_NAME, CC_DJF, CC_DSEL, CC_DLV, CC_DWAV, CC_DFLT, CC_DBT, CC_DDRV, CC_DLAY, CC_DFB, CC_DSNP, CC_DE0, CC_DEE = CC_DE0 + DE_N - 1 };
+       CC_NAME, CC_IDLE, CC_DJF, CC_DSEL, CC_DLV, CC_DWAV, CC_DFLT, CC_DBT, CC_DDRV, CC_DLAY, CC_DFB, CC_DSNP, CC_DE0, CC_DEE = CC_DE0 + DE_N - 1 };
 _Static_assert(CC_DEE < 0xFEu, "the CK_COS ids fit a page's byte (0xFE, 0xFF: OCTAVE, none)");
 _Static_assert(X2_N <= 16u, "CC_X2 .. CC_X2E: room for every trk_x2 field");
 #define ID_MUTEQ 0xFCu                          /* (HOME 2's: MUTE Q, cos_knob) */
@@ -162,7 +162,7 @@ static const cpg_t CZP_MIX[] = {{"MIX", CK_TRK, {P_LEVEL, P_PAN, P_GLIDE, P_MUTE
                                {"LINK 2", CK_COS, {CC_MCCH, CC_MCDIR, CC_MCMAP, CC_MOCC}},   /* (the macros and MORPH as CCs, both
                                                          * ways) */
                                {"LINK 3", CK_COS, {CC_MC0, CC_MC0 + 1u, CC_MC0 + 2u, CC_MC3}},   /* (.. each one's CC) */
-                               {"SYSTEM", CK_COS, {CC_TRKS, CC_LOAD, CC_BT, X}}};
+                               {"SYSTEM", CK_COS, {CC_TRKS, CC_LOAD, CC_BT, CC_IDLE}}};
 static const cpg_t CZP_KEY[] = {{"KEY", CK_TRK, {P_SCALE, P_QUANT, 0xFFu, 0xFFu}}};   /* (the root: the keys) */
 static const cpg_t CZP_PERF[] = {{"FX PAD", CK_COS, {CC_PF0, CC_PF0 + 1u, CC_PF0 + 2u, CC_PF3}}};   /* (FX held) */
 static const cpg_t CZP_PROJ[] = {{"PROJECT", CK_COS, {CC_SLOT, CC_NAME, X, X}}};   /* (KNOB 1 the slot, every song's: 1A ..
@@ -202,6 +202,8 @@ static struct {
     uint32_t clr_t;                                     /* .. when (fm1_ms) */
     uint32_t set_ms;                                    /* a setting turned (MASTER): saved 2 s after, not every detent */
     uint8_t slot, pn_ok;                                /* SAVE: the slot picked (0..3); the names below read */
+    uint8_t idle_up, idle_eat, batt_low;                /* the IDLE screen up; its waking touch swallowed; LOW said */
+    uint32_t act_ms, idle_t;                            /* the last touch; the IDLE frame's time (every strip the same) */
     uint16_t nm_n;                                      /* .. NAME's turns (each a name of its own: back is the same) */
     uint32_t nm_seed;                                   /* .. this power-on's names (0: none drawn yet) */
     char pn[4][13];                     /* .. each slot's name ("": empty) */
@@ -498,6 +500,15 @@ static const param_desc_t *cos_cdesc(uint32_t id, int16_t **vp)
     static const param_desc_t DT = {"TRACKS", F_INT, 4, NTRK, 5, 0, 0}, DL = {"LOAD", F_ENUM, 0, 2, 2, LD, 0};
     if (id == CC_SLOT) { cz.cc_v[3] = (int16_t)(song_cur * 4u + cz.slot + 1u); *vp = &cz.cc_v[3]; return &DS; }
     if (id == CC_NAME) { cz.cc_v[3] = (int16_t)cz.nm_n; *vp = &cz.cc_v[3]; return &DN; }
+    if (id == CC_IDLE) {                                 /* (the IDLE screen after this long untouched: the settings'
+                                                         * engine-15 byte 16, 0 its default 1 MIN, else 1 + the pick) */
+        static const char *const IN[] = {"OFF", "30S", "1MIN", "2MIN", "5MIN", "10MIN", 0};
+        static const param_desc_t DI = {"IDLE", F_ENUM, 0, 5, 2, IN, 0};
+        uint32_t b = favorites.factory[15][16];
+        cz.cc_v[13] = (int16_t)(b ? (b - 1u) % 6u : 2u);
+        *vp = &cz.cc_v[13];
+        return &DI;
+    }
     if (id == CC_BT) {                                   /* (MENU > SYSTEM > BLUETOOTH: a BLE-MIDI device, at once) */
         static const char *const OO[] = {"OFF", "ON", 0};
         static const param_desc_t DB = {"BT MIDI", F_ENUM, 0, 1, 0, OO, 0};
@@ -710,6 +721,10 @@ static void cos_cput(uint32_t id, int32_t v)
     } else if (id == CC_NAME) {
         cz.nm_n = (uint16_t)clamp(v, 0, 999);
         cos_name_pick();
+    } else if (id == CC_IDLE) {
+        favorites.factory[15][16] = (uint8_t)(clamp(v, 0, 5) + 1);
+        cz.act_ms = fm1_ms;
+        settings_save();
     } else if (id == CC_BT) {
         bt_put((uint32_t)clamp(v, 0, 1));
     } else if (id == CC_TRKS) {                          /* (MENU > TRACKS: 6 plays T5 and T6 too, more for the CPU) */
@@ -1360,8 +1375,10 @@ static void cos_pg_follow(void)
     }
 }
 
+static int cos_idle_gate(void);                          /* (the IDLE screen, below) */
 static __attribute__((noinline)) void cos_input(void)
 {
+    if (cos_idle_gate()) return;                         /* (the IDLE screen: shown, or its waking touch) */
     uint32_t released = 0, pressed = fm1_input_edges(&released), notes = fm1_input_note_edges(), k, b;
     int scl_held = (int)((fm1_in.buttons >> panel.btn[B_SCL]) & 1u);
     int32_t s;
@@ -1687,6 +1704,136 @@ static uint32_t cos_step(const track_t *t, uint32_t i, uint32_t l)
     return s->time != ST_NOTE || !s->n ? 0u : (s->flags & SF_ACCENT) ? 2u : 1u;
 }
 
+/* (cursed-os) the battery, in percent: -1 not read yet, 101 on USB (a host powers it: the reading is the charger's).
+ * main.c smooths ADC ch3 (song.batt_raw, 10 bit), the battery through a divider. An estimate: 3.3 V the ADC's top and
+ * the divider a half (JIANT's three bars at 531 / 561 / 591 read 3.43 / 3.62 / 3.81 V so), a Li-ion's curve from that */
+static int32_t cos_batt_mv(void) { return song.batt_raw > 0 ? song.batt_raw * 6600 / 1023 : 0; }
+static int32_t cos_batt_pct(void)
+{
+    static const int16_t MV[10] = {3300, 3500, 3600, 3700, 3750, 3800, 3900, 4000, 4100, 4200};
+    static const uint8_t PC[10] = {0, 5, 12, 30, 42, 55, 70, 82, 92, 100};
+    int32_t v = cos_batt_mv(), i;
+    if (usb.config && !usb.suspended) return 101;
+    if (!v) return -1;
+    if (v <= MV[0]) return 0;
+    for (i = 1; i < 10; i++)
+        if (v < MV[i]) return PC[i - 1] + (PC[i] - PC[i - 1]) * (v - MV[i - 1]) / (MV[i] - MV[i - 1]);
+    return 100;
+}
+static void cos_batt_text(char *b)                       /* "78%", "USB", "" */
+{
+    int32_t p = cos_batt_pct();
+    b[0] = 0;
+    if (p > 100) str_cpy(b, "USB", 4);
+    else if (p >= 0) { fmt_int(b, p); str_cpy(b + str_len(b), "%", 2); }
+}
+
+/* (cursed-os) the IDLE screen: untouched for SYSTEM's IDLE (default 1 MIN), a tunnel of turning squares falling in on the
+ * beat (one each beat while it plays, the bar's first red), an orb the output's wave shapes, the tempo, the music's name
+ * and the battery. The first touch only wakes it (swallowed); the sound plays on throughout */
+static uint32_t cos_idle_lim(void)
+{
+    static const uint32_t MS[6] = {0, 30000u, 60000u, 120000u, 300000u, 600000u};
+    uint32_t b = favorites.factory[15][16];
+    return MS[b ? (b - 1u) % 6u : 2u];
+}
+static int16_t idle_orb[48] COS_RAM;                     /* the orb's radius at 48 angles, this frame */
+static uint32_t idle_ph COS_RAM, idle_beat COS_RAM;      /* the beat's phase (Q10), the beat of the bar */
+static inline int32_t cos_isin(uint32_t a) { return SINE[a & 1023u]; }   /* (a: 1024 a turn) */
+static void cos_idle_prep(void)
+{
+    uint32_t w = scope_w, j, bs = beat_samples();
+    cz.idle_t = fm1_ms;
+    if (song.playing && bs) { idle_ph = (uint32_t)((beat_pos << 10) / bs) & 1023u; idle_beat = beat_n & 3u; }   /* (a beat
+                                                         * under 2^21 samples: 32 bits) */
+    else { idle_ph = (fm1_ms / 3u) & 1023u; idle_beat = 1; }   /* (stopped: a slow fall, ~3 s a square) */
+    for (j = 0; j < 48u; j++) {
+        int32_t v = scope_buf[(w - 384u + j * 8u) & (SCOPE_N - 1u)];
+        v = v < 0 ? -v : v;
+        idle_orb[j] = (int16_t)(26 + (v >> 10));
+    }
+}
+static void cos_idle_scene(void)
+{
+    static const uint8_t SZ[10] = {4, 7, 11, 17, 26, 39, 58, 86, 128, 190};   /* (each 1.5 x the one inside it) */
+    int32_t cx = 120, cy = 116, i, j, ph = (int32_t)idle_ph, spin = (int32_t)(cz.idle_t / 24u);
+    char b[28], n[8];
+    for (i = 0; i < 9; i++) {                            /* the tunnel: the squares fall towards us through a beat */
+        int32_t h = SZ[i] + (SZ[i + 1] - SZ[i]) * ph / 1024, a = spin + i * 22, c = cos_isin(a + 256), sn = cos_isin(a);
+        int32_t px[4], py[4], k;
+        uint16_t col = i >= 6 ? C_FG : i >= 4 ? C_MID : i >= 2 ? C_DIM : C_DARK;
+        if (i == 7 && idle_beat == 0 && song.playing) col = C_RED;   /* (the bar's first beat) */
+        for (k = 0; k < 4; k++) {
+            int32_t ux = (k == 0 || k == 3) ? h : -h, uy = k < 2 ? h : -h;
+            px[k] = cx + ((ux * c - uy * sn) >> 15);
+            py[k] = cy + ((ux * sn + uy * c) >> 15);
+        }
+        for (k = 0; k < 4; k++) cv_line(px[k], py[k], px[(k + 1) & 3], py[(k + 1) & 3], col);
+    }
+    {                                                    /* the orb: the output's wave round the middle */
+        int32_t x0 = 0, y0 = 0, xf = 0, yf = 0;
+        for (j = 0; j <= 48; j++) {
+            int32_t a = (int32_t)(j % 48) * 1024 / 48 - spin / 2, r = idle_orb[j % 48];
+            int32_t x = cx + ((r * cos_isin((uint32_t)a + 256u)) >> 15), y = cy + ((r * cos_isin((uint32_t)a)) >> 15);
+            if (j) cv_line(x0, y0, x, y, C_RED);
+            else { xf = x; yf = y; }
+            x0 = x; y0 = y;
+        }
+        (void)xf; (void)yf;
+    }
+    cv_rect(0, 0, 240, 16, C_BG);                        /* (the words on black) */
+    cos_tx(4, 4, "CURSED-OS", C_DIM);
+    cos_batt_text(b);
+    if (b[0]) cos_txr(236, 4, b, cos_batt_pct() <= 15 ? C_RED : C_MID);
+    cv_rect(0, 212, 240, 28, C_BG);
+    b[0] = 0;
+    fmt_int(n, song.g[G_BPM]);
+    str_cpy(b, n, sizeof b);
+    str_cpy(b + str_len(b), song.playing ? " BPM  PLAYING" : " BPM  STOPPED", sizeof b - str_len(b));
+    cos_txc(120, 216, CZ_LBL, b, song.playing ? C_FG : C_DIM);
+    if (proj_name_buf()[0]) cos_txc(120, 228, CZ_LBL, proj_name_buf(), C_MID);
+}
+/* cos_input, first: 1 = this pass is the IDLE screen's (it shows, or the touch that woke it goes on) */
+static int cos_idle_gate(void)
+{
+    uint32_t held = fm1_in.buttons | fm1_in.notes, k, lim = cos_idle_lim();
+    int32_t mv = 0;
+    int touch = held || panel_moved;
+    if (cz.idle_up || cz.idle_eat) {                     /* (shown or waking: the knobs' turns and the presses go) */
+        for (k = 0; k < NE; k++) mv |= panel_enc(k);
+        (void)fm1_input_edges(0);
+        (void)fm1_input_note_edges();
+        touch |= mv != 0;
+    }
+    panel_moved = 0;
+    if (touch) cz.act_ms = fm1_ms;
+    if (cz.idle_up && touch) {                           /* woken: the page as it was, the touch not acted on */
+        cz.idle_up = 0;
+        cz.idle_eat = 1;
+        cz.ready = 0;
+        ui.force = 1;
+    }
+    if (cz.idle_eat) {
+        if (held) { song.grid = 2; return 1; }           /* (keys silent until let go) */
+        cz.idle_eat = 0;
+        return 1;
+    }
+    if (!cz.idle_up && lim && !ui.uboot && !cz.fx_down && fm1_ms - cz.act_ms >= lim) {
+        cz.idle_up = 1;
+        cz.ready = 0;
+    }
+    if (cz.idle_up) { song.grid = 2; return 1; }
+    {                                                    /* the battery low: said once (again under 5 %) */
+        int32_t p = cos_batt_pct();
+        if (p >= 0 && p <= 100) {
+            if (p <= 10 && cz.batt_low < 1u) { cz.batt_low = 1; cos_say("BATTERY LOW"); }
+            else if (p <= 5 && cz.batt_low < 2u) { cz.batt_low = 2; cos_say("BATTERY 5% LEFT"); }
+            else if (p > 20) cz.batt_low = 0;
+        }
+    }
+    return 0;
+}
+
 static void cos_head(void)
 {
     char b[24];
@@ -1712,6 +1859,8 @@ static void cos_head(void)
     if (bpm_nudge) str_cpy(b + str_len(b), bpm_nudge > 0 ? "+" : "-", 2);   /* (nudged: 3 %, red) */
     cos_txr(226, 3, b, bpm_nudge ? C_RED : C_FG);
     cos_txr(226 - 8 * 4, 3, COS_NN[cz.key_next ? cz.key_next - 1u : cos_key()], cz.key_next ? C_RED : C_MID);
+    cos_batt_text(b);                                    /* (the battery: between the engine and the key) */
+    if (b[0]) cos_txr(176, 3, b, cos_batt_pct() <= 15 ? C_RED : C_DIM);
 tri:
     {                                                     /* the play triangle, red while it runs */
         int32_t i;
@@ -2457,18 +2606,29 @@ static void flash_say_none(char *b);
 #endif
 static void cos_body_sys(void)
 {
-    cos_tx(8, 40, "TRACKS: 4, 5 OR 6 PLAYING", C_FG);
-    cos_tx(8, 54, "(EACH ONE MORE FOR THE CPU)", C_DIM);
-    cos_tx(8, 78, "LOAD: HOW MUCH THE VOICES", C_FG);
-    cos_tx(8, 92, "MAY TAKE. ECO: 4 A TRACK", C_DIM);
-    cos_tx(8, 106, "FULL: 8 A TRACK", C_DIM);
+    cos_tx(8, 38, "TRACKS: 4, 5 OR 6 PLAYING", C_FG);
+    cos_tx(8, 52, "LOAD: VOICES A TRACK, ECO 4 FULL 8", C_DIM);
     {                                                    /* the audio's load (voice.c load_diag: MENU > ABOUT's) */
         char b[40], n[12];
         str_cpy(b, "CPU ", sizeof b); fmt_int(n, (int32_t)((song.cpu_q8 * 100u) >> 8)); str_cpy(b + str_len(b), n, 8);
         str_cpy(b + str_len(b), "% PEAK ", 9); fmt_int(n, (int32_t)load_diag.peak); str_cpy(b + str_len(b), n, 8);
         str_cpy(b + str_len(b), "% LATE ", 9); fmt_int(n, (int32_t)load_diag.late); str_cpy(b + str_len(b), n, 8);
-        cos_tx(8, 122, b, load_diag.late ? C_RED : C_MID);
-        cos_tx(8, 136, "BT MIDI: A BLE-MIDI LINK", C_DIM);
+        cos_tx(8, 66, b, load_diag.late ? C_RED : C_MID);
+        cos_tx(8, 80, "BT MIDI: A BLE-MIDI LINK", C_DIM);
+        {                                                /* the battery: the estimate, its volts and the ADC's reading */
+            int32_t mv = cos_batt_mv();
+            cos_batt_text(n);
+            str_cpy(b, "BATT ", sizeof b);
+            str_cpy(b + 5, n[0] ? n : "--", 8);
+            str_cpy(b + str_len(b), "  ~", 4);
+            fmt_int(n, mv / 1000); str_cpy(b + str_len(b), n, 4); str_cpy(b + str_len(b), ".", 2);
+            fmt_int(n, (mv % 1000) / 10 + 100); str_cpy(b + str_len(b), n + 1, 3);
+            str_cpy(b + str_len(b), "V  RAW ", 8);
+            fmt_int(n, song.batt_raw); str_cpy(b + str_len(b), n, 6);
+            cos_tx(8, 100, b, C_FG);
+            cos_tx(8, 114, "(AN ESTIMATE: NOT YET CALIBRATED)", C_DIM);
+            cos_tx(8, 132, "IDLE: THE VISUALS AFTER NO TOUCH", C_DIM);
+        }
 #if FELUCCA_FLASH
         if (!flash_ok) {                                 /* (no flash found: SAVE keeps the music only until power-off;
                                                          * storage_hw.c flash_id_ok: the part it read) */
@@ -2490,6 +2650,7 @@ static void cos_scene(void)
         cos_txc(120, 140, CZ_LBL, "LET GO TO CANCEL", C_DIM);
         return;
     }
+    if (cz.idle_up) { cos_idle_scene(); return; }
     cos_head();
     cos_tabs();
     if (cz.fx_down) { cos_body_fxpad(); goto dials; }
@@ -2532,7 +2693,7 @@ dials:
 /* the splash (ui_draw.c draw_splash / splash_write under COS_SLIM; main.c's boot loop calls it every ~4 ms for
  * SPL_WRITE + SPL_HOLD ms): black, a few still stars, the name 2x, the version, a 16-block bar filling like a pattern
  * (the block being filled red), READY. Drawn whole once, then only the bar's strip when a block fills */
-#define COS_VERSION "0.8.2"
+#define COS_VERSION "0.8.3"
 static void cos_px2(int32_t x, int32_t y, const char *s, uint16_t c)      /* (the face 2 x 2) */
 {
     int32_t r, b, b0;
@@ -2589,6 +2750,7 @@ static __attribute__((noinline)) void cos_draw(void)
     ui.frame++;
     if (!scr_frame())
         return;
+    if (cz.idle_up) cos_idle_prep();                     /* (one time and one wave for every strip of the frame) */
     for (s = 0; s < 6u; s++) {
         cv_begin(240, 40, C_BG);
         cv_oy = -(int32_t)s * 40;

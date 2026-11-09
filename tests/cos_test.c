@@ -1691,6 +1691,47 @@ int main(void)
         CHECK(song_cur == 0u && cz.slot == 0u, "SLOT 1: SONG 1, A");
         cz.mode = CM_HOME;
     }
+    {   /* the IDLE screen: after SYSTEM's IDLE untouched (1 MIN), the first touch only wakes it; OFF never; the battery */
+        int16_t *vp;
+        uint8_t was_b = favorites.factory[15][16];
+        uint32_t m0 = cz.mode;
+        favorites.factory[15][16] = 0;
+        CHECK(cos_cdesc(CC_IDLE, &vp) && *vp == 2, "IDLE: 1MIN by default");
+        cz.mode = CM_HOME;
+        cos_input(); cos_test_btn(B_SEQ, 1); cos_test_btn(B_SEQ, 0);   /* (a touch) */
+        cz.mode = CM_HOME; cz.tab[CM_HOME] = 0;
+        fm1_ms += 59000u; cos_input();
+        CHECK(!cz.idle_up, "59 s untouched: not yet");
+        fm1_ms += 2000u; cos_input();
+        CHECK(cz.idle_up && song.grid == 2u, "61 s: the IDLE screen, the keys silent");
+        cos_draw();
+        cos_test_btn(B_SEQ, 1);
+        CHECK(!cz.idle_up && cz.mode == CM_HOME, "a press wakes it, and is not acted on (still HOME)");
+        cos_test_btn(B_SEQ, 0);
+        cos_input();
+        CHECK(!cz.idle_eat, "let go: input again");
+        cos_test_btn(B_SEQ, 1); cos_test_btn(B_SEQ, 0);
+        CHECK(cz.mode == CM_TRIG, "the next press acts (SEQ)");
+        cos_cput(CC_IDLE, 0);
+        fm1_ms += 3600000u; cos_input();
+        CHECK(!cz.idle_up && favorites.factory[15][16] == 1u, "IDLE OFF: never");
+        favorites.factory[15][16] = was_b;
+        cz.mode = m0;
+        {
+            char bt[8];
+            int32_t raw0 = song.batt_raw;
+            song.batt_raw = 0; cos_batt_text(bt);
+            CHECK(!bt[0] || str_eq(bt, "USB"), "not read: no percent (%s)", bt);
+            song.batt_raw = 651;                            /* (~4.2 V) */
+            CHECK(cos_batt_pct() >= 99 || cos_batt_pct() == 101, "4.2 V: full (%d)", cos_batt_pct());
+            song.batt_raw = 589;                            /* (~3.80 V) */
+            CHECK(cos_batt_pct() == 101 || (cos_batt_pct() >= 50 && cos_batt_pct() <= 58), "3.8 V: about half (%d)", cos_batt_pct());
+            song.batt_raw = 500;
+            CHECK(cos_batt_pct() == 101 || cos_batt_pct() == 0, "3.2 V: empty (%d)", cos_batt_pct());
+            song.batt_raw = raw0;
+        }
+        cz.act_ms = fm1_ms;
+    }
     {   /* the keyboards drawn (KEY, DRONE) as the FM-1's keys: from F, a black one where the panel has one */
         uint32_t ok = 1, j, bl;
         for (k = 0; k < 27u; k++) {

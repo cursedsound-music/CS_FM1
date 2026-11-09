@@ -118,6 +118,7 @@ static const char *why_quiet(uint32_t m, const cpg_t *p, uint32_t k)
     if (p->kind == CK_COS) {
         if (id == CC_SLOT) return "SAVE: the slot a press saves to";
         if (id == CC_NAME) return "SAVE: the name the next save takes";
+        if (id == CC_IDLE) return "SYSTEM: when the IDLE screen comes up";
         if (id == CC_MCCH || id == CC_MCDIR || id == CC_MCMAP || (id >= CC_MC0 && id <= CC_MC3) || id == CC_MOCC)
             return "LINK 2/3: the macros' and MORPH's MIDI CCs";
         if (id == CC_PCCH || id == CC_PCOUT || id == CC_VJCH) return "LINK: program changes and the VJ notes";
