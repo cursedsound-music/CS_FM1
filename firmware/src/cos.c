@@ -1755,6 +1755,7 @@ static void cos_idle_start(void)                         /* (it comes up: the fi
 {
     gl.rng = (fm1_ms * 2654435761u) | 1u;
     gl.sk_on = 0;
+    gl.pic = (gl_rnd() >> 16) & 1u;                      /* (which comes first: either) */
     gl.sk_next = fm1_ms + 20000u + gl_rnd() % 20000u;
     gl.g_next = fm1_ms + 2000u + gl_rnd() % 4000u;
     gl.burst = 0;
@@ -1775,7 +1776,7 @@ static void cos_idle_prep(void)
     if (!gl.sk_on && t - gl.sk_next < 0x80000000u) {     /* a picture (the skull, or the hammer and sickle): under a
                                                          * second, now and then (20 .. 40 s in, then every 40 .. 120 s) */
         gl.sk_on = t + 600u + gl_rnd() % 350u;
-        gl.pic = (gl_rnd() >> 16) & 1u;                 /* (xorshift's low bit: too regular) */
+        gl.pic ^= 1u;                                    /* (the two in turn: the skull, then the hammer and sickle) */
         gl.sk_next = t + 40000u + gl_rnd() % 80000u;
         gl.burst = t + 160u;                             /* (it tears in) */
     }
