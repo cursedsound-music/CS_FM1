@@ -1759,7 +1759,6 @@ static void cos_idle_start(void)                         /* (it comes up: the fi
 {
     gl.rng = (fm1_ms * 2654435761u) | 1u;
     gl.sk_on = 0;
-    gl.pic = (gl_rnd() >> 16) & 1u;                      /* (which comes first: either) */
     gl.sk_next = fm1_ms + 20000u + gl_rnd() % 20000u;
     gl.g_next = fm1_ms + 2000u + gl_rnd() % 4000u;
     gl.burst = 0;
@@ -1821,7 +1820,7 @@ static void cos_idle_prep(void)
     if (!gl.sk_on && t - gl.sk_next < 0x80000000u) {     /* a picture (the skull, or the hammer and sickle): under a
                                                          * second, now and then (20 .. 40 s in, then every 40 .. 120 s) */
         gl.sk_on = t + 300u + gl_rnd() % 180u;            /* (about half a second) */
-        gl.pic ^= 1u;                                    /* (the two in turn: the skull, then the hammer and sickle) */
+        gl.pic = (gl_rnd() >> 8) % 100u < 40u;           /* (the skull 60 %, the hammer and sickle 40 %) */
         gl.sk_next = t + 40000u + gl_rnd() % 80000u;
         gl.burst = t + 160u;                             /* (it tears in) */
     }
@@ -1880,7 +1879,6 @@ static void cos_idle_scene(void)
     static const uint8_t E[12][2] = {{0, 1}, {2, 3}, {4, 5}, {6, 7}, {0, 2}, {1, 3}, {4, 6}, {5, 7},
                                      {0, 4}, {1, 5}, {2, 6}, {3, 7}};   /* (the cube's edges: corners differing in a bit) */
     int32_t i;
-    char b[28], n[8];
     if (gl.sk_on) {                                      /* a picture: on black, a red ghost torn off it while it glitches */
         const uint8_t *pic = gl.pic ? HSKL : SKULL;
         uint32_t w = gl.pic ? HSKL_W : SKULL_W, h = gl.pic ? HSKL_H : SKULL_H;
@@ -1894,16 +1892,10 @@ static void cos_idle_scene(void)
         }
     for (i = 0; i < (int32_t)gl.nl; i++)                 /* red lines struck across */
         cv_rect(gl.l[i].x, gl.l[i].y, gl.l[i].w, gl.l[i].t, C_RED);
-    cv_rect(0, 0, 240, 16, C_BG);                        /* (the words on black) */
+    cv_rect(0, 0, 240, 16, C_BG);                        /* (the words on black: the name, the music's) */
     cos_tx(4, 4, "CURSED-OS", C_DIM);
-    cos_batt_text(b);
-    if (b[0]) cos_txr(236, 4, b, cos_batt_pct() <= 15 ? C_RED : C_MID);
     cv_rect(0, 212, 240, 28, C_BG);
-    fmt_int(n, song.g[G_BPM]);
-    str_cpy(b, n, sizeof b);
-    str_cpy(b + str_len(b), song.playing ? " BPM  PLAYING" : " BPM  STOPPED", sizeof b - str_len(b));
-    cos_txc(120, 216, CZ_LBL, b, song.playing ? C_FG : C_DIM);
-    if (proj_name_buf()[0]) cos_txc(120, 228, CZ_LBL, proj_name_buf(), C_MID);
+    if (proj_name_buf()[0]) cos_txc(120, 222, CZ_LBL, proj_name_buf(), C_DIM);
 }
 /* after a strip is drawn: the bands torn sideways (the rows of strip s, 40 from s x 40), some turned red */
 static void cos_idle_post(uint32_t s)
