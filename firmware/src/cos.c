@@ -429,11 +429,13 @@ static uint32_t cos_lsync_pos(uint32_t idx) { return idx >= 12u ? 14u - (idx % 1
  * LEVEL, the oscillator's WAVE, the noise's FILTER, BEND's TYPE, DRIVE, LAYER, FEEDBK, SNAP (the noise's envelope a
  * quarter of the sound's), its AHDSR and sends (dx_de, DX_DE_D) */
 static const char *const COS_DRUM[] = {"KICK", "SNARE", "CLAP", "HAT CL", "HAT OP", "TOM", "RIM", "BELL", 0};
+static const char *const COS_DRUM5[] = {"KICK", "SNARE", "CLAP", "HH CL", "HH OP", "TOM", "RIM", "BELL", 0};   /* (a knob's
+                                                         * value: five letters at most, param_format) */
 static __attribute__((noinline)) const param_desc_t *cos_ddesc(uint32_t id, int16_t **vp)
 {
     static const char *const WV[] = {"SINE", "FM", "METAL", "BELL", 0}, *const FT[] = {"LP", "BP", "HP", 0};
     static const char *const BT[] = {"DECAY", "LONG", "NOISE", "SINE", 0}, *const OO[] = {"OFF", "ON", 0};
-    static const param_desc_t D[] = {{"DRUM", F_ENUM, 0, 7, 0, COS_DRUM, 0}, {"WAVE", F_ENUM, 0, 3, 0, WV, 0},
+    static const param_desc_t D[] = {{"DRUM", F_ENUM, 0, 7, 0, COS_DRUM5, 0}, {"WAVE", F_ENUM, 0, 3, 0, WV, 0},
                                      {"FILTER", F_ENUM, 0, 2, 0, FT, 0}, {"BENDTYP", F_ENUM, 0, 3, 0, BT, 0},
                                      {"DRIVE", F_ENUM, 0, 1, 0, OO, 0}, {"LAYER", F_INT, 0, 15, 0, 0, 0},
                                      {"FEEDBK", F_INT, 0, 15, 0, 0, 0}, {"SNAP", F_ENUM, 0, 1, 0, OO, 0}};
@@ -1960,7 +1962,9 @@ static void cos_dial(int32_t cx, int32_t cy, uint32_t k)
     for (a = 0; a <= 40; a++) {                           /* 40 dots round 270 degrees, from 7:30 to 4:30 */
         uint32_t ang = (uint32_t)(0x6000 + a * 0xC000 / 40) & 0xFFFFu;
         int32_t x = cx + ((r * og_cos(ang)) >> 15), y = cy + ((r * og_sin(ang)) >> 15);
-        int32_t at = lo + (hi - lo) * a / 40, on = hi > lo && ((at >= z && at <= pv) || (at <= z && at >= pv));
+        int32_t at = a * (hi - lo), zz = (z - lo) * 40, pp = (pv - lo) * 40;   /* (x 40: a short range, an enum or
+                                                         * OFF / ON, lit to its pointer exactly; was rounded down, past it) */
+        int32_t on = hi > lo && pv != z && ((at >= zz && at <= pp) || (at <= zz && at >= pp));
         cv_rect(x - 1, y - 1, 2, 2, on ? (hot ? C_RED : C_FG) : C_DARK);
     }
     {                                                     /* the pointer */
@@ -2693,7 +2697,7 @@ dials:
 /* the splash (ui_draw.c draw_splash / splash_write under COS_SLIM; main.c's boot loop calls it every ~4 ms for
  * SPL_WRITE + SPL_HOLD ms): black, a few still stars, the name 2x, the version, a 16-block bar filling like a pattern
  * (the block being filled red), READY. Drawn whole once, then only the bar's strip when a block fills */
-#define COS_VERSION "0.8.3"
+#define COS_VERSION "0.8.4"
 static void cos_px2(int32_t x, int32_t y, const char *s, uint16_t c)      /* (the face 2 x 2) */
 {
     int32_t r, b, b0;
