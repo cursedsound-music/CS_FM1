@@ -1745,22 +1745,23 @@ static inline int32_t cos_isin(uint32_t a) { return SINE[a & 1023u]; }   /* (a: 
 /* the frame's plan, the same for its six strips: the beat's phase, the glitches (bands of rows torn sideways, some
  * turned red; red lines struck across), the skull (now and then, a few seconds) */
 static struct {
-    uint32_t ph, beat, rng, burst, sk_on, sk_next, lvl, pic;
+    uint32_t ph, beat, rng, burst, g_next, sk_on, sk_next, lvl, pic;
     uint8_t nb, nl;
     struct { uint8_t y, h, red; int8_t dx; } b[6];
     struct { uint8_t y, x, w, t; } l[8];
 } gl COS_RAM;
 static uint32_t gl_rnd(void) { gl.rng ^= gl.rng << 13; gl.rng ^= gl.rng >> 17; gl.rng ^= gl.rng << 5; return gl.rng; }
-static void cos_idle_start(void)                         /* (it comes up: the first skull a few seconds in) */
+static void cos_idle_start(void)                         /* (it comes up: the first glitch in seconds, a picture later) */
 {
     gl.rng = (fm1_ms * 2654435761u) | 1u;
     gl.sk_on = 0;
-    gl.sk_next = fm1_ms + 6000u;
+    gl.sk_next = fm1_ms + 20000u + gl_rnd() % 20000u;
+    gl.g_next = fm1_ms + 2000u + gl_rnd() % 4000u;
     gl.burst = 0;
 }
 static void cos_idle_prep(void)
 {
-    uint32_t w = scope_w, j, bs = beat_samples(), t = fm1_ms, pk = 0, down, p;
+    uint32_t w = scope_w, j, bs = beat_samples(), t = fm1_ms, pk = 0;
     cz.idle_t = t;
     if (song.playing && bs) { gl.ph = ((beat_pos << 10) / bs) & 1023u; gl.beat = beat_n & 3u; }   /* (a beat under 2^21
                                                          * samples: 32 bits) */
@@ -1772,17 +1773,18 @@ static void cos_idle_prep(void)
     }
     gl.lvl = pk;
     if (!gl.sk_on && t - gl.sk_next < 0x80000000u) {     /* a picture (the skull, or the hammer and sickle): under a
-                                                         * second, again in 12 .. 27 s */
+                                                         * second, now and then (20 .. 40 s in, then every 40 .. 120 s) */
         gl.sk_on = t + 600u + gl_rnd() % 350u;
         gl.pic = (gl_rnd() >> 16) & 1u;                 /* (xorshift's low bit: too regular) */
-        gl.sk_next = t + 12000u + gl_rnd() % 15000u;
+        gl.sk_next = t + 40000u + gl_rnd() % 80000u;
         gl.burst = t + 160u;                             /* (it tears in) */
     }
     if (gl.sk_on && t - gl.sk_on < 0x80000000u) { gl.sk_on = 0; gl.burst = t + 120u; }   /* (and out) */
-    down = song.playing && gl.beat == 0u && gl.ph < 60u; /* (the bar's first beat, its start) */
-    p = 3u + pk / 4096u + (down ? 40u : 0u);             /* a burst's chance a frame, in 100: 3, up to 11 when loud */
-    if (t - gl.burst >= 0x80000000u) {}                 /* (one going on) */
-    else if (gl_rnd() % 100u < p) gl.burst = t + 60u + gl_rnd() % 220u;
+    if (t - gl.g_next < 0x80000000u) {                   /* a glitch burst at random times: 4 .. 15 s apart, 60 .. 300 ms
+                                                         * long (a little sooner when it's loud) */
+        gl.burst = t + 60u + gl_rnd() % 240u;
+        gl.g_next = t + 4000u + gl_rnd() % 11000u - (pk > 16384u ? 1500u : 0u);
+    }
     gl.nb = gl.nl = 0;
     if (t - gl.burst >= 0x80000000u) {                   /* a burst: bands torn, red lines */
         uint32_t k;
@@ -1795,8 +1797,8 @@ static void cos_idle_prep(void)
             gl.b[k].red = (uint8_t)((r >> 24) % 3u == 0u);
         }
         gl.nl = (uint8_t)(2u + gl_rnd() % 6u);
-    } else if (gl_rnd() % 100u < 18u + pk / 4096u) {
-        gl.nl = (uint8_t)(1u + gl_rnd() % 2u);           /* (between: a red line now and then) */
+    } else if (gl_rnd() % 1000u < 2u) {
+        gl.nl = 1;                                       /* (between: a stray red line, rarely) */
     }
     for (j = 0; j < gl.nl; j++) {
         uint32_t r = gl_rnd();
