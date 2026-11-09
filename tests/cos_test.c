@@ -157,9 +157,60 @@ int main(void)
     {
         const cpg_t *pp; uint32_t n;
         cos_pages(CM_SRC, &pp, &n);
-        CHECK(n == 9u && !strcmp(pp[2].tab, "WORDS") && !strcmp(pp[4].tab, "CHORD"), "a VOICE track's SRC has WORDS, CHORD");
+        CHECK(n == 10u && !strcmp(pp[2].tab, "FILTER") && !strcmp(pp[3].tab, "WORDS") && !strcmp(pp[5].tab, "CHORD"),
+              "a VOICE track's SRC has FILTER, WORDS, CHORD");
+        CHECK(pp[2].id[0] == P_FTYPE && pp[2].id[1] == P_FCUT && pp[2].id[2] == P_FRES, "its FILTER: the track's");
         song.sel = 4; cos_pages(CM_SRC, &pp, &n);
-        CHECK(n == 8u && strcmp(pp[2].tab, "WORDS") && !strcmp(pp[3].tab, "CHORD"), "an ANALOG track's: no WORDS, CHORD after VOICE");
+        CHECK(n == 9u && strcmp(pp[3].tab, "WORDS") && !strcmp(pp[4].tab, "CHORD"), "an ANALOG track's: no WORDS, CHORD after VOICE");
+        CHECK(!strcmp(pp[2].tab, "FILTER") && pp[2].id[1] == P_E4 && pp[2].id[2] == P_E5, "ANALOG's FILTER: its own CUT RES");
+        {                                                  /* every engine's EDIT: a FILTER page */
+            uint32_t e2, j2, bad = 0, sv = trk[4].eng_req, se = trk[4].engine;
+            for (e2 = 0; e2 < NENGINES; e2++) {
+                int has = 0;
+                if (!ENGINES[e2] || eng_gone(e2)) continue;
+                trk[4].engine = trk[4].eng_req = (uint8_t)e2;
+                cos_pages(CM_SRC, &pp, &n);
+                for (j2 = 0; j2 < n; j2++) has |= str_eq(pp[j2].tab, "FILTER");
+                if (!has) { bad++; printf("  (no FILTER: engine %u)\n", e2); }
+            }
+            trk[4].engine = (uint8_t)se; trk[4].eng_req = (uint8_t)sv;
+            CHECK(!bad, "every engine's EDIT has a FILTER page");
+        }
+        {                                                  /* .. and it is heard: CUT down darkens every engine */
+            static int32_t o2[2 * CTL];
+            uint32_t e2, k2, b3, i3, bad = 0;
+            track_t *t4 = &trk[4];
+            uint32_t sv = t4->eng_req;
+            trk_live = 5;
+            for (k2 = 0; k2 < NTRK; k2++) trk[k2].p[P_MUTE] = k2 != 4u;
+            for (e2 = 0; e2 < NENGINES; e2++) {
+                int64_t en[2] = {0, 0};
+                uint32_t pass;
+                if (!ENGINES[e2] || eng_gone(e2) || e2 == ENGI_DRUM) continue;
+                set_engine_of(t4, e2); t4->engine = t4->eng_req;
+                for (pass = 0; pass < 2u; pass++) {
+                    uint32_t cut = ENGINES[e2] == &ENG_ANALOG ? P_E4 : P_FCUT;
+                    t4->p[P_FTYPE] = 0; t4->p[P_FRES] = 0;
+                    t4->p[cut] = pass ? 10 : 127;
+                    for (b3 = 0; b3 < 200u; b3++) { memset(o2, 0, sizeof o2); mix_block(o2, CTL); }
+                    trk_note_on(t4, 60, 110);
+                    for (b3 = 0; b3 < 400u; b3++) {
+                        memset(o2, 0, sizeof o2);
+                        mix_block(o2, CTL);
+                        for (i3 = 1; i3 < CTL; i3++) {   /* (the highs: the step from sample to sample) */
+                            int64_t d = (int64_t)mix_l[i3] - mix_l[i3 - 1];
+                            en[pass] += d * d;
+                        }
+                    }
+                    trk_note_off(t4, 60);
+                    for (b3 = 0; b3 < 600u; b3++) { memset(o2, 0, sizeof o2); mix_block(o2, CTL); }
+                }
+                if (!(en[0] > 0 && en[1] * 4 < en[0])) { bad++; printf("  (FILTER: engine %u %lld -> %lld)\n", e2, (long long)en[0], (long long)en[1]); }
+            }
+            set_engine_of(t4, sv); t4->engine = t4->eng_req;
+            for (k2 = 0; k2 < NTRK; k2++) trk[k2].p[P_MUTE] = 0;
+            CHECK(!bad, "every engine through its FILTER: CUT down, the highs a quarter or less");
+        }
     }
 
     /* ACID made easy: GEN from a kit goes over to an ANALOG track (one made from the last melodic one if none), an

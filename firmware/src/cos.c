@@ -72,17 +72,27 @@ static const cpg_t CZP_TRIGK[] = {{"TRIG", CK_TRK, {P_SLEN, P_SDIV, P_SSWING, P_
 /* EDIT: the engine's eight (its own page names: cos_tabs), the voice, the matrix's four slots; a VOICE track WORDS
  * third. ENV: the amp, the filter, the envelope's modulation, the two LFO pages */
 #define CZ_MOD(n) {"MOD " #n, CK_TRK, {P_M##n##SRC, P_M##n##DST, P_M##n##AMT, X}}
+#define CZ_FILT {"FILTER", CK_TRK, {P_FTYPE, P_FCUT, P_FRES, P_ED_FLT}}   /* (every source's: the track's FILTER, as
+                                                         * ENV > FILTER 1; ANALOG's its own CUT RES, CZP_SRCN) */
 static const cpg_t CZP_SRC[] = {{"SRC 1", CK_TRK, {P_E0, P_E1, P_E2, P_E3}}, {"SRC 2", CK_TRK, {P_E4, P_E5, P_E6, P_E7}},
+                               CZ_FILT,
                                {"VOICE", CK_TRK, {P_VOICE, P_GLIDE, P_DETUNE, ID_OCT}},
                                {"CHORD", CK_TRK, {P_CHRD, P_CVOI, P_CSTR, X}},   /* (a key plays a chord: seq.c chord_build) */
                                CZ_MOD(1), CZ_MOD(2), CZ_MOD(3), CZ_MOD(4)};
+static const cpg_t CZP_SRCN[] = {{"SRC 1", CK_TRK, {P_E0, P_E1, P_E2, P_E3}}, {"SRC 2", CK_TRK, {P_E4, P_E5, P_E6, P_E7}},
+                                {"FILTER", CK_TRK, {P_FTYPE, P_E4, P_E5, P_ED_FLT}},   /* (ANALOG: its CUT RES, E4 E5) */
+                                {"VOICE", CK_TRK, {P_VOICE, P_GLIDE, P_DETUNE, ID_OCT}},
+                                {"CHORD", CK_TRK, {P_CHRD, P_CVOI, P_CSTR, X}},
+                                CZ_MOD(1), CZ_MOD(2), CZ_MOD(3), CZ_MOD(4)};
 static const cpg_t CZP_SRCA[] = {{"SRC 1", CK_TRK, {P_E0, P_E1, P_E2, P_E3}}, {"SRC 2", CK_TRK, {P_E4, P_E5, P_E6, P_E7}},
+                                CZ_FILT,
                                 {"DEVIL", CK_TRK, {P_ATK, P_DEC, P_SUS, P_REL}},   /* (ACID: ACC DEC, DRV TYPE, SUB, KEY TRK in
                                                          * the envelope's slots: eng_acid.c ACID_X) */
                                 {"VOICE", CK_TRK, {P_VOICE, P_GLIDE, P_DETUNE, ID_OCT}},
                                 {"CHORD", CK_TRK, {P_CHRD, P_CVOI, P_CSTR, X}},
                                 CZ_MOD(1), CZ_MOD(2), CZ_MOD(3), CZ_MOD(4)};
 static const cpg_t CZP_SRCV[] = {{"SRC 1", CK_TRK, {P_E0, P_E1, P_E2, P_E3}}, {"SRC 2", CK_TRK, {P_E4, P_E5, P_E6, P_E7}},
+                                CZ_FILT,
                                 {"WORDS", CK_TRK, {P_VLANG, P_VLYR, X, X}},   /* (THEME, ARTIC: on the first page) */
                                 {"VOICE", CK_TRK, {P_VOICE, P_GLIDE, P_DETUNE, ID_OCT}},
                                 {"CHORD", CK_TRK, {P_CHRD, P_CVOI, P_CSTR, X}},
@@ -99,6 +109,7 @@ static const cpg_t CZP_SRCD[] = {{"DRUM", CK_COS, {CC_DSEL, CC_KICK + DXP_PITCH,
                                 {"LEVELS", CK_COS, {CC_LN0, CC_LN0 + 1u, CC_LN0 + 2u, CC_LN0 + 3u}},
                                 {"LEVELS 2", CK_COS, {CC_LN0 + 4u, CC_LN0 + 5u, CC_LN0 + 6u, CC_LN0 + 7u}},
                                 {"KIT", CK_TRK, {P_E0, P_E1, P_E2, P_E3}}, {"KIT 2", CK_TRK, {P_E4, P_E5, P_E6, P_E7}},
+                                CZ_FILT,                 /* (the kit's: on its sum, as ENV > FILTER 1) */
                                 CZ_MOD(1), CZ_MOD(2), CZ_MOD(3), CZ_MOD(4)};
 static const cpg_t CZP_AMP[] = {{"AMP", CK_TRK, {P_ATK, P_DEC, P_SUS, P_REL}},
                                {"FILTER 1", CK_TRK, {P_FTYPE, P_FCUT, P_FRES, P_ED_FLT}},
@@ -206,7 +217,7 @@ static int cos_dead(const track_t *t, uint32_t id);      /* (below: a parameter 
 static void cos_pages(uint32_t m, const cpg_t **p, uint32_t *n)
 {
     static const cpg_t *const P[CM_N] = {CZP_HOME, CZP_TRIG, CZP_SRC, CZP_AMP, CZP_DRONE, CZP_FX, CZP_GENA, CZP_MIX, CZP_KEY, CZP_PROJ};
-    static const uint8_t N[CM_N] = {6, 4, 8, 9, 2, 7, 4, 10, 1, 1};
+    static const uint8_t N[CM_N] = {6, 4, 9, 9, 2, 7, 4, 10, 1, 1};
     int vo = m == CM_SRC && trk_engp(TSEL) == &ENG_FORMANT;
     if (m == CM_SRC && cos_kit()) { *p = CZP_SRCD; *n = NELEM(CZP_SRCD); return; }
     if (m == CM_TRIG && cos_kit()) { *p = CZP_TRIGK; *n = NELEM(CZP_TRIGK); return; }   /* (a kit: KICK, LEVELS, its own ..) */
@@ -218,7 +229,8 @@ static void cos_pages(uint32_t m, const cpg_t **p, uint32_t *n)
         return;
     }
     if (m == CM_SRC && trk_engp(TSEL) == &ENG_ACID) { *p = CZP_SRCA; *n = NELEM(CZP_SRCA); return; }   /* (+ DEVIL) */
-    *p = vo ? CZP_SRCV : m == CM_AMP && trk_engp(TSEL) == &ENG_ANALOG ? CZP_AMPA : P[m % CM_N];
+    *p = vo ? CZP_SRCV : m == CM_AMP && trk_engp(TSEL) == &ENG_ANALOG ? CZP_AMPA :
+         m == CM_SRC && trk_engp(TSEL) == &ENG_ANALOG ? CZP_SRCN : P[m % CM_N];
     *n = N[m % CM_N] + (uint32_t)vo;                                      /* (VOICE: WORDS too) */
     if (m == CM_AMP) {                                   /* (a page all of whose knobs the engine does not use: left out,
                                                          * cos_dead; a kit's AMP, ACID's AMP and ENV MOD) */
@@ -244,7 +256,7 @@ static const cpg_t *cos_page(void)
     cos_pages(cz.mode, &p, &n);
     return &p[cz.tab[cz.mode] % n];
 }
-static int cos_on_words(void) { return cz.mode == CM_SRC && trk_engp(TSEL) == &ENG_FORMANT && cz.tab[CM_SRC] % 8u == 2u; }
+static int cos_on_words(void) { return cz.mode == CM_SRC && trk_engp(TSEL) == &ENG_FORMANT && str_eq(cos_page()->tab, "WORDS"); }
 static void cos_say(const char *s) { str_cpy(cz.msg, s, sizeof cz.msg); cz.msg_ms = fm1_ms; }
 static uint32_t cos_ext10(void);                        /* (below: an external clock's tempo) */
 /* (cursed-os) the delay's TIME, right is longer: the divisions shortest to longest (1/32 .. 1/1, the dotted and the
@@ -2520,7 +2532,7 @@ dials:
 /* the splash (ui_draw.c draw_splash / splash_write under COS_SLIM; main.c's boot loop calls it every ~4 ms for
  * SPL_WRITE + SPL_HOLD ms): black, a few still stars, the name 2x, the version, a 16-block bar filling like a pattern
  * (the block being filled red), READY. Drawn whole once, then only the bar's strip when a block fills */
-#define COS_VERSION "0.8.1"
+#define COS_VERSION "0.8.2"
 static void cos_px2(int32_t x, int32_t y, const char *s, uint16_t c)      /* (the face 2 x 2) */
 {
     int32_t r, b, b0;
