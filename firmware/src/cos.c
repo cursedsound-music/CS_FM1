@@ -1745,7 +1745,7 @@ static inline int32_t cos_isin(uint32_t a) { return SINE[a & 1023u]; }   /* (a: 
 /* the frame's plan, the same for its six strips: the beat's phase, the glitches (bands of rows torn sideways, some
  * turned red; red lines struck across), the skull (now and then, a few seconds) */
 static struct {
-    uint32_t ph, beat, rng, burst, sk_on, sk_next, lvl;
+    uint32_t ph, beat, rng, burst, sk_on, sk_next, lvl, pic;
     uint8_t nb, nl;
     struct { uint8_t y, h, red; int8_t dx; } b[6];
     struct { uint8_t y, x, w, t; } l[8];
@@ -1771,12 +1771,14 @@ static void cos_idle_prep(void)
         if ((uint32_t)v > pk) pk = (uint32_t)v;
     }
     gl.lvl = pk;
-    if (!gl.sk_on && t - gl.sk_next < 0x80000000u) {     /* the skull: ~2.5 s, again in 12 .. 27 s */
-        gl.sk_on = t + 2500u;
+    if (!gl.sk_on && t - gl.sk_next < 0x80000000u) {     /* a picture (the skull, or the hammer and sickle): under a
+                                                         * second, again in 12 .. 27 s */
+        gl.sk_on = t + 600u + gl_rnd() % 350u;
+        gl.pic = (gl_rnd() >> 16) & 1u;                 /* (xorshift's low bit: too regular) */
         gl.sk_next = t + 12000u + gl_rnd() % 15000u;
-        gl.burst = t + 260u;                             /* (it tears in) */
+        gl.burst = t + 160u;                             /* (it tears in) */
     }
-    if (gl.sk_on && t - gl.sk_on < 0x80000000u) { gl.sk_on = 0; gl.burst = t + 180u; }   /* (and out) */
+    if (gl.sk_on && t - gl.sk_on < 0x80000000u) { gl.sk_on = 0; gl.burst = t + 120u; }   /* (and out) */
     down = song.playing && gl.beat == 0u && gl.ph < 60u; /* (the bar's first beat, its start) */
     p = 3u + pk / 4096u + (down ? 40u : 0u);             /* a burst's chance a frame, in 100: 3, up to 11 when loud */
     if (t - gl.burst >= 0x80000000u) {}                 /* (one going on) */
@@ -1804,19 +1806,19 @@ static void cos_idle_prep(void)
         gl.l[j].t = (uint8_t)(1u + ((r >> 28) & 1u));
     }
 }
-/* the skull at 2 x, its top left at x, y (whole-screen rows): straight into the strip's pixels */
-static void cos_skull_at(int32_t x, int32_t y, uint16_t c)
+/* a picture (w x h, 1 bit) at 2 x, its top left at x, y (whole-screen rows): straight into the strip's pixels */
+static void cos_pic_at(const uint8_t *pic, uint32_t w, uint32_t h, int32_t x, int32_t y, uint16_t c)
 {
     uint32_t sy, sx, sw = swap16(c);
-    for (sy = 0; sy < SKULL_H; sy++) {
+    for (sy = 0; sy < h; sy++) {
         int32_t r, k;
         for (k = 0; k < 2; k++) {
             r = y + (int32_t)sy * 2 + k + cv_oy;
             if (r < 0 || r >= (int32_t)cv_h) continue;
             {
                 uint16_t *row = cv_px + (uint32_t)r * cv_w;
-                const uint8_t *src = SKULL + sy * (SKULL_W / 8u);
-                for (sx = 0; sx < SKULL_W; sx++)
+                const uint8_t *src = pic + sy * (w / 8u);
+                for (sx = 0; sx < w; sx++)
                     if ((src[sx >> 3] >> (7u - (sx & 7u))) & 1u) {
                         int32_t px = x + (int32_t)sx * 2;
                         if (px >= 0 && px + 1 < (int32_t)cv_w) row[px] = row[px + 1] = (uint16_t)sw;
@@ -1830,10 +1832,12 @@ static void cos_idle_scene(void)
     static const uint8_t SZ[10] = {4, 7, 11, 17, 26, 39, 58, 86, 128, 190};   /* (each 1.5 x the one inside it) */
     int32_t cx = 120, cy = 116, i, ph = (int32_t)gl.ph, spin = (int32_t)(cz.idle_t / 24u);
     char b[28], n[8];
-    if (gl.sk_on) {                                      /* the skull: on black, a red ghost torn off it while it glitches */
-        int32_t sx = 120 - (int32_t)SKULL_W, sy = 116 - (int32_t)SKULL_H;
-        if (gl.nb) cos_skull_at(sx + 4 + (int32_t)(gl.rng % 5u), sy, C_RED);
-        cos_skull_at(sx, sy, C_FG);
+    if (gl.sk_on) {                                      /* a picture: on black, a red ghost torn off it while it glitches */
+        const uint8_t *pic = gl.pic ? HSKL : SKULL;
+        uint32_t w = gl.pic ? HSKL_W : SKULL_W, h = gl.pic ? HSKL_H : SKULL_H;
+        int32_t sx = 120 - (int32_t)w, sy = 116 - (int32_t)h;
+        if (gl.nb) cos_pic_at(pic, w, h, sx + 4 + (int32_t)(gl.rng % 5u), sy, C_RED);
+        cos_pic_at(pic, w, h, sx, sy, C_FG);
     } else
         for (i = 0; i < 9; i++) {                        /* the tunnel: the squares fall towards us through a beat */
             int32_t h = SZ[i] + (SZ[i + 1] - SZ[i]) * ph / 1024, a = spin + i * 22, c = cos_isin((uint32_t)a + 256u),
@@ -2788,7 +2792,7 @@ dials:
 /* the splash (ui_draw.c draw_splash / splash_write under COS_SLIM; main.c's boot loop calls it every ~4 ms for
  * SPL_WRITE + SPL_HOLD ms): black, a few still stars, the name 2x, the version, a 16-block bar filling like a pattern
  * (the block being filled red), READY. Drawn whole once, then only the bar's strip when a block fills */
-#define COS_VERSION "0.8.6"
+#define COS_VERSION "0.8.7"
 static void cos_px2(int32_t x, int32_t y, const char *s, uint16_t c)      /* (the face 2 x 2) */
 {
     int32_t r, b, b0;
