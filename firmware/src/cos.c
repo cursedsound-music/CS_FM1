@@ -44,7 +44,7 @@ enum { CC_OUTCH, CC_MOUT, CC_CLOCK, CC_SLOT, CC_TRKS, CC_LOAD, CC_COMP, CC_CATK,
        CC_X2, CC_X2E = CC_X2 + 15, CC_OCT, CC_KICK, CC_KICKE = CC_KICK + 4, CC_LN0, CC_LNE = CC_LN0 + 7, CC_KDRV, CC_BT,
        CC_L1SYNC, CC_L1RATE, CC_L1WAVE, CC_L1MODE, CC_L1PH, CC_L1FADE, CC_L2SYNC, CC_L2RATE, CC_BPM,
        CC_CIN, CC_CTHR, CC_CRAT, CC_CMK, CC_CKNEE, CC_CSC, CC_CMIX, CC_LIN, CC_LREL, CC_LVL, CC_MUTEQ, CC_PCCH, CC_PCOUT, CC_VJCH, CC_EQL, CC_EQM, CC_EQH, CC_MAC0, CC_MAC3 = CC_MAC0 + 3, CC_RB0, CC_RB3 = CC_RB0 + 3, CC_MOPOS, CC_MOBARS, CC_LVLEN, CC_LVRATE, CC_LVDN, CC_LVSH, CC_MCCH, CC_MCCC, CC_MCDIR, CC_MCMAP, CC_MC0, CC_MC3 = CC_MC0 + 3, CC_MOCC,
-       CC_NAME, CC_IDLE, CC_DJF, CC_DSEL, CC_DLV, CC_DWAV, CC_DFLT, CC_DBT, CC_DDRV, CC_DLAY, CC_DFB, CC_DSNP, CC_DE0, CC_DEE = CC_DE0 + DE_N - 1 };
+       CC_NAME, CC_IDLE, CC_SCALE, CC_QUANT, CC_DJF, CC_DSEL, CC_DLV, CC_DWAV, CC_DFLT, CC_DBT, CC_DDRV, CC_DLAY, CC_DFB, CC_DSNP, CC_DE0, CC_DEE = CC_DE0 + DE_N - 1 };
 _Static_assert(CC_DEE < 0xFEu, "the CK_COS ids fit a page's byte (0xFE, 0xFF: OCTAVE, none)");
 _Static_assert(X2_N <= 16u, "CC_X2 .. CC_X2E: room for every trk_x2 field");
 #define ID_MUTEQ 0xFCu                          /* (HOME 2's: MUTE Q, cos_knob) */
@@ -163,7 +163,8 @@ static const cpg_t CZP_MIX[] = {{"MIX", CK_TRK, {P_LEVEL, P_PAN, P_GLIDE, P_MUTE
                                                          * ways) */
                                {"LINK 3", CK_COS, {CC_MC0, CC_MC0 + 1u, CC_MC0 + 2u, CC_MC3}},   /* (.. each one's CC) */
                                {"SYSTEM", CK_COS, {CC_TRKS, CC_LOAD, CC_BT, CC_IDLE}}};
-static const cpg_t CZP_KEY[] = {{"KEY", CK_TRK, {P_SCALE, P_QUANT, 0xFFu, 0xFFu}}};   /* (the root: the keys) */
+static const cpg_t CZP_KEY[] = {{"KEY", CK_COS, {CC_SCALE, CC_QUANT, X, X}}};   /* (the root: the keys; the song's scale,
+                                                         * whichever track is picked: cos_mel) */
 static const cpg_t CZP_PERF[] = {{"FX PAD", CK_COS, {CC_PF0, CC_PF0 + 1u, CC_PF0 + 2u, CC_PF3}}};   /* (FX held) */
 static const cpg_t CZP_PROJ[] = {{"PROJECT", CK_COS, {CC_SLOT, CC_NAME, X, X}}};   /* (KNOB 1 the slot, every song's: 1A ..
                                                          * 8D; white keys 1..4 this song's, 9..16 the songs; KNOB 2 a name) */
@@ -326,6 +327,15 @@ static void mph_key(uint32_t x, int store)
 
 static const char *const COS_NN[12] = {"C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"};
 
+/* the song's key and scale live on its melodic tracks (ui_input.c scale_link keeps them alike): the first of them, or
+ * the selected one when it is melodic */
+static track_t *cos_mel(void)
+{
+    uint32_t k;
+    if (!drum_track(TSEL)) return TSEL;
+    for (k = 0; k < NTRK && drum_track(&trk[k]); k++) {}
+    return k < NTRK ? &trk[k] : 0;
+}
 /* the song's key: the first synth track's root (C with none) */
 static uint32_t cos_key(void)
 {
@@ -510,6 +520,13 @@ static const param_desc_t *cos_cdesc(uint32_t id, int16_t **vp)
     static const param_desc_t DT = {"TRACKS", F_INT, 4, NTRK, 5, 0, 0}, DL = {"LOAD", F_ENUM, 0, 2, 2, LD, 0};
     if (id == CC_SLOT) { cz.cc_v[3] = (int16_t)(song_cur * 4u + cz.slot + 1u); *vp = &cz.cc_v[3]; return &DS; }
     if (id == CC_NAME) { cz.cc_v[3] = (int16_t)cz.nm_n; *vp = &cz.cc_v[3]; return &DN; }
+    if (id == CC_SCALE || id == CC_QUANT) {               /* (SEL: the song's scale and how the keys keep to it) */
+        track_t *m = cos_mel();
+        uint32_t pi = id == CC_SCALE ? P_SCALE : P_QUANT;
+        if (!m) { *vp = 0; return 0; }
+        *vp = &m->p[pi];
+        return track_desc(m, pi);
+    }
     if (id == CC_IDLE) {                                 /* (the IDLE screen after this many minutes untouched, 0 OFF:
                                                          * cos_idle_min) */
         static const param_desc_t DI = {"IDLE", F_INT, 0, 60, 1, 0, 0};
@@ -729,6 +746,14 @@ static void cos_cput(uint32_t id, int32_t v)
     } else if (id == CC_NAME) {
         cz.nm_n = (uint16_t)clamp(v, 0, 999);
         cos_name_pick();
+    } else if (id == CC_SCALE || id == CC_QUANT) {
+        track_t *m = cos_mel();
+        uint32_t pi = id == CC_SCALE ? P_SCALE : P_QUANT, k;
+        const param_desc_t *d = m ? track_desc(m, pi) : 0;
+        if (!d) return;
+        v = clamp(v, d->min, d->max);
+        for (k = 0; k < NTRK; k++)                       /* (every melodic track at once: scale_link would, next frame) */
+            if (!drum_track(&trk[k])) trk[k].p[pi] = (int16_t)v;
     } else if (id == CC_IDLE) {
         favorites.factory[15][16] = (uint8_t)(0x80 | clamp(v, 0, 60));
         cz.act_ms = fm1_ms;
@@ -2444,18 +2469,24 @@ static void cos_body_key(void)
     const uint8_t *BL = COS_BLF;
     uint32_t i, cur = cos_key(), nx = cz.key_next ? cz.key_next - 1u : 99u;
     char b[24];
+    const track_t *t = TSEL;
+    uint32_t mask = 0;
+    for (i = 0; i < NTRK && drum_track(t); i++) t = &trk[i];   /* (the first melodic track's scale: all share it) */
+    if (!drum_track(t) && t->p[P_SCALE]) mask = scale_mask(t);
     str_cpy(b, COS_NN[cur], sizeof b);
+    if (!drum_track(t)) { str_cpy(b + str_len(b), " ", 2); str_cpy(b + str_len(b), N_SCALE[clamp(t->p[P_SCALE], 0, 15)], 7); }
     cos_px(20, 46, b, C_FG, CZ_TALL);
-    cos_tx(20, 74, "THE SONG'S KEY", C_DIM);
+    cos_tx(20, 74, mask ? "KEY AND SCALE: THE KEYS LIT" : "THE SONG'S KEY", C_DIM);
     if (nx < 12u) { str_cpy(b, "NEXT BAR: ", sizeof b); str_cpy(b + str_len(b), COS_NN[nx], 4); cos_tx(110, 52, b, C_RED); }
     for (i = 0; i < 12u; i++) {                         /* white keys a row, black keys above between them */
         uint32_t pc = (5u + i) % 12u, wi = 0, j;
-        int on = pc == cur, nxt = pc == nx;
+        int on = pc == cur, nxt = pc == nx, in = mask && ((mask >> ((pc + 12u - cur) % 12u)) & 1u);
         for (j = 0; j < i; j++) wi += !BL[j];
-        if (BL[i]) cv_rect(14 + (int32_t)wi * 30 - 9, 92, 16, 26, nxt ? C_RED : on ? C_FG : C_DARK);
+        if (BL[i]) cv_rect(14 + (int32_t)wi * 30 - 9, 92, 16, 26, nxt ? C_RED : on ? C_FG : in ? C_MID : C_DARK);
         else {
             cv_frame(14 + (int32_t)wi * 30, 92, 28, 50, C_DIM);
             if (on || nxt) cv_rect(16 + (int32_t)wi * 30, 122, 24, 18, nxt ? C_RED : C_FG);
+            else if (in) cv_rect(16 + (int32_t)wi * 30, 128, 24, 12, C_DIM);   /* (in the scale) */
         }
     }
     cos_tx(4, 146, "A KEY: THE SONG MOVES THERE", C_DIM);
@@ -2830,7 +2861,7 @@ dials:
 /* the splash (ui_draw.c draw_splash / splash_write under COS_SLIM; main.c's boot loop calls it every ~4 ms for
  * SPL_WRITE + SPL_HOLD ms): black, a few still stars, the name 2x, the version, a 16-block bar filling like a pattern
  * (the block being filled red), READY. Drawn whole once, then only the bar's strip when a block fills */
-#define COS_VERSION "0.8.8"
+#define COS_VERSION "0.8.9"
 static void cos_px2(int32_t x, int32_t y, const char *s, uint16_t c)      /* (the face 2 x 2) */
 {
     int32_t r, b, b0;
@@ -2904,9 +2935,33 @@ static __attribute__((noinline)) void cos_draw(void)
     scr_shown();
 }
 
+/* (cursed-os) key k (0: the lowest F) on track t: 0 out of its scale, 1 in it, 2 its root. The key's own note (SNAP
+ * rounds the others down to one in the scale, but the scale's own are what is lit); WHITE: the white keys walk the scale,
+ * the black ones silent */
+static uint32_t cos_key_in(const track_t *t, uint32_t k)
+{
+    int32_t n = 53 + (int32_t)k, d;
+    if (t->p[P_QUANT] == QN_WHITE) {
+        uint32_t m = kb_map(t, k);
+        if (m == KB_SILENT) return 0;
+        n = (int32_t)m;
+    }
+    d = ((n - t->p[P_ROOT]) % 12 + 12) % 12;
+    if (!d) return 2;
+    return (scale_mask(t) >> (uint32_t)d) & 1u;
+}
+/* the keys lit as the scale: a melodic track, a scale not CHR, and the keys playing it (live, STEP INPUT, DRONE, the KEY
+ * page itself) */
+static int cos_scale_view(void)
+{
+    const track_t *t = cz.mode == CM_KEY ? cos_mel() : TSEL;   /* (the KEY page: the song's, a kit picked or not) */
+    if (!t || drum_track(t) || (cz.mode != CM_KEY && cos_kit()) || !t->p[P_SCALE] || cz.fx_down) return 0;
+    if (cz.mode == CM_TRIG) return cz.si;
+    return cz.mode != CM_HOME && cz.mode != CM_PROJ;
+}
 static __attribute__((noinline)) void cos_leds(void)
 {
-    uint8_t nl[FM1_NCOL] = {0}, nd[FM1_NCOL] = {0};
+    uint8_t nl[FM1_NCOL] = {0}, nd[FM1_NCOL] = {0}, nm[FM1_NCOL] = {0}, nh[FM1_NCOL] = {0};
     const track_t *t = TSEL;
     uint32_t k, len = (uint32_t)clamp(t->p[P_SLEN], 1, NSTEP), now = song.playing ? t->seq_idx % len : ~0u;
     static uint8_t ready COS_RAM;
@@ -2931,14 +2986,22 @@ static __attribute__((noinline)) void cos_leds(void)
         }
     } else
         for (k = 0; k < 27u; k++) led_put(nl, 14u + k, (int)((fm1_in.notes >> k) & 1u));
-    for (k = 0; k < 27u; k++) led_put(nd, 14u + k, 1);
+    if (cos_scale_view()) {                              /* (the keys play a melodic track in a scale: only its notes lit,
+                                                         * the root brighter, a key held brightest; the rest dark) */
+        const track_t *m = cz.mode == CM_KEY ? cos_mel() : t;
+        for (k = 0; k < 27u; k++) {
+            uint32_t r = cos_key_in(m, k);
+            led_put(r == 2u ? nh : nm, 14u + k, r != 0u);
+        }
+    } else
+        for (k = 0; k < 27u; k++) led_put(nd, 14u + k, 1);
     if (song.playing) { led_clear(nd, panel.btn[B_PLAY]); nl[LED_PLAY_GREEN >> 3] |= (uint8_t)(1u << (LED_PLAY_GREEN & 7u)); }
     fm1_led_dim_level(0);
     for (k = 0; k < FM1_NCOL; k++) {
         fm1_led_dim[k] = (uint8_t)(nd[k] & ~nl[k]);
         fm1_led_breath[k] = 0;
-        fm1_led_hi[k] = 0;
-        fm1_led_mid[k] = 0;
+        fm1_led_hi[k] = (uint8_t)(nh[k] & ~nl[k]);
+        fm1_led_mid[k] = (uint8_t)(nm[k] & ~nl[k] & ~nh[k]);
         fm1_led[k] = nl[k];
     }
 }

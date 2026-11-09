@@ -1740,6 +1740,33 @@ int main(void)
         }
         cz.act_ms = fm1_ms;
     }
+    {   /* the keys lit as the scale (SEL: a key and a scale): only its notes, the root brighter; live and STEP INPUT */
+        track_t *t2 = &trk[2];
+        uint32_t k2, lit = 0, si0 = cz.si, m0 = cz.mode;
+        int16_t r0 = t2->p[P_ROOT], s0 = t2->p[P_SCALE], q0 = t2->p[P_QUANT];
+        track_select(2);
+        t2->p[P_ROOT] = 9; t2->p[P_SCALE] = 2; t2->p[P_QUANT] = 0;   /* (A MIN) */
+        CHECK(cos_key_in(t2, 0) == 1u && cos_key_in(t2, 1) == 0u && cos_key_in(t2, 4) == 2u && cos_key_in(t2, 16) == 2u,
+              "A minor: F in, F# out, A the root (both octaves)");
+        for (k2 = 0; k2 < 27u; k2++) lit += cos_key_in(t2, k2) != 0u;
+        CHECK(lit == 16u, "27 keys, 16 of them in A minor (%u)", lit);
+        cz.mode = CM_SRC; cz.si = 0;
+        CHECK(cos_scale_view(), "EDIT on a synth: the scale lit");
+        cz.mode = CM_TRIG; cz.si = 1;
+        CHECK(cos_scale_view(), "STEP INPUT: the scale lit");
+        cz.si = 0;
+        CHECK(!cos_scale_view(), "TRIG (the steps): not");
+        cz.mode = CM_KEY;
+        CHECK(cos_scale_view(), "the KEY page itself: lit");
+        t2->p[P_SCALE] = 0;
+        CHECK(!cos_scale_view(), "CHR: every key as before");
+        t2->p[P_SCALE] = 2; t2->p[P_QUANT] = QN_WHITE;
+        CHECK(cos_key_in(t2, 1) == 0u && cos_key_in(t2, 0) != 0u, "WHITE: the black keys dark, the white in");
+        cz.mode = CM_SRC;
+        cos_leds();
+        t2->p[P_ROOT] = r0; t2->p[P_SCALE] = s0; t2->p[P_QUANT] = q0;
+        cz.mode = m0; cz.si = (uint8_t)si0;
+    }
     {   /* the keyboards drawn (KEY, DRONE) as the FM-1's keys: from F, a black one where the panel has one */
         uint32_t ok = 1, j, bl;
         for (k = 0; k < 27u; k++) {
