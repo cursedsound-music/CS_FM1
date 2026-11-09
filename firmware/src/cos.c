@@ -1820,7 +1820,10 @@ static void cos_idle_prep(void)
     if (!gl.sk_on && t - gl.sk_next < 0x80000000u) {     /* a picture (the skull, or the hammer and sickle): under a
                                                          * second, now and then (20 .. 40 s in, then every 40 .. 120 s) */
         gl.sk_on = t + 300u + gl_rnd() % 180u;            /* (about half a second) */
-        gl.pic = (gl_rnd() >> 8) % 100u < 40u;           /* (the skull 60 %, the hammer and sickle 40 %) */
+        {                                                /* (the skull 40 %, the hammer and sickle 30 %, the circle-A 30) */
+            uint32_t r = (gl_rnd() >> 8) % 100u;
+            gl.pic = r < 40u ? 0u : r < 70u ? 1u : 2u;
+        }
         gl.sk_next = t + 40000u + gl_rnd() % 80000u;
         gl.burst = t + 160u;                             /* (it tears in) */
     }
@@ -1880,11 +1883,13 @@ static void cos_idle_scene(void)
                                      {0, 4}, {1, 5}, {2, 6}, {3, 7}};   /* (the cube's edges: corners differing in a bit) */
     int32_t i;
     if (gl.sk_on) {                                      /* a picture: on black, a red ghost torn off it while it glitches */
-        const uint8_t *pic = gl.pic ? HSKL : SKULL;
-        uint32_t w = gl.pic ? HSKL_W : SKULL_W, h = gl.pic ? HSKL_H : SKULL_H;
+        static const uint8_t *const PIC[3] = {SKULL, HSKL, ANAR};
+        static const uint8_t PW[3] = {SKULL_W, HSKL_W, ANAR_W}, PH[3] = {SKULL_H, HSKL_H, ANAR_H};
+        uint32_t k = gl.pic % 3u, w = PW[k], h = PH[k];
         int32_t sx = 120 - (int32_t)w, sy = 116 - (int32_t)h;
-        if (gl.nb) cos_pic_at(pic, w, h, sx + 4 + (int32_t)(gl.rng % 5u), sy, C_RED);
-        cos_pic_at(pic, w, h, sx, sy, C_FG);
+        uint16_t ink = k == 2u ? C_RED : C_FG, ghost = k == 2u ? C_FG : C_RED;   /* (the circle-A red, its ghost white) */
+        if (gl.nb) cos_pic_at(PIC[k], w, h, sx + 4 + (int32_t)(gl.rng % 5u), sy, ghost);
+        cos_pic_at(PIC[k], w, h, sx, sy, ink);
     } else
         for (i = 0; i < 12; i++) {                       /* the cube, a wire frame: the far edges dim */
             uint32_t a = E[i][0], c = E[i][1];
@@ -2825,7 +2830,7 @@ dials:
 /* the splash (ui_draw.c draw_splash / splash_write under COS_SLIM; main.c's boot loop calls it every ~4 ms for
  * SPL_WRITE + SPL_HOLD ms): black, a few still stars, the name 2x, the version, a 16-block bar filling like a pattern
  * (the block being filled red), READY. Drawn whole once, then only the bar's strip when a block fills */
-#define COS_VERSION "0.8.7"
+#define COS_VERSION "0.8.8"
 static void cos_px2(int32_t x, int32_t y, const char *s, uint16_t c)      /* (the face 2 x 2) */
 {
     int32_t r, b, b0;

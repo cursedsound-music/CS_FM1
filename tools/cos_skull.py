@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: GPL-3.0-only
 # Copyright (C) 2026 cursedsound
-"""cursed-os: the IDLE screen's pictures, a skull and the hammer and sickle (firmware/src/cos_skull.h): drawn with PIL
-shapes at 8 x, scaled down to 1 bit.  python3 tools/cos_skull.py  (in an empty folder: writes cos_skull.h and the PNGs)"""
+"""cursed-os: the IDLE screen's pictures, a skull, the hammer and sickle and the circle-A (firmware/src/cos_skull.h):
+drawn with PIL shapes at 8 x, scaled down to 1 bit.  python3 tools/cos_skull.py  (in an empty folder: writes cos_skull.h, PNGs)"""
 from PIL import Image, ImageDraw
 import math, sys
 S = 8
@@ -65,6 +65,35 @@ for x in range(cx-14, cx+15, 6):
     d.rectangle([P(x, 63), P(x+2, 71)], fill=255)                           # upper teeth
     if abs(x - cx) < 12: d.rectangle([P(x, 75), P(x+2, 83)], fill=255)      # lower teeth
 sk = finish(im, W2, H2, "sk")
+# ---- the circle-A, a brush's strokes ----
+W3, H3 = 104, 96
+im, d = canvas(W3, H3)
+def apoly(pts, f=255): d.polygon([P(x, y) for x, y in pts], fill=f)
+def stroke(x0, y0, x1, y1, w0, w1, f=255):
+    # a brush stroke: w0 wide at its start, w1 at its end (a taper)
+    dx, dy = x1-x0, y1-y0; l = math.hypot(dx, dy); nx, ny = -dy/l, dx/l
+    apoly([(x0+nx*w0/2, y0+ny*w0/2), (x1+nx*w1/2, y1+ny*w1/2), (x1-nx*w1/2, y1-ny*w1/2), (x0-nx*w0/2, y0-ny*w0/2)], f)
+cx, cy, r = 52, 52, 33
+# the ring: a band 8 wide, a little uneven (a brush), from the top left round, its ends overlapping and tapering
+pts_o, pts_i = [], []
+for i in range(0, 361):
+    a = math.radians(i - 120)
+    wob = 0.8 * math.sin(i * 0.09) + 0.5 * math.sin(i * 0.31)
+    w = 10 + wob
+    if i < 18: w *= i / 18          # (the start tapers in)
+    if i > 340: w *= (361 - i) / 21  # (the end tapers out, past the start)
+    pts_o.append((cx + (r + w/2) * math.cos(a), cy + (r + w/2) * math.sin(a)))
+    pts_i.append((cx + (r - w/2) * math.cos(a), cy + (r - w/2) * math.sin(a)))
+apoly(pts_o + pts_i[::-1])
+# the A: its apex above the ring, its legs out below it
+stroke(52, 3, 15, 95, 7, 12)        # left leg, widening down
+stroke(52, 3, 85, 95, 8, 11)        # right leg
+stroke(57, 6, 48, 1, 7, 2)          # (the apex's brush tip)
+# the crossbar: from the lower left, rising to the right, out past the ring, its end split in two tails
+stroke(4, 70, 86, 46, 5, 10)
+stroke(86, 46, 103, 40, 10, 1)
+stroke(80, 50, 101, 48, 5, 1)
+an = finish(im, W3, H3, "an")
 def emit(img, name, W, H, f):
     bits = [1 if img.getpixel((x, y)) else 0 for y in range(H) for x in range(W)]
     by = [sum(bits[i+j] << (7-j) for j in range(8)) for i in range(0, len(bits), 8)]
@@ -74,5 +103,5 @@ def emit(img, name, W, H, f):
     f.write("};\n")
 with open("cos_skull.h", "w") as f:
     f.write("/* SPDX-License-Identifier: GPL-3.0-only\n * Copyright (C) 2026 cursedsound */\n")
-    f.write("/* (cursed-os) the IDLE screen's two pictures, drawn for cursed-os (tools/cos_skull.py: PIL shapes at 8 x, scaled down):\n * a skull and the hammer and sickle; a bit a pixel, the rows top down, the left pixel the byte's top bit */\n")
-    emit(sk, "SKULL", W2, H2, f); emit(hs, "HSKL", W, H, f)
+    f.write("/* (cursed-os) the IDLE screen's two pictures, drawn for cursed-os (tools/cos_skull.py: PIL shapes at 8 x, scaled down):\n * a skull, the hammer and sickle and the circle-A; a bit a pixel, the rows top down, the left pixel the byte's top bit */\n")
+    emit(sk, "SKULL", W2, H2, f); emit(hs, "HSKL", W, H, f); emit(an, "ANAR", W3, H3, f)
