@@ -1696,7 +1696,7 @@ int main(void)
         uint8_t was_b = favorites.factory[15][16];
         uint32_t m0 = cz.mode;
         favorites.factory[15][16] = 0;
-        CHECK(cos_cdesc(CC_IDLE, &vp) && *vp == 2, "IDLE: 1MIN by default");
+        CHECK(cos_cdesc(CC_IDLE, &vp) && *vp == 1, "IDLE: 1 MIN by default");
         cz.mode = CM_HOME;
         cos_input(); cos_test_btn(B_SEQ, 1); cos_test_btn(B_SEQ, 0);   /* (a touch) */
         cz.mode = CM_HOME; cz.tab[CM_HOME] = 0;
@@ -1714,7 +1714,15 @@ int main(void)
         CHECK(cz.mode == CM_TRIG, "the next press acts (SEQ)");
         cos_cput(CC_IDLE, 0);
         fm1_ms += 3600000u; cos_input();
-        CHECK(!cz.idle_up && favorites.factory[15][16] == 1u, "IDLE OFF: never");
+        CHECK(!cz.idle_up && cos_idle_min() == 0u, "IDLE OFF: never");
+        cos_cput(CC_IDLE, 45);
+        CHECK(cos_idle_min() == 45u && cos_idle_lim() == 45u * 60000u, "IDLE 45: 45 minutes");
+        cz.act_ms = fm1_ms; fm1_ms += 44u * 60000u; cos_input();
+        CHECK(!cz.idle_up, "44 minutes: not yet");
+        fm1_ms += 61000u; cos_input();
+        CHECK(cz.idle_up, "45 minutes: up");
+        cos_test_btn(B_SEQ, 1); cos_test_btn(B_SEQ, 0); cos_input();
+        favorites.factory[15][16] = 6; CHECK(cos_idle_min() == 10u, "0.8.3's 10MIN read as 10");
         favorites.factory[15][16] = was_b;
         cz.mode = m0;
         {

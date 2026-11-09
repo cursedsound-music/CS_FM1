@@ -488,6 +488,14 @@ static __attribute__((noinline)) void cos_dput(uint32_t id, int32_t v)
     }
     L->mode = (uint8_t)m;
 }
+/* SYSTEM's IDLE: minutes untouched before the IDLE screen, 0 OFF, 1 .. 60. The settings' engine-15 byte 16: 0 the
+ * default (1), 0x80 | minutes; 1 .. 6 0.8.3's picks (OFF 30S 1MIN 2MIN 5MIN 10MIN) */
+static uint32_t cos_idle_min(void)
+{
+    static const uint8_t OLD[7] = {1, 0, 1, 1, 2, 5, 10};
+    uint32_t b = favorites.factory[15][16];
+    return b & 0x80u ? (b & 0x7Fu) % 61u : OLD[b < 7u ? b : 0u];
+}
 static void cos_name_pick(void);                        /* (SAVE's NAME, below) */
 static void cos_proj_scan(void);
 static char *proj_name_buf(void);                       /* (project.c: the music's name, 13 bytes) */
@@ -502,12 +510,10 @@ static const param_desc_t *cos_cdesc(uint32_t id, int16_t **vp)
     static const param_desc_t DT = {"TRACKS", F_INT, 4, NTRK, 5, 0, 0}, DL = {"LOAD", F_ENUM, 0, 2, 2, LD, 0};
     if (id == CC_SLOT) { cz.cc_v[3] = (int16_t)(song_cur * 4u + cz.slot + 1u); *vp = &cz.cc_v[3]; return &DS; }
     if (id == CC_NAME) { cz.cc_v[3] = (int16_t)cz.nm_n; *vp = &cz.cc_v[3]; return &DN; }
-    if (id == CC_IDLE) {                                 /* (the IDLE screen after this long untouched: the settings'
-                                                         * engine-15 byte 16, 0 its default 1 MIN, else 1 + the pick) */
-        static const char *const IN[] = {"OFF", "30S", "1MIN", "2MIN", "5MIN", "10MIN", 0};
-        static const param_desc_t DI = {"IDLE", F_ENUM, 0, 5, 2, IN, 0};
-        uint32_t b = favorites.factory[15][16];
-        cz.cc_v[13] = (int16_t)(b ? (b - 1u) % 6u : 2u);
+    if (id == CC_IDLE) {                                 /* (the IDLE screen after this many minutes untouched, 0 OFF:
+                                                         * cos_idle_min) */
+        static const param_desc_t DI = {"IDLE", F_INT, 0, 60, 1, 0, 0};
+        cz.cc_v[13] = (int16_t)cos_idle_min();
         *vp = &cz.cc_v[13];
         return &DI;
     }
@@ -724,7 +730,7 @@ static void cos_cput(uint32_t id, int32_t v)
         cz.nm_n = (uint16_t)clamp(v, 0, 999);
         cos_name_pick();
     } else if (id == CC_IDLE) {
-        favorites.factory[15][16] = (uint8_t)(clamp(v, 0, 5) + 1);
+        favorites.factory[15][16] = (uint8_t)(0x80 | clamp(v, 0, 60));
         cz.act_ms = fm1_ms;
         settings_save();
     } else if (id == CC_BT) {
@@ -1733,12 +1739,7 @@ static void cos_batt_text(char *b)                       /* "78%", "USB", "" */
 /* (cursed-os) the IDLE screen: untouched for SYSTEM's IDLE (default 1 MIN), a tunnel of turning squares falling in on the
  * beat (one each beat while it plays, the bar's first red), an orb the output's wave shapes, the tempo, the music's name
  * and the battery. The first touch only wakes it (swallowed); the sound plays on throughout */
-static uint32_t cos_idle_lim(void)
-{
-    static const uint32_t MS[6] = {0, 30000u, 60000u, 120000u, 300000u, 600000u};
-    uint32_t b = favorites.factory[15][16];
-    return MS[b ? (b - 1u) % 6u : 2u];
-}
+static uint32_t cos_idle_lim(void) { return cos_idle_min() * 60000u; }   /* (fm1_ms: the time since power-on, no clock) */
 static int16_t idle_orb[48] COS_RAM;                     /* the orb's radius at 48 angles, this frame */
 static uint32_t idle_ph COS_RAM, idle_beat COS_RAM;      /* the beat's phase (Q10), the beat of the bar */
 static inline int32_t cos_isin(uint32_t a) { return SINE[a & 1023u]; }   /* (a: 1024 a turn) */
@@ -1978,6 +1979,11 @@ static void cos_dial(int32_t cx, int32_t cy, uint32_t k)
     param_format(d, v, val, &unit);
     if (p->id[k & 3u] == ID_BPM) cos_bpm_text(val, v);
     if (p->kind == CK_COS && p->id[k & 3u] == CC_MOCC && v < 0) { str_cpy(val, "OFF", sizeof val); unit = 0; }
+    if (p->kind == CK_COS && p->id[k & 3u] == CC_IDLE) {   /* (OFF, else "5 MIN") */
+        if (v <= 0) str_cpy(val, "OFF", sizeof val);
+        else { fmt_int(val, v); str_cpy(val + str_len(val), " MIN", 5); }
+        unit = 0;
+    }
     cos_up(val);
     if (str_len(val) > 7u) val[7] = 0;
     cos_txc(cx, cy + r + 15 + (str_len(val) > 5u ? 3 : 0), str_len(val) > 5u ? CZ_LBL : CZ_TALL, val, hot ? C_RED : C_FG);   /* (a long word in the
@@ -2611,7 +2617,7 @@ static void flash_say_none(char *b);
 static void cos_body_sys(void)
 {
     cos_tx(8, 38, "TRACKS: 4, 5 OR 6 PLAYING", C_FG);
-    cos_tx(8, 52, "LOAD: VOICES A TRACK, ECO 4 FULL 8", C_DIM);
+    cos_tx(8, 52, "LOAD: ECO 4, FULL 8 VOICES", C_DIM);
     {                                                    /* the audio's load (voice.c load_diag: MENU > ABOUT's) */
         char b[40], n[12];
         str_cpy(b, "CPU ", sizeof b); fmt_int(n, (int32_t)((song.cpu_q8 * 100u) >> 8)); str_cpy(b + str_len(b), n, 8);
@@ -2624,14 +2630,14 @@ static void cos_body_sys(void)
             cos_batt_text(n);
             str_cpy(b, "BATT ", sizeof b);
             str_cpy(b + 5, n[0] ? n : "--", 8);
-            str_cpy(b + str_len(b), "  ~", 4);
+            str_cpy(b + str_len(b), "  ", 3);
             fmt_int(n, mv / 1000); str_cpy(b + str_len(b), n, 4); str_cpy(b + str_len(b), ".", 2);
             fmt_int(n, (mv % 1000) / 10 + 100); str_cpy(b + str_len(b), n + 1, 3);
             str_cpy(b + str_len(b), "V  RAW ", 8);
             fmt_int(n, song.batt_raw); str_cpy(b + str_len(b), n, 6);
             cos_tx(8, 100, b, C_FG);
-            cos_tx(8, 114, "(AN ESTIMATE: NOT YET CALIBRATED)", C_DIM);
-            cos_tx(8, 132, "IDLE: THE VISUALS AFTER NO TOUCH", C_DIM);
+            cos_tx(8, 114, "(THE % IS AN ESTIMATE)", C_DIM);
+            cos_tx(8, 132, "IDLE: VISUALS AFTER NO TOUCH", C_DIM);
         }
 #if FELUCCA_FLASH
         if (!flash_ok) {                                 /* (no flash found: SAVE keeps the music only until power-off;
@@ -2697,7 +2703,7 @@ dials:
 /* the splash (ui_draw.c draw_splash / splash_write under COS_SLIM; main.c's boot loop calls it every ~4 ms for
  * SPL_WRITE + SPL_HOLD ms): black, a few still stars, the name 2x, the version, a 16-block bar filling like a pattern
  * (the block being filled red), READY. Drawn whole once, then only the bar's strip when a block fills */
-#define COS_VERSION "0.8.4"
+#define COS_VERSION "0.8.5"
 static void cos_px2(int32_t x, int32_t y, const char *s, uint16_t c)      /* (the face 2 x 2) */
 {
     int32_t r, b, b0;
