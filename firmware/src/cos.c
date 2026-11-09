@@ -1740,62 +1740,146 @@ static void cos_batt_text(char *b)                       /* "78%", "USB", "" */
  * beat (one each beat while it plays, the bar's first red), an orb the output's wave shapes, the tempo, the music's name
  * and the battery. The first touch only wakes it (swallowed); the sound plays on throughout */
 static uint32_t cos_idle_lim(void) { return cos_idle_min() * 60000u; }   /* (fm1_ms: the time since power-on, no clock) */
-static int16_t idle_orb[48] COS_RAM;                     /* the orb's radius at 48 angles, this frame */
-static uint32_t idle_ph COS_RAM, idle_beat COS_RAM;      /* the beat's phase (Q10), the beat of the bar */
 static inline int32_t cos_isin(uint32_t a) { return SINE[a & 1023u]; }   /* (a: 1024 a turn) */
+#include "cos_skull.h"
+/* the frame's plan, the same for its six strips: the beat's phase, the glitches (bands of rows torn sideways, some
+ * turned red; red lines struck across), the skull (now and then, a few seconds) */
+static struct {
+    uint32_t ph, beat, rng, burst, sk_on, sk_next, lvl;
+    uint8_t nb, nl;
+    struct { uint8_t y, h, red; int8_t dx; } b[6];
+    struct { uint8_t y, x, w, t; } l[8];
+} gl COS_RAM;
+static uint32_t gl_rnd(void) { gl.rng ^= gl.rng << 13; gl.rng ^= gl.rng >> 17; gl.rng ^= gl.rng << 5; return gl.rng; }
+static void cos_idle_start(void)                         /* (it comes up: the first skull a few seconds in) */
+{
+    gl.rng = (fm1_ms * 2654435761u) | 1u;
+    gl.sk_on = 0;
+    gl.sk_next = fm1_ms + 6000u;
+    gl.burst = 0;
+}
 static void cos_idle_prep(void)
 {
-    uint32_t w = scope_w, j, bs = beat_samples();
-    cz.idle_t = fm1_ms;
-    if (song.playing && bs) { idle_ph = (uint32_t)((beat_pos << 10) / bs) & 1023u; idle_beat = beat_n & 3u; }   /* (a beat
-                                                         * under 2^21 samples: 32 bits) */
-    else { idle_ph = (fm1_ms / 3u) & 1023u; idle_beat = 1; }   /* (stopped: a slow fall, ~3 s a square) */
-    for (j = 0; j < 48u; j++) {
-        int32_t v = scope_buf[(w - 384u + j * 8u) & (SCOPE_N - 1u)];
+    uint32_t w = scope_w, j, bs = beat_samples(), t = fm1_ms, pk = 0, down, p;
+    cz.idle_t = t;
+    if (song.playing && bs) { gl.ph = ((beat_pos << 10) / bs) & 1023u; gl.beat = beat_n & 3u; }   /* (a beat under 2^21
+                                                         * samples: 32 bits) */
+    else { gl.ph = (t / 3u) & 1023u; gl.beat = 1; }      /* (stopped: a slow fall, ~3 s a square) */
+    for (j = 0; j < 256u; j += 4u) {                     /* the output's peak just now: the louder, the more it tears */
+        int32_t v = scope_buf[(w - 256u + j) & (SCOPE_N - 1u)];
         v = v < 0 ? -v : v;
-        idle_orb[j] = (int16_t)(26 + (v >> 10));
+        if ((uint32_t)v > pk) pk = (uint32_t)v;
+    }
+    gl.lvl = pk;
+    if (!gl.sk_on && t - gl.sk_next < 0x80000000u) {     /* the skull: ~2.5 s, again in 12 .. 27 s */
+        gl.sk_on = t + 2500u;
+        gl.sk_next = t + 12000u + gl_rnd() % 15000u;
+        gl.burst = t + 260u;                             /* (it tears in) */
+    }
+    if (gl.sk_on && t - gl.sk_on < 0x80000000u) { gl.sk_on = 0; gl.burst = t + 180u; }   /* (and out) */
+    down = song.playing && gl.beat == 0u && gl.ph < 60u; /* (the bar's first beat, its start) */
+    p = 3u + pk / 4096u + (down ? 40u : 0u);             /* a burst's chance a frame, in 100: 3, up to 11 when loud */
+    if (t - gl.burst >= 0x80000000u) {}                 /* (one going on) */
+    else if (gl_rnd() % 100u < p) gl.burst = t + 60u + gl_rnd() % 220u;
+    gl.nb = gl.nl = 0;
+    if (t - gl.burst >= 0x80000000u) {                   /* a burst: bands torn, red lines */
+        uint32_t k;
+        gl.nb = (uint8_t)(1u + gl_rnd() % 5u);
+        for (k = 0; k < gl.nb; k++) {
+            uint32_t r = gl_rnd();
+            gl.b[k].y = (uint8_t)(18u + r % 190u);
+            gl.b[k].h = (uint8_t)(2u + (r >> 8) % 18u);
+            gl.b[k].dx = (int8_t)((int32_t)((r >> 16) % 61u) - 30);
+            gl.b[k].red = (uint8_t)((r >> 24) % 3u == 0u);
+        }
+        gl.nl = (uint8_t)(2u + gl_rnd() % 6u);
+    } else if (gl_rnd() % 100u < 18u + pk / 4096u) {
+        gl.nl = (uint8_t)(1u + gl_rnd() % 2u);           /* (between: a red line now and then) */
+    }
+    for (j = 0; j < gl.nl; j++) {
+        uint32_t r = gl_rnd();
+        gl.l[j].y = (uint8_t)(18u + r % 192u);
+        gl.l[j].x = (uint8_t)((r >> 8) % 200u);
+        gl.l[j].w = (uint8_t)(20u + (r >> 16) % 220u);
+        gl.l[j].t = (uint8_t)(1u + ((r >> 28) & 1u));
+    }
+}
+/* the skull at 2 x, its top left at x, y (whole-screen rows): straight into the strip's pixels */
+static void cos_skull_at(int32_t x, int32_t y, uint16_t c)
+{
+    uint32_t sy, sx, sw = swap16(c);
+    for (sy = 0; sy < SKULL_H; sy++) {
+        int32_t r, k;
+        for (k = 0; k < 2; k++) {
+            r = y + (int32_t)sy * 2 + k + cv_oy;
+            if (r < 0 || r >= (int32_t)cv_h) continue;
+            {
+                uint16_t *row = cv_px + (uint32_t)r * cv_w;
+                const uint8_t *src = SKULL + sy * (SKULL_W / 8u);
+                for (sx = 0; sx < SKULL_W; sx++)
+                    if ((src[sx >> 3] >> (7u - (sx & 7u))) & 1u) {
+                        int32_t px = x + (int32_t)sx * 2;
+                        if (px >= 0 && px + 1 < (int32_t)cv_w) row[px] = row[px + 1] = (uint16_t)sw;
+                    }
+            }
+        }
     }
 }
 static void cos_idle_scene(void)
 {
     static const uint8_t SZ[10] = {4, 7, 11, 17, 26, 39, 58, 86, 128, 190};   /* (each 1.5 x the one inside it) */
-    int32_t cx = 120, cy = 116, i, j, ph = (int32_t)idle_ph, spin = (int32_t)(cz.idle_t / 24u);
+    int32_t cx = 120, cy = 116, i, ph = (int32_t)gl.ph, spin = (int32_t)(cz.idle_t / 24u);
     char b[28], n[8];
-    for (i = 0; i < 9; i++) {                            /* the tunnel: the squares fall towards us through a beat */
-        int32_t h = SZ[i] + (SZ[i + 1] - SZ[i]) * ph / 1024, a = spin + i * 22, c = cos_isin(a + 256), sn = cos_isin(a);
-        int32_t px[4], py[4], k;
-        uint16_t col = i >= 6 ? C_FG : i >= 4 ? C_MID : i >= 2 ? C_DIM : C_DARK;
-        if (i == 7 && idle_beat == 0 && song.playing) col = C_RED;   /* (the bar's first beat) */
-        for (k = 0; k < 4; k++) {
-            int32_t ux = (k == 0 || k == 3) ? h : -h, uy = k < 2 ? h : -h;
-            px[k] = cx + ((ux * c - uy * sn) >> 15);
-            py[k] = cy + ((ux * sn + uy * c) >> 15);
+    if (gl.sk_on) {                                      /* the skull: on black, a red ghost torn off it while it glitches */
+        int32_t sx = 120 - (int32_t)SKULL_W, sy = 116 - (int32_t)SKULL_H;
+        if (gl.nb) cos_skull_at(sx + 4 + (int32_t)(gl.rng % 5u), sy, C_RED);
+        cos_skull_at(sx, sy, C_FG);
+    } else
+        for (i = 0; i < 9; i++) {                        /* the tunnel: the squares fall towards us through a beat */
+            int32_t h = SZ[i] + (SZ[i + 1] - SZ[i]) * ph / 1024, a = spin + i * 22, c = cos_isin((uint32_t)a + 256u),
+                    sn = cos_isin((uint32_t)a), px[4], py[4], k;
+            uint16_t col = i >= 6 ? C_FG : i >= 4 ? C_MID : i >= 2 ? C_DIM : C_DARK;
+            if (i == 7 && gl.beat == 0 && song.playing) col = C_RED;   /* (the bar's first beat) */
+            for (k = 0; k < 4; k++) {
+                int32_t ux = (k == 0 || k == 3) ? h : -h, uy = k < 2 ? h : -h;
+                px[k] = cx + ((ux * c - uy * sn) >> 15);
+                py[k] = cy + ((ux * sn + uy * c) >> 15);
+            }
+            for (k = 0; k < 4; k++) cv_line(px[k], py[k], px[(k + 1) & 3], py[(k + 1) & 3], col);
         }
-        for (k = 0; k < 4; k++) cv_line(px[k], py[k], px[(k + 1) & 3], py[(k + 1) & 3], col);
-    }
-    {                                                    /* the orb: the output's wave round the middle */
-        int32_t x0 = 0, y0 = 0, xf = 0, yf = 0;
-        for (j = 0; j <= 48; j++) {
-            int32_t a = (int32_t)(j % 48) * 1024 / 48 - spin / 2, r = idle_orb[j % 48];
-            int32_t x = cx + ((r * cos_isin((uint32_t)a + 256u)) >> 15), y = cy + ((r * cos_isin((uint32_t)a)) >> 15);
-            if (j) cv_line(x0, y0, x, y, C_RED);
-            else { xf = x; yf = y; }
-            x0 = x; y0 = y;
-        }
-        (void)xf; (void)yf;
-    }
+    for (i = 0; i < (int32_t)gl.nl; i++)                 /* red lines struck across */
+        cv_rect(gl.l[i].x, gl.l[i].y, gl.l[i].w, gl.l[i].t, C_RED);
     cv_rect(0, 0, 240, 16, C_BG);                        /* (the words on black) */
     cos_tx(4, 4, "CURSED-OS", C_DIM);
     cos_batt_text(b);
     if (b[0]) cos_txr(236, 4, b, cos_batt_pct() <= 15 ? C_RED : C_MID);
     cv_rect(0, 212, 240, 28, C_BG);
-    b[0] = 0;
     fmt_int(n, song.g[G_BPM]);
     str_cpy(b, n, sizeof b);
     str_cpy(b + str_len(b), song.playing ? " BPM  PLAYING" : " BPM  STOPPED", sizeof b - str_len(b));
     cos_txc(120, 216, CZ_LBL, b, song.playing ? C_FG : C_DIM);
     if (proj_name_buf()[0]) cos_txc(120, 228, CZ_LBL, proj_name_buf(), C_MID);
 }
+/* after a strip is drawn: the bands torn sideways (the rows of strip s, 40 from s x 40), some turned red */
+static void cos_idle_post(uint32_t s)
+{
+    uint32_t k, y, x;
+    uint16_t red = swap16(C_RED), tmp[240];
+    for (k = 0; k < gl.nb; k++)
+        for (y = gl.b[k].y; y < (uint32_t)gl.b[k].y + gl.b[k].h && y < 212u; y++) {
+            uint16_t *row;
+            int32_t dx = gl.b[k].dx;
+            if (y < s * 40u || y >= s * 40u + 40u) continue;
+            row = cv_px + (y - s * 40u) * cv_w;
+            for (x = 0; x < 240u; x++) tmp[x] = row[x];
+            for (x = 0; x < 240u; x++) {
+                int32_t from = (int32_t)x - dx;
+                uint16_t v = from >= 0 && from < 240 ? tmp[from] : 0u;
+                row[x] = gl.b[k].red && v ? red : v;
+            }
+        }
+}
+
 /* cos_input, first: 1 = this pass is the IDLE screen's (it shows, or the touch that woke it goes on) */
 static int cos_idle_gate(void)
 {
@@ -1823,6 +1907,7 @@ static int cos_idle_gate(void)
     }
     if (!cz.idle_up && lim && !ui.uboot && !cz.fx_down && fm1_ms - cz.act_ms >= lim) {
         cz.idle_up = 1;
+        cos_idle_start();
         cz.ready = 0;
     }
     if (cz.idle_up) { song.grid = 2; return 1; }
@@ -2703,7 +2788,7 @@ dials:
 /* the splash (ui_draw.c draw_splash / splash_write under COS_SLIM; main.c's boot loop calls it every ~4 ms for
  * SPL_WRITE + SPL_HOLD ms): black, a few still stars, the name 2x, the version, a 16-block bar filling like a pattern
  * (the block being filled red), READY. Drawn whole once, then only the bar's strip when a block fills */
-#define COS_VERSION "0.8.5"
+#define COS_VERSION "0.8.6"
 static void cos_px2(int32_t x, int32_t y, const char *s, uint16_t c)      /* (the face 2 x 2) */
 {
     int32_t r, b, b0;
@@ -2765,6 +2850,7 @@ static __attribute__((noinline)) void cos_draw(void)
         cv_begin(240, 40, C_BG);
         cv_oy = -(int32_t)s * 40;
         cos_scene();
+        if (cz.idle_up) cos_idle_post(s);                /* (the IDLE screen's torn bands) */
         cv_oy = 0;
         for (h = 2166136261u, i = 0; i < 240u * 40u; i++) h = (h ^ cv_px[i]) * 16777619u;
         if (h != cz.sig[s] || !cz.ready) {
