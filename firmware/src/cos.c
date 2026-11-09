@@ -1746,6 +1746,10 @@ static inline int32_t cos_isin(uint32_t a) { return SINE[a & 1023u]; }   /* (a: 
  * turned red; red lines struck across), the skull (now and then, a few seconds) */
 static struct {
     uint32_t ph, beat, rng, burst, g_next, sk_on, sk_next, lvl, pic;
+    uint32_t fx, fy, f_t, f_next;                        /* the cube: its turns about X and Y (1024 a turn) when the last
+                                                         * one ended; the one going on (from f_t, 700 ms), the next's time */
+    int8_t f_ax, f_dir;                                  /* .. its axis (0 X, 1 Y; -1 none) and way */
+    int16_t vx[8], vy[8], vz[8];                         /* .. its corners this frame, on the screen (vz: depth) */
     uint8_t nb, nl;
     struct { uint8_t y, h, red; int8_t dx; } b[6];
     struct { uint8_t y, x, w, t; } l[8];
@@ -1759,6 +1763,46 @@ static void cos_idle_start(void)                         /* (it comes up: the fi
     gl.sk_next = fm1_ms + 20000u + gl_rnd() % 20000u;
     gl.g_next = fm1_ms + 2000u + gl_rnd() % 4000u;
     gl.burst = 0;
+    gl.f_ax = -1;
+    gl.f_next = fm1_ms + 3000u + gl_rnd() % 4000u;
+}
+/* the cube's corners: its turns (X first, then Y with a slow drift), tilted 28 degrees towards us, in perspective */
+static void cos_cube_prep(uint32_t t)
+{
+    uint32_t ax = gl.fx, ay = gl.fy + t / 64u, i;      /* (the drift: a turn in ~65 s) */
+    if (gl.f_ax < 0 && t - gl.f_next < 0x80000000u) {   /* now and then it rolls onto another side: 90 degrees, 0.7 s */
+        gl.f_ax = (int8_t)((gl_rnd() >> 12) & 1u);
+        gl.f_dir = (int8_t)((gl_rnd() >> 13) & 1u ? 1 : -1);
+        gl.f_t = t;
+    }
+    if (gl.f_ax >= 0) {
+        uint32_t e = t - gl.f_t, k;
+        if (e >= 700u) {                                 /* (done: the turn kept, the next in 3 .. 9 s) */
+            if (gl.f_ax) gl.fy += (uint32_t)(256 * gl.f_dir); else gl.fx += (uint32_t)(256 * gl.f_dir);
+            gl.f_ax = -1;
+            gl.f_next = t + 3000u + gl_rnd() % 6000u;
+            ax = gl.fx; ay = gl.fy + t / 64u;
+        } else {
+            k = e * 1024u / 700u;                        /* (eased: smoothstep, 0 .. 1024) */
+            k = k * k * (3072u - 2u * k) >> 20;
+            if (gl.f_ax) ay += (uint32_t)((int32_t)(256 * gl.f_dir) * (int32_t)k / 1024);
+            else ax += (uint32_t)((int32_t)(256 * gl.f_dir) * (int32_t)k / 1024);
+        }
+    }
+    {
+        int32_t cxa = cos_isin(ax + 256u), sxa = cos_isin(ax), cya = cos_isin(ay + 256u), sya = cos_isin(ay);
+        int32_t ct = 28898, st = 15384;                  /* (the tilt: cos, sin 28 degrees, Q15) */
+        for (i = 0; i < 8u; i++) {
+            int32_t x = i & 1u ? 46 : -46, y = i & 2u ? 46 : -46, z = i & 4u ? 46 : -46, y1, z1, x2, z2, y3, z3, d;
+            y1 = (y * cxa - z * sxa) >> 15; z1 = (y * sxa + z * cxa) >> 15;          /* about X */
+            x2 = (x * cya + z1 * sya) >> 15; z2 = (z1 * cya - x * sya) >> 15;        /* about Y */
+            y3 = (y1 * ct - z2 * st) >> 15; z3 = (y1 * st + z2 * ct) >> 15;          /* the tilt */
+            d = z3 + 260;                                                            /* (the eye 260 away) */
+            gl.vx[i] = (int16_t)(120 + x2 * 230 / d);
+            gl.vy[i] = (int16_t)(114 + y3 * 230 / d);
+            gl.vz[i] = (int16_t)z3;
+        }
+    }
 }
 static void cos_idle_prep(void)
 {
@@ -1773,9 +1817,10 @@ static void cos_idle_prep(void)
         if ((uint32_t)v > pk) pk = (uint32_t)v;
     }
     gl.lvl = pk;
+    cos_cube_prep(t);
     if (!gl.sk_on && t - gl.sk_next < 0x80000000u) {     /* a picture (the skull, or the hammer and sickle): under a
                                                          * second, now and then (20 .. 40 s in, then every 40 .. 120 s) */
-        gl.sk_on = t + 600u + gl_rnd() % 350u;
+        gl.sk_on = t + 300u + gl_rnd() % 180u;            /* (about half a second) */
         gl.pic ^= 1u;                                    /* (the two in turn: the skull, then the hammer and sickle) */
         gl.sk_next = t + 40000u + gl_rnd() % 80000u;
         gl.burst = t + 160u;                             /* (it tears in) */
@@ -1832,8 +1877,9 @@ static void cos_pic_at(const uint8_t *pic, uint32_t w, uint32_t h, int32_t x, in
 }
 static void cos_idle_scene(void)
 {
-    static const uint8_t SZ[10] = {4, 7, 11, 17, 26, 39, 58, 86, 128, 190};   /* (each 1.5 x the one inside it) */
-    int32_t cx = 120, cy = 116, i, ph = (int32_t)gl.ph, spin = (int32_t)(cz.idle_t / 24u);
+    static const uint8_t E[12][2] = {{0, 1}, {2, 3}, {4, 5}, {6, 7}, {0, 2}, {1, 3}, {4, 6}, {5, 7},
+                                     {0, 4}, {1, 5}, {2, 6}, {3, 7}};   /* (the cube's edges: corners differing in a bit) */
+    int32_t i;
     char b[28], n[8];
     if (gl.sk_on) {                                      /* a picture: on black, a red ghost torn off it while it glitches */
         const uint8_t *pic = gl.pic ? HSKL : SKULL;
@@ -1842,17 +1888,9 @@ static void cos_idle_scene(void)
         if (gl.nb) cos_pic_at(pic, w, h, sx + 4 + (int32_t)(gl.rng % 5u), sy, C_RED);
         cos_pic_at(pic, w, h, sx, sy, C_FG);
     } else
-        for (i = 0; i < 9; i++) {                        /* the tunnel: the squares fall towards us through a beat */
-            int32_t h = SZ[i] + (SZ[i + 1] - SZ[i]) * ph / 1024, a = spin + i * 22, c = cos_isin((uint32_t)a + 256u),
-                    sn = cos_isin((uint32_t)a), px[4], py[4], k;
-            uint16_t col = i >= 6 ? C_FG : i >= 4 ? C_MID : i >= 2 ? C_DIM : C_DARK;
-            if (i == 7 && gl.beat == 0 && song.playing) col = C_RED;   /* (the bar's first beat) */
-            for (k = 0; k < 4; k++) {
-                int32_t ux = (k == 0 || k == 3) ? h : -h, uy = k < 2 ? h : -h;
-                px[k] = cx + ((ux * c - uy * sn) >> 15);
-                py[k] = cy + ((ux * sn + uy * c) >> 15);
-            }
-            for (k = 0; k < 4; k++) cv_line(px[k], py[k], px[(k + 1) & 3], py[(k + 1) & 3], col);
+        for (i = 0; i < 12; i++) {                       /* the cube, a wire frame: the far edges dim */
+            uint32_t a = E[i][0], c = E[i][1];
+            cv_line(gl.vx[a], gl.vy[a], gl.vx[c], gl.vy[c], gl.vz[a] + gl.vz[c] > 0 ? C_DARK : C_MID);
         }
     for (i = 0; i < (int32_t)gl.nl; i++)                 /* red lines struck across */
         cv_rect(gl.l[i].x, gl.l[i].y, gl.l[i].w, gl.l[i].t, C_RED);
