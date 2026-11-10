@@ -72,7 +72,13 @@ static __attribute__((noinline)) void rmt_cc(uint32_t cc, uint32_t v)
     }
     if (cc == 79u) { rmt_bpm((int32_t)(60u + v) * 10); return; }
     if (cc == 80u) { rmt_bpm_hi = (uint8_t)v; return; }  /* (0.9.7) an exact BPM, tenths: 80 then 81 */
-    if (cc == 81u) { rmt_bpm((int32_t)((uint32_t)rmt_bpm_hi << 7 | v)); return; }
+    if (cc == 81u) {
+        char b[16];
+        int32_t t = clamp((int32_t)((uint32_t)rmt_bpm_hi << 7 | v), 400, 2400);
+        rmt_bpm(t);
+        if (!cos_follows()) { str_cpy(b, "BPM ", 5); cos_bpm_text(b + 4, t); cos_say(b); }   /* (0.9.8: seen on the FM-1) */
+        return;
+    }
     if (cc == 36u || cc == 37u) {                        /* (0.9.6) NUDGE - / +: while held */
         int8_t d = (int8_t)(cc == 37u ? 1 : -1);
         if (on) { rmt_nudge = d; rmt_nudge_ms = fm1_ms; }

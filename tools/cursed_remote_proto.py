@@ -31,7 +31,8 @@ def cc(num, val):
 def bpm_exact(bpm):
     """an exact tempo (40.0 .. 240.0, a tenth): CC 80 then CC 81 (cursed-os 0.9.7)"""
     t = max(400, min(2400, int(round(float(bpm) * 10))))
-    return cc(CC_BPMX, t >> 7) + cc(CC_BPMX + 1, t & 127)
+    return (cc(CC_BPM, max(0, min(127, (t + 5) // 10 - 60)))    # (0.9.6: the whole BPM; 0.9.7 on: the exact one after)
+            + cc(CC_BPMX, t >> 7) + cc(CC_BPMX + 1, t & 127))
 
 
 def frame(cmd, payload):
