@@ -111,10 +111,11 @@ jobs:
               [ -x "$JIELI_TOOLCHAIN/pi32v2/bin/$T" ] && "$JIELI_TOOLCHAIN/pi32v2/bin/$T" -e build/felucca.elf -f -i 0x$A && break
             done || true
           done
-          if [ -n "${{ inputs.dis }}" ]; then                 # (the whole function, its source lines when the build has them)
-            for D in "$JIELI_TOOLCHAIN/pi32v2/bin/llvm-objdump" "$OD"; do
-              [ -x "$D" ] && { "$D" -d -l -S --disassemble-symbols=${{ inputs.dis }} build/felucca.elf 2>&1 | head -6000; break; }
-            done || true
+          if [ -n "${{ inputs.dis }}" ]; then                 # (the whole function: its range from the symbols)
+            R=$(awk -v f="${{ inputs.dis }}" '$NF == f && $(NF-2) ~ /text/ { printf "0x%s 0x%x", $1, strtonum("0x"$1) + strtonum("0x"$(NF-1)) }' /tmp/syms.txt | head -1)
+            echo "range $R"
+            set -- $R
+            "$OD" -d -no-show-raw-insn -start-address=$1 -stop-address=$2 build/felucca.elf 2>&1 | head -7000 || true
           fi
           ls "$JIELI_TOOLCHAIN/pi32v2/bin" | tr '\n' ' '; echo
       - name: compare the sound's code with another commit
