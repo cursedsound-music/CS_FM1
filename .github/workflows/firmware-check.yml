@@ -14,6 +14,10 @@ on:
         description: "FELUCCA_REPIN: '' (the recorded layout), keep (the recorded order, the addresses anew) or 1"
         default: ""
         required: false
+      addr:
+        description: "Crash addresses to name (hex, spaces between: the crash screen's PC, RETS): the function each falls in, the code around it"
+        default: ""
+        required: false
       compare:
         description: "Also compile this commit and print every recorded sound function whose size differs from it"
         default: ""
@@ -79,6 +83,28 @@ jobs:
             echo "----- base64 of the recorded file -----"
             gzip -9c tools/audio_layout.txt | base64 -w0; echo
           fi
+      - name: name the crash addresses
+        if: always() && inputs.addr != ''
+        env:
+          JIELI_TOOLCHAIN: /home/runner/.jieli/toolchain
+        run: |
+          OD="$JIELI_TOOLCHAIN/common/bin/objdump"
+          "$OD" -t build/felucca.elf > /tmp/syms.txt
+          for A in ${{ inputs.addr }}; do
+            python3 - "$A" <<'PY'
+          import sys
+          a = int(sys.argv[1], 16); best = None
+          for ln in open("/tmp/syms.txt"):
+              p = ln.split()
+              if len(p) < 5: continue
+              try: v, sz = int(p[0], 16), int(p[-2], 16)
+              except ValueError: continue
+              if v <= a < v + max(sz, 1) and (best is None or v > best[0]): best = (v, sz, p[-1], p[-3])
+          print("ADDR %08x:" % a, "in %s (%s) +0x%x of 0x%x" % (best[2], best[3], a - best[0], best[1]) if best else "no symbol")
+          PY
+            S=$(printf '0x%x' $((0x$A - 48))); E=$(printf '0x%x' $((0x$A + 24)))
+            "$OD" -d --start-address=$S --stop-address=$E build/felucca.elf | tail -n +7 || true
+          done
       - name: compare the sound's code with another commit
         if: always() && inputs.compare != ''
         env:
