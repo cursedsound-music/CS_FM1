@@ -103,8 +103,14 @@ jobs:
           print("ADDR %08x:" % a, "in %s (%s) +0x%x of 0x%x" % (best[2], best[3], a - best[0], best[1]) if best else "no symbol")
           PY
             S=$(printf '0x%x' $((0x$A - 48))); E=$(printf '0x%x' $((0x$A + 24)))
-            "$OD" -d --start-address=$S --stop-address=$E build/felucca.elf | tail -n +7 || true
+            for T in llvm-symbolizer llvm-addr2line; do
+              [ -x "$JIELI_TOOLCHAIN/pi32v2/bin/$T" ] && "$JIELI_TOOLCHAIN/pi32v2/bin/$T" -e build/felucca.elf -f -i 0x$A && break
+            done || true
+            for D in "$JIELI_TOOLCHAIN/pi32v2/bin/llvm-objdump" "$OD"; do
+              [ -x "$D" ] && "$D" -d -l --start-address=$S --stop-address=$E build/felucca.elf 2>/dev/null | grep -E '^ *[0-9a-f]+:|^/|:[0-9]+$' | head -40 && break
+            done || true
           done
+          ls "$JIELI_TOOLCHAIN/pi32v2/bin" | tr '\n' ' '; echo
       - name: compare the sound's code with another commit
         if: always() && inputs.compare != ''
         env:
