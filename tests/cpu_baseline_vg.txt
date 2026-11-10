@@ -37,6 +37,7 @@ mix/idle 284
 mix/idle.tail 278
 peak/VOICE.EN6 187079
 rev/CLOUD 1537
+rev/PLATE 1340
 rev/RESO 1316
 rev/ROOM 1291
 rev/SHIMR 1387

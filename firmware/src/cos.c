@@ -192,6 +192,7 @@ static struct {
     uint8_t key_next, scl_down, scl_used;              /* key_next: 1 + the key asked for (0 C .. 11 B) */
     uint32_t key_bar;                                   /* (bar_n when it was asked for) */
     uint8_t dr_trk, dr_n, dr_note[4];                   /* DRONE: its track, its notes (seq.c cos_dr sounds them) */
+    uint32_t new_ms;                                    /* (0.9.3) SAVE's REC: when it was pressed (a second within 3 s: NEW) */
     uint8_t lk_mode, lk_tab, lk_used;                   /* LOCK: the sound page used last; a knob turned while steps held */
     uint32_t tg_down, notes0;                           /* TRIG: the white keys down since their press; the keys a frame ago */
     uint8_t ly_prev;                                    /* WORDS: the lyric before OCT+ */
@@ -1303,6 +1304,22 @@ static __attribute__((noinline)) void cos_proj_oct(int up)
     cos_proj_scan();
 }
 
+/* (0.9.3) SAVE > REC twice within 3 s: a NEW PROJECT, as at power-on (project.c system_init: the power-on sounds, no
+ * steps, no automation, the mix and the effects at their defaults, no name; the saved slots and the setup kept). The
+ * transport stops; GLO held + G4 (UNDO) brings the music back */
+static void undo_mark(void);                             /* (project.c) */
+static __attribute__((noinline)) void cos_proj_new(void)
+{
+    if (chain_busy()) { cos_say("STOP THE SONG FIRST"); return; }
+    if (!cz.new_ms || fm1_ms - cz.new_ms > 3000u) { cz.new_ms = fm1_ms ? fm1_ms : 1u; cos_say("REC AGAIN: NEW PROJECT"); return; }
+    cz.new_ms = 0;
+    undo_mark();
+    if (song.playing) transport_req = 2;
+    system_init();
+    cos_drone_clear();
+    cos_say("NEW PROJECT");
+    cos_proj_scan();
+}
 static void cos_mode(uint32_t m)
 {
     if (m == CM_PROJ && cz.mode != CM_PROJ) { cz.slot = proj_cur_slot() < 4u ? (uint8_t)proj_cur_slot() : cz.slot; cos_proj_scan(); }
@@ -1490,6 +1507,7 @@ static __attribute__((noinline)) void cos_input(void)
         else if (b == B_REC && ((fm1_in.buttons >> panel.btn[B_SEQ]) & 1u)) { cz.sq_used = 1; cos_clear(); }   /* SEQ held +
                                                          * REC, twice */
         else if (b == B_REC && cz.mode == CM_DRONE) { cos_drone_clear(); cos_say("DRONE OFF"); }
+        else if (b == B_REC && cz.mode == CM_PROJ) cos_proj_new();   /* (0.9.3) SAVE: REC twice = a new, empty project */
         else if (b == B_REC && cz.mode == CM_TRIG && cos_held()) {   /* a step held + REC: its locks go */
             uint64_t h = cos_held();
             uint32_t i, n = 0;
@@ -2833,7 +2851,8 @@ static void cos_body_proj(void)
         str_cpy(sb + 6, proj_name_buf()[0] ? proj_name_buf() : "NEW ON SAVE", sizeof sb - 6);
         cos_txc(120, 114, CZ_LBL, sb, C_FG);
     }
-    cos_txc(120, 146, CZ_LBL, song.playing ? "OCT+ STORE  OCT- NEXT BAR" : "OCT+ SAVE  OCT- LOAD", C_DIM);
+    cos_txc(120, 146, CZ_LBL, cz.new_ms && fm1_ms - cz.new_ms < 3000u ? "REC AGAIN: NEW PROJECT" :
+                              song.playing ? "OCT+ STORE  OCT- NEXT BAR" : "OCT+ SAVE  OCT- LOAD  REC x2 NEW", cz.new_ms && fm1_ms - cz.new_ms < 3000u ? C_RED : C_DIM);
 }
 
 /* the FX pad (FX held): the 16 white keys' effects in two columns, the black keys' under them; an effect on: red */
@@ -3094,7 +3113,7 @@ dials:
 /* the splash (ui_draw.c draw_splash / splash_write under COS_SLIM; main.c's boot loop calls it every ~4 ms for
  * SPL_WRITE + SPL_HOLD ms): black, a few still stars, the name 2x, the version, a 16-block bar filling like a pattern
  * (the block being filled red), READY. Drawn whole once, then only the bar's strip when a block fills */
-#define COS_VERSION "0.9.2"
+#define COS_VERSION "0.9.3"
 static void cos_px2(int32_t x, int32_t y, const char *s, uint16_t c)      /* (the face 2 x 2) */
 {
     int32_t r, b, b0;

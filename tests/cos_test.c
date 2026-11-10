@@ -1854,6 +1854,22 @@ int main(void)
         cos_cput(CC_LUR, 1);
         CHECK(lu.i < -10000 && lu.pk < -10000, "RESET: from now");
     }
+    {   /* (0.9.3) SAVE: REC once asks, REC again within 3 s starts a NEW PROJECT (no steps, no name); after 3 s it asks again */
+        uint32_t m0 = cz.mode;
+        song.playing = 0; transport_req = 0;
+        grid_hit(&trk[0], 2, 0, 1);
+        str_cpy(proj_name_buf(), "OLD JAM", 13);
+        cz.mode = CM_PROJ; cz.new_ms = 0;
+        cos_test_btn(B_REC, 1); cos_test_btn(B_REC, 0);
+        CHECK(step_lanes(&trk[0].step[2]) && proj_name_buf()[0], "SAVE: one REC asks, nothing cleared");
+        fm1_ms += 4000u;
+        cos_test_btn(B_REC, 1); cos_test_btn(B_REC, 0);
+        CHECK(step_lanes(&trk[0].step[2]) && proj_name_buf()[0], "SAVE: a REC 4 s later asks again");
+        fm1_ms += 500u;
+        cos_test_btn(B_REC, 1); cos_test_btn(B_REC, 0);
+        CHECK(!step_lanes(&trk[0].step[2]) && !proj_name_buf()[0], "SAVE: REC twice = NEW PROJECT (steps and name gone)");
+        cz.mode = (uint8_t)m0;
+    }
     {   /* the keyboards drawn (KEY, DRONE) as the FM-1's keys: from F, a black one where the panel has one */
         uint32_t ok = 1, j, bl;
         for (k = 0; k < 27u; k++) {

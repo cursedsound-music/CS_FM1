@@ -243,6 +243,7 @@ static void song_setup(void)
     memset(trk, 0, sizeof trk);
     host_tracks_init();
     perf_reset();
+    song.g[G_RTYPE] = 0;                           /* (cursed-os 0.9.3: PLATE the default; these counts are ROOM's) */
     song.g[G_BPM] = 120;
     host_preset(t1, 0, 4);
     host_preset(t2, 1, 5);

@@ -90,6 +90,10 @@ static struct {
     int32_t sp_lp, sp_hp, sp_he, sp_size;   /* .. its loop low-pass, low cut (and its remainder), the loop
                                              * length (Q8, glides) */
     uint32_t sp_ph;                      /* .. the output tap's wobble */
+    uint32_t pl_p, pl_q, pl_ph;          /* (cursed-os 0.9.3) PLATE: the tank's ring pointer, the input's (pre-delay and
+                                         * diffusers), the modulation's phase */
+    int32_t pl_bw, pl_lp[2], pl_pm, pl_ps;   /* .. the input's low-pass, the tank's two damping low-passes, the last
+                                         * half-rate mid and side (the output's interpolation) */
 } fx;
 
 /* SPRING (G_RTYPE 1): one spring of a spring tank, mono like the other buses, in the ROOM's own buffers (no
@@ -699,7 +703,7 @@ static volatile uint8_t fx_usb_fixed;
  * or a computer whose input clips at the full level (usb.c uac_tap reads it) */
 static volatile int32_t fx_usb_gain = 4096;
 #define UAC_GAIN() fx_usb_gain
-static const uint8_t REV_LITE[3][5] = {{0, 1, 2, 3, 4}, {0, 1, 0, 1, 0}, {1, 1, 1, 1, 1}};   /* (0.6.29) LOAD FULL, LITE, ECO
+static const uint8_t REV_LITE[3][6] = {{0, 1, 2, 3, 4, 5}, {0, 1, 0, 1, 0, 0}, {1, 1, 1, 1, 1, 1}};   /* (0.6.29) LOAD FULL, LITE, ECO
                                                          * (voice.c sys_load): each reverb's lighter kin */
 #define MASTER_FULL 4096                /* main.c: the MASTER knob's top, Q12 */
 /* the MASTER pot (ADC 0..1023, smoothed in main.c) to its level, square law: 0 .. 4088 (Q12) */
@@ -1544,6 +1548,111 @@ static __attribute__((noinline)) void rev_cloud(const int32_t *rev_in, int32_t *
         shim_fb[i] = t[i];                               /* (the tail into the line, next block) */
     }
 }
+/* (cursed-os 0.9.3) PLATE (G_RTYPE 5): Dattorro's plate ("Effect Design, part 1", JAES 1997), stereo. At half the rate
+ * (22.05 kHz: the pairs of the input averaged, the output interpolated back up) and every length scaled to it from the
+ * paper's 29.76 kHz (x 0.7409), so that the tank fits CLOUD's line (rev_x, 16384 samples). The input: the pre-delay
+ * (PRE, up to 100 ms) and four input diffusers, in ROOM's comb memory (rev_comb, a 4096 ring); a low-pass (the
+ * bandwidth). The tank: two branches crossed (each fed the other's output x DECAY), each a modulated allpass (MOD, RATE:
+ * its delay swept, the ringing smeared; a little always), a delay, the damping low-pass (DAMP), x DECAY, a second
+ * allpass, a delay. Left and right are seven taps each across both branches (the paper's), so the tail is wide by
+ * nature: WIDE 0 half the side, 127 all of it. SIZE: DECAY 0.1 .. 0.93 (RT60 ~0.6 s, ~2 s at 90 as ROOM, ~18 s at 127). All the lines share
+ * one ring with one pointer each (the FV-1's way: a line is a fixed span ahead of the pointer): no wrap per line */
+#define PL_F(n) ((uint32_t)(n) * 7409u / 10000u)
+#define PL_EXC 14u                                       /* the modulated allpasses' sweep, at most (half-rate samples) */
+#define PL_MASK (CL_LEN - 1u)
+#define PQ_MASK 4095u
+enum {                                                   /* the tank's lines: their lengths and where each starts */
+    PL_A1 = PL_F(672) + PL_EXC + 2u, PL_D1 = PL_F(4453), PL_A2 = PL_F(1800), PL_D2 = PL_F(3720),
+    PR_A1 = PL_F(908) + PL_EXC + 2u, PR_D1 = PL_F(4217), PR_A2 = PL_F(2656), PR_D2 = PL_F(3163),
+    PB_LA1 = 0, PB_LD1 = PB_LA1 + PL_A1 + 1, PB_LA2 = PB_LD1 + PL_D1 + 1, PB_LD2 = PB_LA2 + PL_A2 + 1,
+    PB_RA1 = PB_LD2 + PL_D2 + 1, PB_RD1 = PB_RA1 + PR_A1 + 1, PB_RA2 = PB_RD1 + PR_D1 + 1, PB_RD2 = PB_RA2 + PR_A2 + 1,
+    PB_END = PB_RD2 + PR_D2 + 1,
+    PI_1 = PL_F(142), PI_2 = PL_F(107), PI_3 = PL_F(379), PI_4 = PL_F(277),   /* the input diffusers, after the pre-delay */
+    QB_1 = 2300, QB_2 = QB_1 + PI_1 + 1, QB_3 = QB_2 + PI_2 + 1, QB_4 = QB_3 + PI_3 + 1, QB_END = QB_4 + PI_4 + 1
+};
+_Static_assert(PB_END <= CL_LEN && QB_END <= 4096 && sizeof rev_comb / 2u >= 4096u, "PLATE's lines in rev_x and rev_comb");
+#define PLR(b, d) ((int32_t)pl[(p + (uint32_t)(b) + (uint32_t)(d)) & PL_MASK])   /* line b, d samples after its input */
+#define PLW(b, v) (pl[(p + (uint32_t)(b)) & PL_MASK] = (int16_t)clamp((v), -32768, 32767))
+#define PQR(b, d) ((int32_t)pq[(q + (uint32_t)(b) + (uint32_t)(d)) & PQ_MASK])
+#define PQW(b, v) (pq[(q + (uint32_t)(b)) & PQ_MASK] = (int16_t)clamp((v), -32768, 32767))
+static inline int32_t plmul(int32_t a, int32_t b) { return (a * b + 16384) >> 15; }   /* (rounded: no DC creeping into the tank) */
+/* an allpass on line b of length len, coefficient g (Q15): w = x - g d, written; out d + g w */
+#define PL_AP(RD, WR, b, len, g, x)                                                                                \
+    ({ int32_t d_ = RD(b, len), w_ = (x) - plmul(d_, g); WR(b, w_); d_ + plmul(clamp(w_, -32768, 32767), g); })
+static inline int32_t pl_rdf(const int16_t *pl, uint32_t p, uint32_t b, int32_t d8)   /* (a fractional read, Q8) */
+{
+    uint32_t d = (uint32_t)d8 >> 8;
+    int32_t a = PLR(b, d), c = PLR(b, d + 1u);
+    return a + (((c - a) * (d8 & 255)) >> 8);
+}
+static __attribute__((noinline)) void rev_plate(const int32_t *rev_in, int32_t *out, uint32_t n)
+{
+    int16_t *pl = rev_x.cl, *pq = rev_comb;
+    uint32_t p = fx.pl_p, q = fx.pl_q, i, pre = (uint32_t)clamp(song.g[G_RPRE], 0, 100) * 2205u / 100u;
+    int32_t g = GFX(GF_RSIZE), decay = g <= 90 ? 3277 + g * 160 : 17677 + (g - 90) * 346;   /* (0.1 .. 0.93, Q15: RT60 ~0.6 s
+                                                         * at 0, ~2 s at 90 (ROOM's), ~18 s at 127) */
+    int32_t damp = GFX(GF_RDAMP) * 220, dd2 = clamp(decay + 4915, 8192, 16384);   /* (the paper's: decay + 0.15) */
+    int32_t wd = 16384 + song.g[G_RWIDE] * 129;           /* (the side: half .. all of it) */
+    int32_t ex = 24 + song.g[G_RMOD] * 11;                /* (the sweep, Q8 half-rate samples: ~0.1 .. 5.5) */
+    int32_t mL, mR, lpL = fx.pl_lp[0], lpR = fx.pl_lp[1], bw = fx.pl_bw, pm = fx.pl_pm, ps = fx.pl_ps;
+    fx.pl_ph += LFO_INC[song.g[G_RRATE] & 127] * 2u;
+    mL = ((osc_sine(fx.pl_ph) + 32768) * ex) >> 16;      /* (Q8: the two branches' sweeps a quarter apart) */
+    mR = ((osc_sine(fx.pl_ph + 0x40000000u) + 32768) * ex) >> 16;
+    for (i = 0; i + 1u < n; i += 2u) {
+        int32_t x = (rev_in[i] + rev_in[i + 1u]) >> 3, a, yl, yr, m, sd;   /* (the pair averaged, -12 dB: room in
+                                                         * the int16 lines) */
+        PQW(0, x);                                        /* the pre-delay, then the bandwidth's low-pass */
+        x = PQR(0, pre);
+        bw += plmul(x - bw, 22938);
+        a = PL_AP(PQR, PQW, QB_1, PI_1, 24576, bw);       /* the input diffusers: 0.75, 0.75, 0.625, 0.625 */
+        a = PL_AP(PQR, PQW, QB_2, PI_2, 24576, a);
+        a = PL_AP(PQR, PQW, QB_3, PI_3, 20480, a);
+        a = PL_AP(PQR, PQW, QB_4, PI_4, 20480, a);
+        {                                                 /* the tank, its two branches from the same past */
+            int32_t fl = a + plmul(PLR(PB_RD2, PR_D2), decay), fr = a + plmul(PLR(PB_LD2, PL_D2), decay), d, w;
+            /* left: the swept allpass (-0.7), the delay, damping, decay, the allpass (dd2), the delay */
+            d = pl_rdf(pl, p, PB_LA1, (int32_t)(PL_A1 - PL_EXC - 1u) * 256 + mL);
+            w = fl + plmul(d, 22938);
+            PLW(PB_LA1, w);
+            w = d - plmul(clamp(w, -32768, 32767), 22938);
+            PLW(PB_LD1, w);
+            d = PLR(PB_LD1, PL_D1);
+            lpL = d + plmul(lpL - d, damp);
+            w = PL_AP(PLR, PLW, PB_LA2, PL_A2, dd2, plmul(lpL, decay));
+            PLW(PB_LD2, w);
+            /* right */
+            d = pl_rdf(pl, p, PB_RA1, (int32_t)(PR_A1 - PL_EXC - 1u) * 256 + mR);
+            w = fr + plmul(d, 22938);
+            PLW(PB_RA1, w);
+            w = d - plmul(clamp(w, -32768, 32767), 22938);
+            PLW(PB_RD1, w);
+            d = PLR(PB_RD1, PR_D1);
+            lpR = d + plmul(lpR - d, damp);
+            w = PL_AP(PLR, PLW, PB_RA2, PR_A2, dd2, plmul(lpR, decay));
+            PLW(PB_RD2, w);
+        }
+        yl = PLR(PB_RD1, PL_F(266)) + PLR(PB_RD1, PL_F(2974)) - PLR(PB_RA2, PL_F(1913)) + PLR(PB_RD2, PL_F(1996)) -
+             PLR(PB_LD1, PL_F(1990)) - PLR(PB_LA2, PL_F(187)) - PLR(PB_LD2, PL_F(1066));
+        yr = PLR(PB_LD1, PL_F(353)) + PLR(PB_LD1, PL_F(3627)) - PLR(PB_LA2, PL_F(1228)) + PLR(PB_LD2, PL_F(2673)) -
+             PLR(PB_RD1, PL_F(2111)) - PLR(PB_RA2, PL_F(335)) - PLR(PB_RD2, PL_F(121));
+        m = ((yl + yr) * 19) >> 4;                        /* (ROOM's level: x 0.6 each in the paper, the -12 dB in back,
+                                                         * matched by ear to a noise burst's, tests/reverb_test.c) */
+        sd = plmul(((yl - yr) * 19) >> 4, wd);
+        out[i] += (pm + m) >> 1;                          /* (back up to the full rate: between, then on) */
+        out[i + 1u] += m;
+        fx_sl[i] += (ps + sd) >> 1; fx_sr[i] -= (ps + sd) >> 1;
+        fx_sl[i + 1u] += sd; fx_sr[i + 1u] -= sd;
+        pm = m; ps = sd;
+        p--; q--;
+    }
+    fx.pl_p = p; fx.pl_q = q;
+    fx.pl_lp[0] = lpL; fx.pl_lp[1] = lpR; fx.pl_bw = bw; fx.pl_pm = pm; fx.pl_ps = ps;
+}
+#undef PLR
+#undef PLW
+#undef PQR
+#undef PQW
+#undef PL_AP
 /* (cpu5) the reverb's certificate held (room_used clear) and nothing in this block: its clocks on, nothing rendered
  * (its output is exactly 0, its states stay 0: see room_clock). Returns 0 with the certificate gone */
 static __attribute__((noinline)) int rev_idle(uint32_t ty, const int32_t *rev_in, uint32_t n)
@@ -1585,6 +1694,7 @@ static void rev_run(uint32_t ty, const int32_t *rev_in, int32_t *out, uint32_t n
     case 2: rev_shimmer(rev_in, out, n); break;
     case 3: rev_reso(rev_in, out, n); break;
     case 4: rev_cloud(rev_in, out, n); break;
+    case 5: rev_plate(rev_in, out, n); break;
     default:
         if (song.g[G_RMOD] || song.g[G_RWIDE]) rev_room_mod(rev_in, out, n, song.g[G_RWIDE]);
         else rev_room(rev_in, out, n);
@@ -1612,6 +1722,7 @@ static void rev_state_clear(void)
     fx.cl_gl = fx.cl_gr = 0;
     fx.cl_dc = 0;
     fx.cl_fill = 0;
+    fx.pl_lp[0] = fx.pl_lp[1] = fx.pl_bw = fx.pl_pm = fx.pl_ps = 0;   /* (0.9.3) PLATE's */
     fx.cl_lp = fx.cl_half = 0;                          /* (0.8.4: CLOUD's tone and odd sample too; its tone's state
                                                          * was kept, a residue back into the next CLOUD's line) */
 }
@@ -1634,7 +1745,8 @@ static __attribute__((noinline)) void rev_line_clear(uint32_t n)
  * ROOM, SPRING and RESO nothing, the pre-delay's line runs on as it always has */
 static uint32_t rev_line_dirty(uint32_t from, uint32_t to)
 {
-    return to == 4u ? CL_LEN : to == 2u ? SH_LEN : from == 2u || from == 4u ? RPRE_LEN : 0u;
+    return to == 4u || to == 5u ? CL_LEN : to == 2u ? SH_LEN : from == 2u || from == 4u || from == 5u ? RPRE_LEN : 0u;   /* (0.9.3: PLATE's
+                                                         * tank all of it, like CLOUD's) */
 }
 /* every buffer and state of the reverb silenced (fx_trip, the tests) */
 static void rev_clear(void)
@@ -2019,7 +2131,7 @@ static uint8_t rest_ph;                                  /* the rest's clearing:
 static __attribute__((noinline)) int fx_rest(int32_t *wet, uint32_t n, uint32_t cinc, int32_t cdepth, int32_t cw,
                                              int32_t dmix)
 {
-    uint32_t rt = (uint32_t)song.g[G_RTYPE] <= 4u ? (uint32_t)song.g[G_RTYPE] : 0u, ph = rest_ph, i;
+    uint32_t rt = (uint32_t)song.g[G_RTYPE] <= 5u ? (uint32_t)song.g[G_RTYPE] : 0u, ph = rest_ph, i;
     int32_t wm, dwm;
     if (fxg_g || fxg_dly || GFX(GF_DFDBK) >= 100 || fx.dsw || fx.din_g || (rt == 4u && GFX(GF_RSIZE) >= 127) ||
         REV_LITE[sys_load % 3u][rt] != fx.rtype) {
@@ -2256,7 +2368,7 @@ static inline __attribute__((always_inline)) void fx_buses(const int32_t *cho_in
             fx_sr[i] -= side;
         }
     }
-    rt = (uint32_t)song.g[G_RTYPE] <= 4u ? song.g[G_RTYPE] : 0;
+    rt = (uint32_t)song.g[G_RTYPE] <= 5u ? song.g[G_RTYPE] : 0;
     rt = REV_LITE[sys_load % 3u][rt];                   /* (0.6.29) LOAD LITE: SHIMMER, CLOUD as ROOM, RESO as SPRING; ECO:
                                                          * all SPRING */
     if (rt != fx.rtype) {                               /* the model changed: the old one's block fades out, */

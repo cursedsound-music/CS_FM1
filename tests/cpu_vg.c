@@ -8,7 +8,7 @@
  * the sequencer, the parts, the buses, the master) and CALLGRIND_DUMP_STATS_AT(its name). Sections:
  *   eng/<ENGINE>   one part, 8 notes held (VOICE: 4), the engine's heaviest preset (hostsim.c's list)
  *   eng/ANIMAL.<MODE>  (0.8.3) ANIMAL's five sources at their heaviest: 8 notes, no gaps (GROUP HOLD), every option on
- *   rev/<TYPE>     a pad soaked in the reverb, each REVERB TYPE (ROOM SPRING SHIMR RESO CLOUD)
+ *   rev/<TYPE>     a pad soaked in the reverb, each REVERB TYPE (ROOM SPRING SHIMR RESO CLOUD PLATE)
  *   dly/<RATE>     (0.8.4) a pad into the delay, its line at the full rate, half, a quarter (fx.c dly_lo); (snd2)
  *                  .drive: DRIVE 100; .throw: THROW held (KNOB 3 of the FX layer at 100), the loop's band in
  *   cho/pad        (snd2) a pad into the chorus only, RATE 40 (.fast: 127)
@@ -140,7 +140,7 @@ int main(void)
         {AN_CMOS, 127, 127, 64, 63, 127, 0, 40}, {AN_PULSE, 127, 127, 26, 63, 127, 0, 22},
         {AN_WHSTL, 127, 127, 40, 63, 127, 0, 22}, {AN_WING, 127, 127, 64, 63, 127, 0, 22},
         {AN_GLOTT, 127, 127, 64, 63, 127, 0, 40}};
-    static const char *const RT[5] = {"ROOM", "SPRING", "SHIMR", "RESO", "CLOUD"};
+    static const char *const RT[6] = {"ROOM", "SPRING", "SHIMR", "RESO", "CLOUD", "PLATE"};
     char name[40];
     uint32_t i, e;
     for (i = 0; i < sizeof E / sizeof E[0]; i++) {
@@ -182,7 +182,7 @@ int main(void)
         snprintf(name, sizeof name, "eng/VOICE.%s", i ? "EN" : "ES");
         vg_section(name);
     }
-    for (i = 0; i < 5u; i++) {
+    for (i = 0; i < 6u; i++) {
         vg_quiet();
         song.g[G_RTYPE] = (int16_t)i;
         vg_part(0, ENGI_ANALOG, 0, 4);

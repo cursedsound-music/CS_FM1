@@ -153,6 +153,7 @@ static void test_room_identical(void)
     static int32_t c[CTL], d[CTL], r[CTL], w0[CTL], w1[CTL];
     uint32_t b, i, diff = 0, nb = 30u * FS / CTL;
     host_tracks_init();
+    song.g[G_RTYPE] = 0;                                        /* (cursed-os 0.9.3: PLATE the default; this is ROOM's) */
     for (b = 0; b < nb; b++) {
         if (b % 700u == 0u) {                                   /* the settings move now and then */
             song.g[G_RSIZE] = (int16_t)((uint32_t)noise(1 << 30) % 128u);
@@ -532,8 +533,8 @@ static void test_switch_all(void)
     uint8_t s[2];
     uint32_t a, b;
     printf("reverb: (0.8.4) model changes through the shared line (rev_x):\n");
-    for (a = 0; a < 5u; a++)
-        for (b = 0; b < 5u; b++)
+    for (a = 0; a < 6u; a++)
+        for (b = 0; b < 6u; b++)
             if (a != b) {
                 s[0] = (uint8_t)a; s[1] = (uint8_t)b;
                 switch_chain(s, 2);
@@ -666,6 +667,7 @@ static void jreset(void)
         dly_buf[i] = 0;
     rev_clear();
     fx.rtype = 0;
+    song.g[G_RTYPE] = 0;                           /* (cursed-os 0.9.3: PLATE the default; the tests start on ROOM) */
     memset(fx.rm_m, 0, sizeof fx.rm_m);
     fx.rf_lp = 0;
     song.g[G_DMIX] = 127;
@@ -815,9 +817,9 @@ static void test_new_types(void)
         check("CLOUD: SIZE full freezes the cloud (it still sounds 2 s on)", band_e(FS * 3u / 2u, FS * 2u) > 1e8);
     }
     {   /* (0.5.1) SIZE 126, every model: 2 s of loud noise stay bounded; then 2 s alone: the tail long but dying */
-        static const char *const N5[5] = {"ROOM", "SPRING", "SHIMMER", "RESO", "CLOUD"};
+        static const char *const N5[6] = {"ROOM", "SPRING", "SHIMMER", "RESO", "CLOUD", "PLATE"};
         int ok = 1;
-        for (k = 0; k < 5u; k++) {
+        for (k = 0; k < 6u; k++) {
             double side, e0, e1;
             int32_t pk = 0;
             jreset();
@@ -860,6 +862,76 @@ static void test_new_types(void)
         fx.rs_root = 0;
     }
     song.g[G_RTYPE] = 0; song.g[G_RWIDE] = 0; song.g[G_RMOD] = 0;
+}
+/* (cursed-os 0.9.3) PLATE: its decay rises with SIZE (RT60 under 1 s at 0, over 6 s at 120), it is stereo (the side
+ * at WIDE 0 already, more at 127), its level near ROOM's (the first 1.5 s after a burst, within 4 dB), DAMP darkens
+ * it (fewer zero crossings late in the tail), MOD moves it, PRE delays its onset, and it stays bounded */
+static void test_plate(void)
+{
+    double side0, side1, eR, eP, rt0, rt1, s;
+    uint32_t i, on0, on1, c0, c1;
+    int32_t pk = 0;
+    jreset(); song.g[G_RTYPE] = 0; song.g[G_RSIZE] = 90; song.g[G_RDAMP] = 60; song.g[G_RMOD] = 0; song.g[G_RWIDE] = 0;
+    jrun(0, burst, FS * 2u, &s);
+    eR = band_e(FS / 10u, FS * 3u / 2u);
+    jreset(); song.g[G_RTYPE] = 5; song.g[G_RSIZE] = 90; song.g[G_RDAMP] = 60; song.g[G_RMOD] = 0; song.g[G_RWIDE] = 0;
+    jrun(0, burst, FS * 2u, &side0);
+    eP = band_e(FS / 10u, FS * 3u / 2u);
+    for (i = 0; i < FS * 2u; i++) if (abs(jw[i]) > pk) pk = abs(jw[i]);
+    printf("reverb: PLATE level against ROOM %.1f dB, peak %d, side %.3g\n", 10 * log10((eP + 1) / (eR + 1)), pk, side0);
+    check("PLATE: as loud as ROOM (within 4 dB), bounded, stereo at WIDE 0", fabs(10 * log10((eP + 1) / (eR + 1))) < 4.0 &&
+          pk < (1 << 20) && side0 > eP * 0.05);
+    jreset(); song.g[G_RTYPE] = 5; song.g[G_RSIZE] = 90; song.g[G_RDAMP] = 60; song.g[G_RWIDE] = 127;
+    jrun(0, burst, FS * 2u, &side1);
+    check("PLATE: WIDE 127 wider than WIDE 0", side1 > side0 * 1.5);
+    {   /* RT60 from the impulse response, SIZE 0 and 120 */
+        static int32_t h[FS * 6];
+        uint32_t k;
+        double r[2];
+        for (k = 0; k < 2u; k++) {
+            static int32_t c[CTL], dd[CTL], rr[CTL];
+            uint32_t t;
+            jreset(); song.g[G_RTYPE] = 5; song.g[G_RSIZE] = k ? 120 : 0; song.g[G_RDAMP] = 30; song.g[G_RWIDE] = 0;
+            fx.rtype = 5;
+            for (t = 0; t + CTL <= FS * 6u; t += CTL) {   /* (the model alone: the buses' gate would not open for a click) */
+                for (i = 0; i < CTL; i++) { c[i] = dd[i] = 0; rr[i] = t + i < 64u ? 60000 : 0; fx_sl[i] = fx_sr[i] = 0; h[t + i] = 0; }
+                rev_plate(rr, h + t, CTL);
+            }
+            r[k] = rt60(h, FS * 6u);
+        }
+        rt0 = r[0]; rt1 = r[1];
+        printf("reverb: PLATE RT60 SIZE 0 %.2f s, SIZE 120 %.2f s\n", rt0, rt1);
+        check("PLATE: RT60 under 1 s at SIZE 0, over 6 s at 120", rt0 < 1.0 && rt1 > 6.0);
+    }
+    jreset(); song.g[G_RTYPE] = 5; song.g[G_RSIZE] = 100; song.g[G_RDAMP] = 0;
+    jrun(0, burst, FS * 2u, &s);
+    c0 = jcross(FS, FS * 2u);
+    jreset(); song.g[G_RTYPE] = 5; song.g[G_RSIZE] = 100; song.g[G_RDAMP] = 120;
+    jrun(0, burst, FS * 2u, &s);
+    c1 = jcross(FS, FS * 2u);
+    printf("reverb: PLATE zero crossings 1-2 s: DAMP 0 %u, DAMP 120 %u\n", c0, c1);
+    check("PLATE: DAMP darkens the tail", c1 < c0 * 3u / 4u);
+    for (on0 = 0, i = 0; i < 2u; i++) {                 /* PRE: the onset later by ~80 ms */
+        uint32_t t0;
+        jreset(); song.g[G_RTYPE] = 5; song.g[G_RSIZE] = 90; song.g[G_RDAMP] = 40; song.g[G_RPRE] = i ? 80 : 0;
+        jrun(0, burst, FS, &s);
+        for (t0 = 0; t0 < FS && abs(jw[t0]) < 200; t0++) {}
+        if (!i) on0 = t0; else on1 = t0;
+    }
+    printf("reverb: PLATE onset PRE 0 %u, PRE 80 %u samples\n", on0, on1);
+    check("PLATE: PRE 80 ms delays the onset by ~80 ms", on1 > on0 + FS * 70u / 1000u && on1 < on0 + FS * 95u / 1000u);
+    {
+        static int32_t a[FS];
+        jreset(); song.g[G_RTYPE] = 5; song.g[G_RSIZE] = 100; song.g[G_RMOD] = 0; song.g[G_RPRE] = 0;
+        jrun(0, burst, FS, &s);
+        memcpy(a, jw, sizeof a);
+        jreset(); song.g[G_RTYPE] = 5; song.g[G_RSIZE] = 100; song.g[G_RMOD] = 127; song.g[G_RRATE] = 80;
+        jrun(0, burst, FS, &s);
+        for (s = 0, i = FS / 2u; i < FS; i++) s += (double)(a[i] - jw[i]) * (a[i] - jw[i]);
+        check("PLATE: MOD changes the tail", s > band_e(FS / 2u, FS) * 0.05);
+    }
+    song.g[G_RTYPE] = 0; song.g[G_RWIDE] = 0; song.g[G_RMOD] = 0; song.g[G_RPRE] = 0; song.g[G_RSIZE] = 90; song.g[G_RDAMP] = 60;
+    rev_clear(); fx.rtype = 0;
 }
 /* (0.6.76) core 1 reads a word wrong now and then (0x00200000 for 0). The buses' lines are 16-bit and clamped, so a
  * wrong word in their state gives a short burst, never a blow-up; ROOM's modulation offsets, wrong, are put back (they
@@ -923,11 +995,15 @@ int main(int argc, char **argv)
     test_cost();
     test_jiant();
     test_new_types();
+    test_plate();
     test_trip();
     if (argc > 1) {
         demo(argv[1], "spring_drums", 1, 0);
         demo(argv[1], "spring_pluck", 1, 1);
         demo(argv[1], "room_drums", 0, 0);
+        demo(argv[1], "plate_drums", 5, 0);
+        demo(argv[1], "plate_pluck", 5, 1);
+        demo(argv[1], "room_pluck", 0, 1);
     }
     printf("%s\n", bad ? "REVERB TEST FAILED" : "reverb test passed");
     return bad != 0;
