@@ -417,9 +417,9 @@ class SamplerPage(ui.View):   # (Pythonista: ui.ScrollView can't be subclassed: 
         self.slot.action = lambda s: setattr(self.slot2, 'selected_index', -1)
         self.slot2.action = lambda s: setattr(self.slot, 'selected_index', -1)
         self.sv.add_subview(self.slot); self.sv.add_subview(self.slot2)
-        self.name = ui.TextField(frame=(10, 462, W - 20, 34), placeholder='NAME (8 letters)', background_color=PANEL,
+        self.nm = ui.TextField(frame=(10, 462, W - 20, 34), placeholder='NAME (8 letters)', background_color=PANEL,
                                  text_color=FG, autocapitalization_type=ui.AUTOCAPITALIZE_ALL)
-        self.sv.add_subview(self.name)
+        self.sv.add_subview(self.nm)
         self.sendb = button('SEND TO THE FM-1', (10, 506, W - 20, 50), self.send, HOT)
         self.sv.add_subview(self.sendb)
         self.sv.add_subview(button('DELETE THIS SLOT', (10, 564, W - 20, 34), self.delete))
@@ -434,7 +434,7 @@ class SamplerPage(ui.View):   # (Pythonista: ui.ScrollView can't be subclassed: 
     # -- the sound
     def load(self, samples, rate, nm):
         self.src, self.rate = samples, rate
-        self.name.text = ''.join(c for c in os.path.splitext(os.path.basename(nm))[0].upper() if c.isalnum())[:8]
+        self.nm.text = ''.join(c for c in os.path.splitext(os.path.basename(nm))[0].upper() if c.isalnum())[:8]
         self.trim_moved(None)
 
     def pick(self, s):
@@ -545,7 +545,7 @@ class SamplerPage(ui.View):   # (Pythonista: ui.ScrollView can't be subclassed: 
             return
         self.busy = True
         try:
-            frames = P.sample_frames(self.slot_no(), self.name.text or 'SOUND', self.rate_out(), x)
+            frames = P.sample_frames(self.slot_no(), self.nm.text or 'SOUND', self.rate_out(), x)
             t0 = time.time()
             drain()
             for i, (seq, fr) in enumerate(frames):
