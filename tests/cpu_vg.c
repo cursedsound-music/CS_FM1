@@ -135,7 +135,8 @@ int main(void)
 {
     static const struct { const char *eng, *pre; uint32_t notes; } E[] = {
         {"ANALOG", "FAT BASS", 8}, {"PHASE", "STRING", 8}, {"LOFI", "BYTE BENT", 8}, {"VOICE", "WOW BASS", 4},
-        {"WHEEL", "ROCK DRIVE", 8}, {"DRUM", "", 8}, {"NOISE", "METAL", 8}, {"FM6", "BRASS", 8}, {"ANIMAL", "ROAR", 8}};
+        {"WHEEL", "ROCK DRIVE", 8}, {"DRUM", "", 8}, {"NOISE", "METAL", 8}, {"FM6", "BRASS", 8}, {"ANIMAL", "ROAR", 8},
+        {"SAMPLER", "LOOP", 8}};                         /* (0.9.5: slot 1 a 5 s sound, seeded below) */
     static const int16_t AM[AN_NMODE][8] = {           /* (0.8.3) ANIMAL's modes, every option on, no gaps */
         {AN_CMOS, 127, 127, 64, 63, 127, 0, 40}, {AN_PULSE, 127, 127, 26, 63, 127, 0, 22},
         {AN_WHSTL, 127, 127, 40, 63, 127, 0, 22}, {AN_WING, 127, 127, 64, 63, 127, 0, 22},
@@ -143,6 +144,18 @@ int main(void)
     static const char *const RT[6] = {"ROOM", "SPRING", "SHIMR", "RESO", "CLOUD", "PLATE"};
     char name[40];
     uint32_t i, e;
+    {                                                   /* (0.9.5) the sampler's slot 1: 5 s of ADPCM noise */
+        static smp_dir_t d;
+        uint32_t k, len = 5u * 22050u, nb = (len + SMP_BLK - 1u) / SMP_BLK * SMP_BLKB, ns = (nb + 4095u) / 4096u, x = 1u;
+        for (k = SMP_DATA0 * 4096u; k < SMP_SECS * 4096u; k++) { x = x * 1103515245u + 12345u; smp_ram[k] = (uint8_t)(x >> 16); }
+        memset(&d, 0, sizeof d);
+        memcpy(d.e[0].name, "CPUTEST ", 8);
+        d.e[0].len = len; d.e[0].rate = 22050u; d.e[0].nsec = (uint8_t)ns; d.e[0].valid = 1;
+        for (k = 0; k < ns; k++) d.e[0].sec[k] = (uint8_t)(SMP_DATA0 + k);
+        d.magic = SMP_MAGIC; d.n = SMP_NSLOT; d.seq = 1; d.crc = smp_crc(d.e, sizeof d.e);
+        memcpy(smp_ram, &d, sizeof d);
+        smp_boot();
+    }
     for (i = 0; i < sizeof E / sizeof E[0]; i++) {
         for (e = 0; e < NENGINES && !str_eq(ENGINES[e]->name, E[i].eng); e++)
             ;

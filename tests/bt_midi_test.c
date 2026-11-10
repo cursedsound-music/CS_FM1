@@ -59,8 +59,9 @@ static void test_in(void)
     nring = nseen = 0;
     IN(0x80, 0x81, 0xF0, 0x7D, 0x01, 0x02);                                  /* SysEx over two packets */
     IN(0x80, 0x03, 0x04, 0x82, 0xF7, 0x83, 0xFB);
-    check("in: SysEx over two packets decoded but dropped (USB only), the CONTINUE after it kept",
-          nseen == 4 && nring == 1 && ring[0] == P(0xF, 0xFB, 0, 0));
+    check("in: SysEx over two packets decoded and passed on whole (cursed-os 0.9.5: the remote's), the CONTINUE after it",
+          nseen == 4 && nring == 4 && ring[0] == P(4, 0xF0, 0x7D, 0x01) && ring[1] == P(4, 0x02, 0x03, 0x04) &&
+              ring[2] == P(5, 0xF7, 0, 0) && ring[3] == P(0xF, 0xFB, 0, 0));
     nring = nseen = 0;
     IN(0x80, 0x81, 0xF2, 0x10, 0x20, 0x82, 0xF6, 0x83, 0xF3, 0x01, 0x84, 0xFE, 0x85, 0xFF, 0x86, 0xF1, 0x12);
     check("in: SONG POSITION, TUNE REQUEST, SONG SELECT, ACTIVE SENSING, RESET, MTC dropped", nseen == 6 && nring == 0);

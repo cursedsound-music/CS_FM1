@@ -808,7 +808,19 @@ static void ed_service(void)
     const uint8_t *p;
     uint32_t n;
     ed_sync();                                             /* v2 pushes (while watched) */
-    if (!ota_frame_get(&p, &n) || n < 4u || p[0] != ED_HDR0 || p[1] != ED_HDR1 || p[2] != ED_HDR2)
+    if (!ota_frame_get(&p, &n))
+        return;
+    if (n >= 3u && p[0] == 0x7Du && p[1] == 0x63u && !rmt_fready) {   /* (cursed-os 0.9.5) the phone remote's, over USB:
+                                                         * into its frame, done in the main loop (cos_remote.c) */
+        uint32_t i;
+        for (i = 0; i < n && i < RMT_FMAX; i++) rmt_f[i] = p[i];
+        rmt_fn = (uint16_t)i;
+        RING_PUBLISH();
+        rmt_fready = 1;
+        ota_frame_done();
+        return;
+    }
+    if (n < 4u || p[0] != ED_HDR0 || p[1] != ED_HDR1 || p[2] != ED_HDR2)
         return;
     ed_w.last_ms = fm1_ms;                                 /* any request keeps WATCH alive */
     if (p[3] >= ED_UP_LIST) {                              /* large frames: handled in place, then freed */

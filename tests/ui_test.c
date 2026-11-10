@@ -491,10 +491,8 @@ static int test_sound_loads(void)
     apply_preset_to(t, 0);
     track_defaults_steps(t);
     project_load(0);
-    bad += check("saved SAMPLE PERC project: a DRUM track (its kit), the rest of the sound and every step kept",
-                 t->eng_req == ENGI_DRUM && t->preset == 0u && perc_kit(t) &&
-                 !memcmp(t->p, before.p, P_E0 * sizeof t->p[0]) && !memcmp(t->step, before.step, sizeof t->step));
-    bad += check("  its GM hits play as drums (kick, snare, closed hat on their lanes)", gm_hits_play(t));
+    bad += check("(cursed-os 0.9.5) a saved engine-4 track stays SAMPLER (no PERC kit: engine 4 is the sampler), its steps kept",
+                 t->eng_req == ENGI_SAMPLE && !memcmp(t->step, before.step, sizeof t->step));
     {   /* a user preset of SAMPLE PERC (UP_PUT from an older editor, or a bank read): DRUM, its kit */
         up_rec_t r;
         int16_t keep[P_COUNT];
@@ -511,9 +509,8 @@ static int test_sound_loads(void)
         memcpy(keep, t->p, sizeof keep);
         song.sel = (uint8_t)(t - trk);
         up_load(7);
-        bad += check("SAMPLE PERC user preset: loads as a DRUM track (its kit)", t->eng_req == ENGI_DRUM && perc_kit(t) &&
+        bad += check("(cursed-os 0.9.5) an engine-4 user preset loads as SAMPLER", t->eng_req == ENGI_SAMPLE &&
                      t->p[P_LEVEL] == keep[P_LEVEL]);
-        bad += check("  its GM hits play as drums", gm_hits_play(t));
         memset(up_rec(7), 0, sizeof r);
     }
     set_engine_of(t, 0);
@@ -521,8 +518,7 @@ static int test_sound_loads(void)
     bad += check("factory preset 4 of another engine stays that engine's", t->eng_req == 0u && t->preset == 4u);
     t->eng_req = t->engine = ENGI_SAMPLE;         /* (a SAMPLE sound arriving: SAMPLE is retired, set_engine_of gives ANALOG) */
     apply_preset_to(t, SMP_SET_PERC);             /* SAMPLE preset 4 (once PERC): the editor's PRESET, a favourite */
-    bad += check("SAMPLE preset 4 (once PERC): DRUM's kit", t->eng_req == ENGI_DRUM && t->preset == 0u && perc_kit(t) &&
-                 gm_hits_play(t));
+    bad += check("(cursed-os 0.9.5) SAMPLER's preset 4: its own (KEYS), no PERC kit", t->eng_req == ENGI_SAMPLE && t->preset == 4u);
     ui_power_on();
     host_legacy_sample_perc(&trk[3]);
     my_steps(&trk[3]);
@@ -5758,7 +5754,8 @@ static int test_fm4_retired(void)
 {
     int bad = 0, ok = 1;
     uint32_t i, k, e, total, seen = 0, all = ((1u << NENGINES) - 1u) & ~(1u << ENGI_DIGITAL) & ~(1u << ENGI_PHYS) &
-        ~(1u << ENGI_SAMPLE) & ~(1u << ENGI_TRIO);   /* (0.9.9-snd5: GRAIN's 8 and SLICE's 13 are STRING and ADD) */
+        ~(1u << ENGI_TRIO);   /* (0.9.9-snd5: GRAIN's 8 and SLICE's 13 are STRING and ADD; cursed-os 0.9.5: SAMPLE's 4
+                               * SAMPLER) */
     int16_t p[P_COUNT];
     uint8_t v[FP_SIZE + 1u];
     ui_power_on();
@@ -5770,8 +5767,8 @@ static int test_fm4_retired(void)
         if (e < NENGINES)
             seen |= 1u << e;
     }
-    bad += check("PRESETS: the list holds every engine's presets but the retired ones' (DIGITAL PHYS SAMPLE TRIO)",
-                 seen == all && NENG_SHOWN == NENGINES - 4u);
+    bad += check("PRESETS: the list holds every engine's presets but the retired ones' (DIGITAL PHYS TRIO; 0.9.5: SAMPLER's)",
+                 seen == all && NENG_SHOWN == NENGINES - 3u);
     go_page(GR_BROWSE);
     set_engine_of(TSEL, 0);
     for (i = 0, seen = 0; i < NENG_SHOWN; i++) {
@@ -12835,7 +12832,7 @@ static int test_power_on_099(void)
  * saved on 0.9.8's parts loads as it was saved, whatever the power-on */
 static int test_engine_order_099(void)
 {
-    static const char *const IDX[NENGINES] = {"ANALOG", 0, "PHASE", "LOFI", "-", "VOICE", "-", "WHEEL", "STRING", "-", "DRUM",
+    static const char *const IDX[NENGINES] = {"ANALOG", 0, "PHASE", "LOFI", "SAMPLER", "VOICE", "-", "WHEEL", "STRING", "-", "DRUM",
                                               "NOISE", "FM6", "ADD", "ANIMAL"};
     static const char *const PC[] = {"ANALOG", "FM6",
 #if FELUCCA_FM4

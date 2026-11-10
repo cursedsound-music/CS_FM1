@@ -58,6 +58,11 @@ static int bt_hw_seg(void) { return 1; }                /* (the host: everything
 BTAPP_FN void bt_midi_rx(uint32_t pkt)
 {
     uint32_t ie = fm1_icfg() & 0x200u;
+    if ((pkt & 15u) >= 4u && (pkt & 15u) <= 7u) {      /* (cursed-os 0.9.5) SysEx (bt_midi_accept passed only its
+                                                         * own CIN 5): the phone remote's frame (seq.c) */
+        rmt_sx_pkt(pkt);
+        return;
+    }
     fm1_irq_off();
     midi_enqueue(pkt, 1u);                              /* (full: midi_in_overflow, every note let go, as USB / TRS) */
     if (ie)

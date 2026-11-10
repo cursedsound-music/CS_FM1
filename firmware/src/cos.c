@@ -527,11 +527,12 @@ static void cos_proj_scan(void);
 static char *proj_name_buf(void);                       /* (project.c: the music's name, 13 bytes) */
 static void cos_lu_reset(void);                         /* (LOUDNESS's RESET, below) */
 static int song_open(uint32_t n);                       /* (song_main.c: song n's slots, the music kept) */
+#define COS_NSONG 4u                                    /* (0.9.5) the songs offered: 5..8's flash is the sampler's (cos_smp.h) */
 static const param_desc_t *cos_cdesc(uint32_t id, int16_t **vp)
 {
     static const char *const MO[] = {"KEYS", "CLOCK", "ALL", "OFF", 0};
     static const param_desc_t D[2] = {{"OUT CH", F_INT, 1, 16, 1, 0, 0}, {"SENDS", F_ENUM, 0, 3, 0, MO, 0}};
-    static const param_desc_t DS = {"SLOT", F_INT, 1, NSONG * 4, 1, 0, 0}, DN = {"NAME", F_INT, 0, 999, 0, 0, 0};
+    static const param_desc_t DS = {"SLOT", F_INT, 1, COS_NSONG * 4, 1, 0, 0}, DN = {"NAME", F_INT, 0, 999, 0, 0, 0};
     uint32_t t = song.sel % NTRK, v = favorites.factory[15][8u + t];
     static const char *const LD[] = {"ECO", "LITE", "FULL", 0};
     static const param_desc_t DT = {"TRACKS", F_INT, 4, NTRK, 5, 0, 0}, DL = {"LOAD", F_ENUM, 0, 2, 2, LD, 0};
@@ -784,7 +785,7 @@ static void cos_cput(uint32_t id, int32_t v)
                                                          * hanging in the computer across the change) */
         settings_save();
     } else if (id == CC_SLOT) {
-        uint32_t w = (uint32_t)clamp(v, 1, NSONG * 4) - 1u;
+        uint32_t w = (uint32_t)clamp(v, 1, COS_NSONG * 4) - 1u;
         if (w / 4u != song_cur) {                        /* (another song's slot: that song opened, the music kept) */
             if (song.playing) { cos_say("STOP TO CHANGE SONG"); return; }
             if (song_open(w / 4u)) return;
@@ -1480,8 +1481,10 @@ static void cos_pg_follow(void)
 }
 
 static int cos_idle_gate(void);                          /* (the IDLE screen, below) */
+#include "cos_remote.c"                                 /* (0.9.5) the phone remote: channel 16, its SysEx, the sampler's */
 static __attribute__((noinline)) void cos_input(void)
 {
+    cos_remote_poll();                                   /* (0.9.5: the phone's, the IDLE screen up or not) */
     if (cos_idle_gate()) return;                         /* (the IDLE screen: shown, or its waking touch) */
     uint32_t released = 0, pressed = fm1_input_edges(&released), notes = fm1_input_note_edges(), k, b;
     int scl_held = (int)((fm1_in.buttons >> panel.btn[B_SCL]) & 1u);
@@ -1697,7 +1700,8 @@ static __attribute__((noinline)) void cos_input(void)
             cos_si_key(k);                               /* (STEP INPUT: the note into the cursor's step) */
         } else if (cz.mode == CM_PROJ) {
             if (w < 4u) cz.slot = (uint8_t)w;
-            else if (w >= 8u && !chain_busy()) {           /* (white 9 .. 16: the set list's songs 1 .. 8) */
+            else if (w >= 8u && w < 8u + COS_NSONG && !chain_busy()) {   /* (white 9 .. 12: the set list's songs 1 .. 4;
+                                                         * 5 .. 8 are the sampler's memory, 0.9.5) */
                 if (!song_go_live(w - 8u)) { cz.pn_ok = 0; cos_proj_scan(); }
             }
         } else if (cz.mode == CM_HOME) {                 /* white 1..6 the track, 9..12 the sections A..D on the bar; black
@@ -2597,6 +2601,33 @@ static void cos_body_sound(void)
         cos_tx(20, 124, "OCT+ NEW WORDS  OCT- BEFORE", C_DIM);
         return;
     }
+    if (cz.mode == CM_SRC && trk_engp(t) == &ENG_SAMPLER && cos_page()->id[0] == P_E0) {   /* (0.9.5) SAMPLER: the sound,
+                                                         * its length, the part a note plays */
+        const smp_ent_t *e = smp_ent((uint32_t)clamp(t->p[P_E0], 0, SMP_NSLOT - 1));
+        b[0] = 'S'; fmt_int(b + 1, clamp(t->p[P_E0], 0, SMP_NSLOT - 1) + 1); str_cpy(b + str_len(b), " ", 2);
+        if (!e) {
+            str_cpy(b + str_len(b), "EMPTY", 6);
+            cos_px(12, 40, b, C_MID, CZ_TALL);
+            cos_tx(12, 76, "SEND ONE FROM THE PHONE:", C_DIM);
+            cos_tx(12, 90, "CURSED_REMOTE.PY, SAMPLER", C_DIM);
+            return;
+        }
+        {
+            char nm[9];
+            uint32_t k, a = 0, z = 0, ms = e->len * 10u / (e->rate / 100u ? e->rate / 100u : 1u);
+            for (k = 0; k < 8u; k++) nm[k] = e->name[k];
+            nm[8] = 0;
+            str_cpy(b + str_len(b), nm, 10);
+            cos_px(12, 40, b, C_FG, CZ_TALL);
+            fmt_int(b, (int32_t)(ms / 1000u)); str_cpy(b + str_len(b), ".", 2);
+            fmt_int(nm, (int32_t)(ms % 1000u / 100u)); str_cpy(b + str_len(b), nm, 3); str_cpy(b + str_len(b), " S", 3);
+            cos_tx(12, 72, b, C_MID);
+            smp_span(t, e, 60, &a, &z);                  /* (the part a C4 plays: START, LENGTH) */
+            cv_frame(12, 88, 216, 14, C_DIM);
+            cv_rect(13 + (int32_t)(a * 214u / e->len), 89, 1 + (int32_t)((z - a) * 214u / e->len), 12, C_RED);   /* (32 bits: under 2^21 samples) */
+        }
+        return;
+    }
     if (cz.mode == CM_SRC && cos_page()->id[0] >= P_M1SRC && cos_page()->id[0] <= P_M4SRC) {   /* MOD: the matrix */
         uint32_t k, cur = (uint32_t)(cos_page()->id[0] - P_M1SRC) / 3u;
         for (k = 0; k < 4u; k++) {
@@ -3129,7 +3160,7 @@ dials:
 /* the splash (ui_draw.c draw_splash / splash_write under COS_SLIM; main.c's boot loop calls it every ~4 ms for
  * SPL_WRITE + SPL_HOLD ms): black, a few still stars, the name 2x, the version, a 16-block bar filling like a pattern
  * (the block being filled red), READY. Drawn whole once, then only the bar's strip when a block fills */
-#define COS_VERSION "0.9.4"
+#define COS_VERSION "0.9.5"
 static void cos_px2(int32_t x, int32_t y, const char *s, uint16_t c)      /* (the face 2 x 2) */
 {
     int32_t r, b, b0;

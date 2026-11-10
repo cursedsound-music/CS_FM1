@@ -21,6 +21,24 @@ int main(int argc, char **argv)
     sk_seed = argc > 2 ? (uint32_t)atoi(argv[2]) | 1u : 0x9E3779B9u;
     ui_power_on();
     cz.flip = 1;                                        /* (cursed-os's UI) */
+    {                                                   /* (0.9.5) the sampler's memory: three sounds of random bytes
+                                                         * (any byte is ADPCM), one short, one long, one across sectors */
+        static smp_dir_t d;
+        uint32_t k, s2 = SMP_DATA0;
+        for (k = SMP_DATA0 * 4096u; k < SMP_SECS * 4096u; k++) smp_ram[k] = (uint8_t)rnd(256u);
+        memset(&d, 0, sizeof d);
+        for (k = 0; k < 3u; k++) {
+            static const uint32_t LEN[3] = {300u, 40000u, 90000u};
+            uint32_t nb = (LEN[k] + SMP_BLK - 1u) / SMP_BLK * SMP_BLKB, ns = (nb + 4095u) / 4096u, j;
+            memcpy(d.e[k * 5u].name, "SOAKTEST", 8);
+            d.e[k * 5u].len = LEN[k]; d.e[k * 5u].rate = (uint16_t)(k ? 22050u : 8000u); d.e[k * 5u].nsec = (uint8_t)ns;
+            for (j = 0; j < ns; j++) d.e[k * 5u].sec[j] = (uint8_t)(s2++);
+            d.e[k * 5u].valid = 1;
+        }
+        d.magic = SMP_MAGIC; d.n = SMP_NSLOT; d.seq = 1; d.crc = smp_crc(d.e, sizeof d.e);
+        memcpy(smp_ram, &d, sizeof d);
+        smp_boot();
+    }
     frames = minutes * 60u * 1000u / 16u;
     for (f = 0; f < frames; f++) {
         uint32_t r = rnd(1000u), b;
@@ -45,6 +63,17 @@ int main(int argc, char **argv)
             host_enc[panel.enc[role]] += (rnd(2u) ? s : -s) * panel.dir[role];
         } else if (r < 222u) {
             transport_req = song.playing ? 2u : 1u;
+        } else if (r >= 223u && r < 233u) {           /* (0.9.5) the phone remote: a channel-16 CC, now and then a frame
+                                                         * of random bytes (a TEXT, a sampler's, garbage) */
+            rmt_cc_put(rnd(128u), rnd(128u));
+            if (r == 223u && !rmt_fready) {
+                uint32_t k, n = 3u + rnd(300u);
+                rmt_f[0] = 0x7Du; rmt_f[1] = 0x63u;
+                for (k = 2; k < n; k++) rmt_f[k] = (uint8_t)rnd(128u);
+                if (rnd(2u)) rmt_f[2] = (uint8_t)(rnd(2u) ? 0x01u : 0x10u + rnd(4u));
+                rmt_fn = (uint16_t)n;
+                rmt_fready = 1;
+            }
         } else if (r == 222u && rnd(20u) == 0u) {       /* a long pause: hands off, the IDLE screen comes up */
             uint32_t p = 60000u + rnd(240000u), t;
             fm1_in.buttons = fm1_in.notes = 0; held = notes = 0;

@@ -13,11 +13,14 @@
 #endif
 
 /* a received USB-MIDI event (the stack's decoder: cable 0, ble_midi.h) -> what goes into the input ring, 0 dropped:
- * channel messages, the clock, START CONTINUE STOP (USB's midi_in_event; no SysEx over Bluetooth: the editor and the
- * updater use USB) */
+ * channel messages, the clock, START CONTINUE STOP (USB's midi_in_event); (cursed-os 0.9.5) SysEx's packets (CIN 4..7)
+ * passed on whole: the app's bt_midi_rx gives them to the phone remote's frame (seq.c midi_control.c rmt_sx_pkt), not
+ * to the ring (the editor and the updater stay on USB) */
 static inline uint32_t bt_midi_accept(uint32_t pkt)
 {
     uint32_t cin = pkt & 15u, st = pkt >> 8 & 0xFFu;
+    if (cin == 4u || cin == 6u || cin == 7u || (cin == 5u && st == 0xF7u))   /* (CIN 5 is also TUNE REQUEST's) */
+        return pkt;
     if (cin == 0xFu)
         return st == 0xF8u || st == 0xFAu || st == 0xFBu || st == 0xFCu ? 0xFu | st << 8 : 0u;
     return cin >= 8u && cin <= 0xEu && st >> 4 == cin && !(pkt & 0x80800000u) ? pkt : 0u;

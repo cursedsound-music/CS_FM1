@@ -88,7 +88,7 @@ static int settings_import(persist_t *p, int n)
                                                    * midi_learn.c) */
     }
 #endif
-#ifdef SMP_SET_PERC
+#if 0                                                  /* (cursed-os: off: row 4 holds ACID's stars, favorites.c fav_row) */
     if ((favorites.factory[ENGI_SAMPLE][0] >> SMP_SET_PERC) & 1u) {   /* SAMPLE's PERC (preset 4, retired): DRUM's */
         favorites.factory[ENGI_DRUM][0] |= 1u;                         /* kit (core.h drum_from_perc) */
         favorites.factory[ENGI_SAMPLE][0] &= (uint8_t)~(1u << SMP_SET_PERC);

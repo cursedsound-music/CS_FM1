@@ -1501,7 +1501,7 @@ static void apply_preset_to(track_t *t, uint32_t pi)
         return;
     }
 #endif
-    if (trk_eng(t) == ENGI_SAMPLE && pi == SMP_SET_PERC) {   /* SAMPLE preset 4 was PERC (retired, a stored */
+    if (0 && trk_eng(t) == ENGI_SAMPLE && pi == SMP_SET_PERC) {   /* (cursed-os 0.9.5: off, SAMPLER's) SAMPLE preset 4 was PERC (retired, a stored */
         set_engine_of(t, ENGI_DRUM);                  /* number: the editor's PRESET, a favourite): DRUM's kit */
         return;                                       /* (core.h drum_from_perc) */
     }

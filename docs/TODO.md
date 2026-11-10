@@ -36,13 +36,14 @@ Planned work. Done items move to the commit log.
 - **Tempo and key synced to Ableton.** The tempo works now: GLO > MIDI > CLOCK USB, and in Live the FM-1 as a
   clock destination (Preferences > Link/Tempo/MIDI: its output port's Sync on); START / STOP follow. Left: the key
   (Live has no key message: a CC or program change map from a Max for Live device, or the FM-1 sending its key).
-- **A sampler over Bluetooth.** Samples sent from the phone or computer over Bluetooth into the flash (the BLE
-  stack is in the Bluetooth segment already); a SAMPLER engine to play them. Check the flash room and the transfer
-  speed (BLE: slow, ~10..30 KB/s).
-- **Phone control over Bluetooth MIDI.** BLE-MIDI in and out exists (V10.13: "JIANT FM-1"); what is left: a CC map
-  of cursed-os's pages (the knobs, the FX pad, the mutes) and an app or a TouchOSC / Lemur layout for it.
-- **Words from the phone.** Custom text typed on the phone sent to VOICE over Bluetooth (BLE-MIDI SysEx, or a GATT
-  text characteristic), spoken through VOICE's English dictionary / letter rules.
+- ~~A sampler over Bluetooth~~ (0.9.5): the SAMPLER engine (engine 4, PERC's place), 16 slots in the flash of songs
+  5–8 (~11 s at 22 kHz, IMA ADPCM), sent by tools/cursed_remote.py (Pythonista) over BLE-MIDI SysEx, each frame
+  ACKed. Left: a computer sender (the same frames over USB), a sample editor on the FM-1, more room (the BLE segment's
+  spare flash?).
+- ~~Phone control over Bluetooth MIDI~~ (0.9.5): channel 16's CC map (cos_remote.c) and tools/cursed_remote.py.
+  Left: try it on GG's iPhone (written blind: the CoreMIDI and Bluetooth window code untested), a TouchOSC layout.
+- ~~Words from the phone~~ (0.9.5): SysEx TEXT into the VOICE track's lyric.
+- Recording what another app plays on the iPhone: iOS doesn't allow it (Files or the mic instead).
 
 ## VOICE (GG, 2026-11-10)
 

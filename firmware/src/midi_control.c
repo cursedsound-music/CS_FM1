@@ -403,6 +403,52 @@ static volatile uint8_t cos_vj_ch;
 static volatile uint8_t cos_mc_ch, cos_mc_cc[4] = {74, 75, 84, 85}, cos_mc_dir, cos_mc_sent[4];
 /* (cursed-os) .. and MORPH's A-B as a CC on the same channel: cos_morph.c's cos_mo_cc, cos_mo_in */
 
+/* (cursed-os 0.9.5) the phone remote (tools/cursed_remote.py: Pythonista over Bluetooth MIDI; USB alike), the ISR's
+ * part: channel 16's CCs into a ring (cos_remote.c does them in the main loop, as the buttons would), and its SysEx
+ * frames (F0 7D 63 .. F7, BLE: bt.c bt_midi_rx; USB: editor.c ed_service) into one frame buffer the main loop takes
+ * (rmt_fready; a frame that comes while one waits is dropped: the phone resends what it got no ACK for) */
+#define RMT_CCN 64u
+static volatile uint16_t rmt_cc_q[RMT_CCN];
+static volatile uint32_t rmt_cc_w, rmt_cc_r;
+static void rmt_cc_put(uint32_t cc, uint32_t v)
+{
+    if (rmt_cc_w - rmt_cc_r < RMT_CCN) {
+        rmt_cc_q[rmt_cc_w % RMT_CCN] = (uint16_t)((cc & 127u) << 8 | (v & 127u));
+        RING_PUBLISH();
+        rmt_cc_w++;
+    }
+}
+#define RMT_FMAX 320u                                     /* (a DATA frame: 7 + 256 bytes packed 7 to 8: 300) */
+static uint8_t rmt_f[RMT_FMAX];
+static volatile uint16_t rmt_fn;
+static volatile uint8_t rmt_fready;
+static uint16_t rmt_fpos;
+static uint8_t rmt_fon;
+static void rmt_sx_byte(uint32_t b)                       /* (BLE's interrupts: one producer) */
+{
+    if (b >= 0xF8u)
+        return;
+    if (b == 0xF0u) { rmt_fon = !rmt_fready; rmt_fpos = 0; return; }
+    if (!rmt_fon)
+        return;
+    if (b == 0xF7u) {
+        rmt_fon = 0;
+        if (rmt_fpos >= 3u && rmt_f[0] == 0x7Du && rmt_f[1] == 0x63u) {
+            rmt_fn = rmt_fpos;
+            RING_PUBLISH();
+            rmt_fready = 1;
+        }
+        return;
+    }
+    if (b & 0x80u || rmt_fpos >= RMT_FMAX) { rmt_fon = 0; return; }   /* (another status, too long: not ours) */
+    rmt_f[rmt_fpos++] = (uint8_t)b;
+}
+static void rmt_sx_pkt(uint32_t pkt)                      /* a USB-MIDI SysEx packet (CIN 4..7) */
+{
+    uint32_t cin = pkt & 15u, k, nb = cin == 4u || cin == 7u ? 3u : cin == 6u ? 2u : 1u;
+    for (k = 0; k < nb; k++)
+        rmt_sx_byte((pkt >> (8u * (k + 1u))) & 0xFFu);
+}
 /* Keep the occasional controller/panic dispatch outside the hot rendering loop. Channel voice messages only
  * (realtime and clock are handled in events_block, SysEx never reaches here). With ROUT CH1-6 channels
  * 7..16 are ignored entirely: notes, bend, CCs (CC1/11/64, RPN, and the CC120/121/123 panic and reset),
@@ -430,6 +476,10 @@ static void __attribute__((noinline)) midi_event(uint32_t st, uint32_t ch, uint3
             }
         if (hit)
             return;
+    }
+    if (st == 0xB0u && ch == 15u) {                    /* (cursed-os 0.9.5) channel 16's CCs: the phone remote's */
+        rmt_cc_put(d1, d2);
+        return;
     }
     if (st == 0xC0u && ch == 15u) {                    /* (0.6.80) channel 16's PROGRAM CHANGE: a section, a project */
         midi_song_req = (uint8_t)(d1 + 1u);

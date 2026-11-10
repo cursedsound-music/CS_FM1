@@ -7,6 +7,8 @@
 #include "eng_phase.c"
 #include "eng_lofi.c"
 #include "eng_formant.c"
+#include "cos_smp.h"             /* (cursed-os 0.9.5) the sampler's memory */
+#include "eng_sampler.c"          /* (cursed-os 0.9.5) SAMPLER (engine 4): the phone's sounds */
 #include "eng_wheel.c"
 #include "eng_drum.c"           /* DRUM: the 8-lane DRUM-X kit (drumx_voice.c) */
 #include "eng_noise.c"
@@ -55,7 +57,7 @@ static const engine_t *const ENGINES[NENGINES] = {
 #endif
     &ENG_PHASE,                  /* 2 */
     &ENG_LOFI,                   /* 3 */
-    &ENG_GONE,                   /* 4: reserved (SAMPLE, retired in JIANT) */
+    &ENG_SAMPLER,                /* 4 (cursed-os 0.9.5) SAMPLER: the phone's sounds (SAMPLE's number, retired in JIANT) */
     &ENG_FORMANT,                /* 5 VOICE (eng_formant.c: "voice" is a sounding note in voice.c) */
     &ENG_GONE,                   /* 6: reserved (TRIO, folded into ANALOG in JIANT 0.4: core.h analog_from_trio) */
     &ENG_WHEEL,                  /* 7 */
@@ -88,6 +90,7 @@ static const uint8_t ENGINE_ORDER[NENG_SHOWN] = {
     ENGI_PHASE, ENGI_WHEEL,      /* PHASE WHEEL */
     ENGI_NOISE,                  /* NOISE */
     ENGI_STRING, ENGI_ADD,       /* (0.9.9-snd5) STRING ADD */
+    ENGI_SAMPLE,                 /* (cursed-os 0.9.5) SAMPLER */
 #if FELUCCA_FM4
     ENGI_DIGITAL,                /* DIGITAL (retired, FELUCCA_FM4 builds only): after the rest */
 #endif
@@ -103,6 +106,7 @@ static const uint8_t ENGINE_PC_ORDER[NENG_SHOWN] = {
     ENGI_PHASE, ENGI_LOFI, ENGI_VOICE, ENGI_WHEEL, ENGI_NOISE, ENGI_DRUM, ENGI_ANIMAL,
     ENGI_STRING, ENGI_ADD,       /* (0.9.9-snd5: after ANIMAL, every number before kept) */
     ENGI_ACID,                   /* (cursed-os) */
+    ENGI_SAMPLE,                 /* (cursed-os 0.9.5) SAMPLER */
 };
 
 /* the engines one can pick (engine 1 only with FELUCCA_FM4), in ENGINE_ORDER: eng_ok(e), the n-th of them
