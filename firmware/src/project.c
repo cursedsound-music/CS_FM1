@@ -2652,6 +2652,43 @@ static void autosave_poll(void)
 #endif
 }
 
+/* (cursed-os 0.9.2) a crash in a jam: the music as it was written to the autosave by the crash screen (main.c
+ * fm1_fault, the sound already stopped, interrupts off: flash_*'s polled writes, two copies, the header last), the next
+ * power-on brings it back and plays on if it played (autosave_boot 2, main.c), whatever MENU > RESTORE LAST says. Not
+ * for a crash in a run's first 20 s (a power-on that brought back music that crashes it: bootguard's case), not twice
+ * in one crash (a fault inside it: CK_BUSY left set, skipped). crash_keep_st in .noinit: CK_DONE / CK_PLAY until that
+ * power-on takes it */
+#define CK_BUSY 0x4B42u
+#define CK_DONE 0x4B44u
+#define CK_PLAY 0x4B50u
+static uint32_t crash_keep_st __attribute__((section(".noinit.zcos")));   /* (after every other .noinit: none moves) */
+static __attribute__((noinline)) int crash_keep(uint32_t uptime_ms)
+{
+#if FELUCCA_FLASH
+    uint32_t play = song.playing;
+    if (!flash_ok || crash_keep_st == CK_BUSY || uptime_ms < 20000u) { crash_keep_st = 0; return 0; }
+    crash_keep_st = CK_BUSY;
+    project_capture(&proj_scratch);
+    proj_wire_gen++;
+    if (proj_pack(&proj_wire, &proj_scratch) && st_save(OBJ_AUTOSAVE, &proj_wire, sizeof proj_wire) == 0) {
+        crash_keep_st = play ? CK_PLAY : CK_DONE;
+        return 1;
+    }
+#else
+    (void)uptime_ms;
+#endif
+    crash_keep_st = 0;
+    return 0;
+}
+/* power-on: 1 the crash's music to bring back (2: and it played); taken (cleared) */
+static uint32_t crash_resume(uint32_t crashed)
+{
+    uint32_t st = crash_keep_st;
+    crash_keep_st = 0;
+    if (!crashed || bootguard.failed) return 0;
+    return st == CK_PLAY ? 2u : st == CK_DONE ? 1u : 0u;
+}
+
 /* power-on, after the defaults (main.c): the autosave becomes the music when `allowed` (no crash, hang or failed boot
  * before) and RESTORE LAST is ON; an autosave that does not load (none, torn, damaged, another format) is ignored.
  * The music now (restored or not) is what is saved: nothing is written until it changes. 1 = restored */
@@ -2659,14 +2696,14 @@ static int autosave_boot(int allowed)
 {
     int rc = 0;
 #if FELUCCA_FLASH
-    if (flash_ok && allowed && (ui_prefs & PREF_RESTORE_ON)) {
+    if (flash_ok && allowed && (allowed == 2 || (ui_prefs & PREF_RESTORE_ON))) {   /* (2: after a crash, crash_keep) */
         int n;
         proj_wire_gen++;
         n = st_load(OBJ_AUTOSAVE, &proj_wire, sizeof proj_wire);
         if (n > 0 && proj_import(&proj_scratch, &proj_wire, n)) {
             proj_bound(&proj_scratch);
             if (!project_restore_runtime(&proj_scratch)) {
-                ui_message("RESTORED");
+                ui_message(allowed == 2 ? "RECOVERED" : "RESTORED");
                 rc = 1;
             }
         }

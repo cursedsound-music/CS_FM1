@@ -44,7 +44,7 @@ enum { CC_OUTCH, CC_MOUT, CC_CLOCK, CC_SLOT, CC_TRKS, CC_LOAD, CC_COMP, CC_CATK,
        CC_X2, CC_X2E = CC_X2 + 15, CC_OCT, CC_KICK, CC_KICKE = CC_KICK + 4, CC_LN0, CC_LNE = CC_LN0 + 7, CC_KDRV, CC_BT,
        CC_L1SYNC, CC_L1RATE, CC_L1WAVE, CC_L1MODE, CC_L1PH, CC_L1FADE, CC_L2SYNC, CC_L2RATE, CC_BPM,
        CC_CIN, CC_CTHR, CC_CRAT, CC_CMK, CC_CKNEE, CC_CSC, CC_CMIX, CC_LIN, CC_LREL, CC_LVL, CC_MUTEQ, CC_PCCH, CC_PCOUT, CC_VJCH, CC_EQL, CC_EQM, CC_EQH, CC_MAC0, CC_MAC3 = CC_MAC0 + 3, CC_RB0, CC_RB3 = CC_RB0 + 3, CC_MOPOS, CC_MOBARS, CC_LVLEN, CC_LVRATE, CC_LVDN, CC_LVSH, CC_MCCH, CC_MCCC, CC_MCDIR, CC_MCMAP, CC_MC0, CC_MC3 = CC_MC0 + 3, CC_MOCC,
-       CC_NAME, CC_IDLE, CC_SCT, CC_SCG, CC_SCTR, CC_SPV, CC_SPR, CC_SPS, CC_SCALE, CC_QUANT, CC_DJF, CC_DSEL, CC_DLV, CC_DWAV, CC_DFLT, CC_DBT, CC_DDRV, CC_DLAY, CC_DFB, CC_DSNP, CC_DE0, CC_DEE = CC_DE0 + DE_N - 1 };
+       CC_NAME, CC_IDLE, CC_SCT, CC_SCG, CC_SCTR, CC_SPV, CC_SPR, CC_SPS, CC_SCM, CC_SPSRC, CC_SCZ, CC_LUT, CC_LUR, CC_SCALE, CC_QUANT, CC_DJF, CC_DSEL, CC_DLV, CC_DWAV, CC_DFLT, CC_DBT, CC_DDRV, CC_DLAY, CC_DFB, CC_DSNP, CC_DE0, CC_DEE = CC_DE0 + DE_N - 1 };
 _Static_assert(CC_DEE < 0xFEu, "the CK_COS ids fit a page's byte (0xFE, 0xFF: OCTAVE, none)");
 _Static_assert(X2_N <= 16u, "CC_X2 .. CC_X2E: room for every trk_x2 field");
 #define ID_MUTEQ 0xFCu                          /* (HOME 2's: MUTE Q, cos_knob) */
@@ -131,12 +131,15 @@ static const cpg_t CZP_AMPA[] = {{"AMP", CK_TRK, {P_ATK, P_DEC, P_SUS, P_REL}},
                                 {"LFO 2", CK_COS, {CC_L2SYNC, CC_L2RATE, CC_X2 + X2_WAVE, CC_X2 + X2_L2MODE}},
                                 {"LFO 2+", CK_COS, {CC_X2 + X2_L2PH, CC_X2 + X2_F2L, X, X}}};
 static const cpg_t CZP_DRONE[] = {{"DRONE", CK_TRK, {P_LEVEL, P_FCUT, P_LRATE, P_LD_FLT}}, {"SPACE", CK_TRK, {P_ATK, P_REL, P_DLY, P_REV}}};
+#define CZ_TABS 16u                                 /* (the most pages a mode may have: cos_tabs's names) */
 static const cpg_t CZP_FX[] = {{"DJ", CK_COS, {CC_DJF, CC_EQL, CC_EQM, CC_EQH}},   /* (the mixer's: DJ FILTER, the ISOLATOR) */
                               {"SEND", CK_TRK, {P_DIST, P_CHOR, P_DLY, P_REV}}, {"DIST", CK_TRK, {P_DTYPE, P_DTONE, X, X}},
                               {"DELAY", CK_GLO, {G_DTIME, G_DFDBK, G_DCOLOR, G_DPING}},    /* (the buses: every track's) */
                               {"DELAY 2", CK_GLO, {G_DMIX, G_DDRV, G_DTYPE, G_DMOD}},     /* (the tape echo: MOD its wow and flutter;
                                                          * FEEDBK past 100 runs away into the clip: the dub spin) */
+                              {"DELAY 3", CK_GLO, {G_WIDTH, G_DPIT, G_DSPRY, X}},   /* (the right echo later; the GRAIN delay) */
                               {"REVERB", CK_GLO, {G_RSIZE, G_RDAMP, G_RPRE, G_RTYPE}},
+                              {"REVERB 2", CK_GLO, {G_RMOD, G_RRATE, G_RFILT, G_RWIDE}},   /* (its movement, input tone, width) */
                               {"RUMBLE", CK_COS, {CC_RB0, CC_RB0 + 1u, CC_RB0 + 2u, CC_RB3}}};   /* (rumble.c: the kick's dark tail) */
 static const cpg_t CZP_GENA[] = {{"ACID", CK_AC, {AK_DENS, AK_SLIDE, AK_ACC, ID_OCT}}, {"ACID 2", CK_AC, {AK_STEPS, AK_NOTES, AK_TIE, AK_OCT}},
                                 {"ACID 3", CK_AC, {AK_EVERY, AK_AMT, AK_ROOT, AK_SCALE}}, {"ACID 4", CK_AC, {AK_LOCK, AK_ROT, X, X}}};
@@ -153,8 +156,10 @@ static const cpg_t CZP_GENM[] = {{"ACID", CK_AC, {AK_DENS, AK_SLIDE, AK_ACC, ID_
 static const cpg_t CZP_GENE[] = {{"EUCLID", CK_EU, {EK_HITS, EK_STEPS, EK_ROT, EK_K4}}, {"MODES", CK_EU, {EK_M0, EK_M0 + 1u, EK_M0 + 2u, EK_M0 + 3u}},
                                 {"MUTATE", CK_EU, {EK_U0, EK_U0 + 1u, EK_U0 + 2u, EK_U0 + 3u}}};
 static const cpg_t CZP_MIX[] = {{"MIX", CK_TRK, {P_LEVEL, P_PAN, P_GLIDE, P_MUTE}},
-                               {"SCOPE", CK_COS, {CC_SCT, CC_SCG, CC_SCTR, X}},   /* (the master's wave, its spectrum) */
-                               {"SPECTRUM", CK_COS, {CC_SPV, CC_SPR, CC_SPS, X}},
+                               {"SCOPE", CK_COS, {CC_SCT, CC_SCG, CC_SCTR, CC_SCM}},   /* (the output: its wave, spectrum) */
+                               {"SPECTRUM", CK_COS, {CC_SPV, CC_SPR, CC_SPS, CC_SPSRC}},
+                               {"STEREO", CK_COS, {CC_SCZ, X, X, X}},
+                               {"LOUDNESS", CK_COS, {CC_LUT, CC_LUR, X, X}},
                                {"COMP", CK_COS, {CC_COMP, CC_CTHR, CC_CRAT, CC_CMK}},
                                {"COMP 2", CK_COS, {CC_CIN, CC_CATK, CC_CREL, CC_CKNEE}},
                                {"COMP 3", CK_COS, {CC_CSC, CC_CMIX, X, X}},
@@ -222,7 +227,12 @@ static int cos_dead(const track_t *t, uint32_t id);      /* (below: a parameter 
 static void cos_pages(uint32_t m, const cpg_t **p, uint32_t *n)
 {
     static const cpg_t *const P[CM_N] = {CZP_HOME, CZP_TRIG, CZP_SRC, CZP_AMP, CZP_DRONE, CZP_FX, CZP_GENA, CZP_MIX, CZP_KEY, CZP_PROJ};
-    static const uint8_t N[CM_N] = {6, 4, 9, 9, 2, 7, 4, 12, 1, 1};
+    static const uint8_t N[CM_N] = {6, 4, 9, 9, 2, 9, 4, 14, 1, 1};   /* (each at most CZ_TABS: cos_tabs) */
+    _Static_assert(NELEM(CZP_HOME) == 6 && NELEM(CZP_TRIG) == 4 && NELEM(CZP_SRC) == 9 && NELEM(CZP_AMP) == 9 &&
+                   NELEM(CZP_DRONE) == 2 && NELEM(CZP_FX) == 9 && NELEM(CZP_GENA) == 4 && NELEM(CZP_MIX) == 14 &&
+                   NELEM(CZP_KEY) == 1 && NELEM(CZP_PROJ) == 1 && NELEM(CZP_SRCD) <= CZ_TABS && NELEM(CZP_GENS) <= CZ_TABS &&
+                   NELEM(CZP_SRCV) == 10 && NELEM(CZP_AMPA) == 9 && NELEM(CZP_SRCN) == 9,
+                   "N: the pages each mode has (0.9.2: a count past its list read past it)");
     int vo = m == CM_SRC && trk_engp(TSEL) == &ENG_FORMANT;
     if (m == CM_SRC && cos_kit()) { *p = CZP_SRCD; *n = NELEM(CZP_SRCD); return; }
     if (m == CM_TRIG && cos_kit()) { *p = CZP_TRIGK; *n = NELEM(CZP_TRIGK); return; }   /* (a kit: KICK, LEVELS, its own ..) */
@@ -509,10 +519,12 @@ static uint32_t cos_idle_min(void)
     return b & 0x80u ? (b & 0x7Fu) % 61u : OLD[b < 7u ? b : 0u];
 }
 /* GLO > SCOPE, SPECTRUM: their knobs (not kept; cos_scope_prep, cos_spec_prep) */
-static uint8_t sc_time = 1, sc_gain = 0, sc_trig = 1, sp_view, sp_range = 1, sp_speed = 1;   /* the pages' knobs (not kept) */
+static uint8_t sc_time = 1, sc_gain = 0, sc_trig = 1, sc_mode = 0, sp_view, sp_range = 1, sp_speed = 1, sp_src, sc_zoom,
+               lu_rst, lu_tgt = 3;   /* the pages' knobs (not kept) */
 static void cos_name_pick(void);                        /* (SAVE's NAME, below) */
 static void cos_proj_scan(void);
 static char *proj_name_buf(void);                       /* (project.c: the music's name, 13 bytes) */
+static void cos_lu_reset(void);                         /* (LOUDNESS's RESET, below) */
 static int song_open(uint32_t n);                       /* (song_main.c: song n's slots, the music kept) */
 static const param_desc_t *cos_cdesc(uint32_t id, int16_t **vp)
 {
@@ -524,14 +536,20 @@ static const param_desc_t *cos_cdesc(uint32_t id, int16_t **vp)
     static const param_desc_t DT = {"TRACKS", F_INT, 4, NTRK, 5, 0, 0}, DL = {"LOAD", F_ENUM, 0, 2, 2, LD, 0};
     if (id == CC_SLOT) { cz.cc_v[3] = (int16_t)(song_cur * 4u + cz.slot + 1u); *vp = &cz.cc_v[3]; return &DS; }
     if (id == CC_NAME) { cz.cc_v[3] = (int16_t)cz.nm_n; *vp = &cz.cc_v[3]; return &DN; }
-    if (id >= CC_SCT && id <= CC_SPS) {                  /* (GLO > SCOPE, SPECTRUM: how they show, not kept) */
-        static const char *const TM[] = {"5MS", "11MS", "23MS", "46MS", 0}, *const GN[] = {"AUTO", "X1", "X2", "X4", "X8", 0};
+    if (id >= CC_SCT && id <= CC_LUR) {                  /* (GLO > SCOPE .. LOUDNESS: how they show, not kept) */
+        static const char *const TM[] = {"5MS", "11MS", "44MS", "87MS", 0}, *const GN[] = {"AUTO", "X1", "X2", "X4", "X8", 0};
         static const char *const VW[] = {"BARS", "FALL", 0}, *const RG[] = {"60DB", "48DB", "36DB", 0};
         static const char *const SP[] = {"FAST", "MID", "SLOW", 0}, *const OO[] = {"OFF", "ON", 0};
-        static const param_desc_t D[6] = {{"TIME", F_ENUM, 0, 3, 1, TM, 0}, {"GAIN", F_ENUM, 0, 4, 0, GN, 0},
-                                          {"TRIG", F_ENUM, 0, 1, 1, OO, 0}, {"VIEW", F_ENUM, 0, 1, 0, VW, 0},
-                                          {"RANGE", F_ENUM, 0, 2, 1, RG, 0}, {"SPEED", F_ENUM, 0, 2, 1, SP, 0}};
-        const uint8_t *v[6] = {&sc_time, &sc_gain, &sc_trig, &sp_view, &sp_range, &sp_speed};
+        static const char *const MD[] = {"MONO", "L/R", "M/S", 0}, *const SR[] = {"MID", "SIDE", 0};
+        static const char *const TG[] = {"-14", "-12", "-10", "-9", "-8", "-6", 0}, *const RS[] = {"TURN", "DONE", 0};
+        static const param_desc_t D[11] = {{"TIME", F_ENUM, 0, 3, 1, TM, 0}, {"GAIN", F_ENUM, 0, 4, 0, GN, 0},
+                                           {"TRIG", F_ENUM, 0, 1, 1, OO, 0}, {"VIEW", F_ENUM, 0, 1, 0, VW, 0},
+                                           {"RANGE", F_ENUM, 0, 2, 1, RG, 0}, {"SPEED", F_ENUM, 0, 2, 1, SP, 0},
+                                           {"MODE", F_ENUM, 0, 2, 0, MD, 0}, {"SOURCE", F_ENUM, 0, 1, 0, SR, 0},
+                                           {"ZOOM", F_ENUM, 0, 4, 0, GN, 0}, {"TARGET", F_ENUM, 0, 5, 3, TG, 0},
+                                           {"RESET", F_ENUM, 0, 1, 0, RS, 0}};
+        const uint8_t *v[11] = {&sc_time, &sc_gain, &sc_trig, &sp_view, &sp_range, &sp_speed, &sc_mode, &sp_src, &sc_zoom,
+                                &lu_tgt, &lu_rst};
         cz.cc_v[13] = *v[id - CC_SCT];
         *vp = &cz.cc_v[13];
         return &D[id - CC_SCT];
@@ -762,9 +780,11 @@ static void cos_cput(uint32_t id, int32_t v)
     } else if (id == CC_NAME) {
         cz.nm_n = (uint16_t)clamp(v, 0, 999);
         cos_name_pick();
-    } else if (id >= CC_SCT && id <= CC_SPS) {
-        static const uint8_t MX[6] = {3, 4, 1, 1, 2, 2};
-        uint8_t *const pv[6] = {&sc_time, &sc_gain, &sc_trig, &sp_view, &sp_range, &sp_speed};
+    } else if (id >= CC_SCT && id <= CC_LUR) {
+        static const uint8_t MX[11] = {3, 4, 1, 1, 2, 2, 2, 1, 4, 5, 1};
+        uint8_t *const pv[11] = {&sc_time, &sc_gain, &sc_trig, &sp_view, &sp_range, &sp_speed, &sc_mode, &sp_src, &sc_zoom,
+                                 &lu_tgt, &lu_rst};
+        if (id == CC_LUR) { lu_rst = (uint8_t)(v != 0); cos_lu_reset(); return; }   /* (any turn: from now) */
         *pv[id - CC_SCT] = (uint8_t)clamp(v, 0, MX[id - CC_SCT]);
     } else if (id == CC_SCALE || id == CC_QUANT) {
         track_t *m = cos_mel();
@@ -1786,76 +1806,118 @@ static void cos_batt_text(char *b)                       /* "78%", "USB", "" */
 static uint32_t cos_idle_lim(void) { return cos_idle_min() * 60000u; }   /* (fm1_ms: the time since power-on, no clock) */
 static inline int32_t cos_isin(uint32_t a) { return SINE[a & 1023u]; }   /* (a: 1024 a turn) */
 
-/* (cursed-os) the SCOPE and the SPECTRUM (GLO's pages after MIX; the IDLE screen the scope): the master's sound, mono,
- * from audio.c's two rings: scope_buf at 22.05 kHz (512: 23 ms) and scope_lo at 5.5 kHz (512: 93 ms). A frame's picture
- * is worked out once before its six strips (cos_scope_prep) */
+/* (cursed-os) GLO's SCOPE, SPECTRUM, STEREO and LOUDNESS (the pages after MIX; the IDLE screen the scope): the output as
+ * it leaves the master's COMP and LIMIT, from audio.c's rings (scope_buf L, scope_r R at 44.1 kHz, 512: 11.6 ms;
+ * scope_lo the mid, scope_ls the side at 5.5 kHz, 512: 93 ms) and its 100 ms meter blocks (mt_ring). A frame's picture is
+ * worked out once before its six strips (cos_scope_prep, cos_spec_prep, cos_lu_poll every frame) */
 static struct {
-    int16_t y[240];                                       /* the scope: a column's sample, the screen's x */
+    int16_t y[240], y2[240];                              /* the scope: a column's sample (the second trace: R or S) */
     uint8_t lv[32], pk[32];                               /* the SPECTRUM: each band's level and its peak (0 .. 120: dB
-                                                         * above its floor, x 2) */
+                                                         * over -60 dBFS, x 2) */
     uint8_t wf[80][16];                                   /* .. the waterfall: 80 columns of 32 bands, 4 bits each */
-    uint8_t wf_w, wf_n, g;                                /* .. its next column, how many filled; the scope's gain now */
+    uint8_t wf_w, wf_n, g, g2;                            /* .. its next column, how many filled; the scope's gain, the
+                                                         * vectorscope's */
     uint32_t wf_ms, pk_ms;
 } sc COS_RAM;
-/* 32 bands, 30 Hz .. 10 kHz a third of an octave apart (Hz); under 700 Hz from the low ring */
-static const uint16_t SP_F[32] = {30, 36, 43, 52, 63, 76, 91, 110, 132, 160, 192, 232, 280, 337, 406, 489, 589, 709, 855,
-                                  1030, 1241, 1495, 1802, 2171, 2616, 3152, 3798, 4576, 5513, 6643, 8004, 9644};
-/* the scope: TIME the window (5, 11, 22, 46 ms: a column a sample, every 2nd, or from the low ring, every 1st, 2nd), the
- * wave from a rising zero crossing (TRIG), GAIN x1 .. x8 */
+/* 32 bands 30 Hz .. 20 kHz, 0.3 of an octave apart (Hz); under 700 Hz from the 5.5 kHz rings */
+static const uint16_t SP_F[32] = {30, 37, 46, 56, 69, 86, 106, 130, 161, 198, 244, 301, 372, 459, 566, 697, 860, 1061, 1309,
+                                  1614, 1991, 2455, 3028, 3735, 4607, 5682, 7007, 8643, 10660, 13147, 16216, 20000};
+/* floats' logs and powers, cheap (to ~0.01 dB): log2 from the exponent and a cubic, 2^x the other way */
+static float cos_log2f(float x)
+{
+    union { float f; uint32_t u; } v = {x};
+    float e = (float)(int32_t)((v.u >> 23) & 255u) - 128.0f, m;   /* (the cubic below: log2 m + 1) */
+    v.u = (v.u & 0x007FFFFFu) | 0x3F800000u;             /* (the mantissa, 1 .. 2) */
+    m = v.f;
+    return e + (-0.34484843f * m + 2.02466578f) * m - 0.67487759f;
+}
+static float cos_exp2f(float x)
+{
+    union { float f; uint32_t u; } v;
+    int32_t i = (int32_t)(x < 0.0f ? x - 1.0f : x);
+    float f = x - (float)i;
+    if (i < -126) return 0.0f;
+    v.u = (uint32_t)(i + 127) << 23;
+    return v.f * (1.0f + f * (0.6960656f + f * (0.2244012f + f * 0.0790209f)));
+}
+static float cos_db(float p) { return p > 1e-12f ? 3.0103f * cos_log2f(p) : -120.0f; }   /* (power: 10 log10) */
+/* "-9.4": one decimal */
+static void cos_fmt1(char *b, float v)
+{
+    int32_t t = (int32_t)(v < 0.0f ? v * 10.0f - 0.5f : v * 10.0f + 0.5f), a = t < 0 ? -t : t;
+    char n[12];
+    b[0] = 0;
+    if (t < 0) str_cpy(b, "-", 2);
+    fmt_int(n, a / 10); str_cpy(b + str_len(b), n, 8);
+    str_cpy(b + str_len(b), ".", 2);
+    fmt_int(n, a % 10); str_cpy(b + str_len(b), n, 2);
+}
+/* the scope: TIME 5, 11 ms (44.1 kHz, a column a sample or every 2nd), 46, 93 ms (5.5 kHz); MODE MONO (the mid), L/R (two
+ * traces: 5 and 11 ms only), M/S (the mid and, red, the side); from a rising zero crossing (TRIG); GAIN AUTO, x1 .. x8 */
 static void cos_scope_prep(int32_t h)
 {
-    static const uint8_t STEP[4] = {1, 2, 1, 2};
-    uint32_t lo = sc_time >= 2u, st = STEP[sc_time & 3u], w = lo ? scope_lw : scope_w, span = 240u * st, i, start;
-    const int16_t *b = lo ? scope_lo : scope_buf;
-    start = w - span;                                     /* (the newest window, else the latest rising crossing) */
+    uint32_t lo = sc_time >= 2u, st = 1u + (sc_time & 1u), w, span = 240u * st, i, start, two = sc_mode != 0u;
+    const int16_t *b, *b2;
+    if (sc_mode == 1u) lo = 0;                            /* (L/R: the full rate only) */
+    w = lo ? scope_lw : scope_w;
+    b = lo ? scope_lo : scope_buf;                        /* (MONO at 44.1 kHz: L and R averaged, below) */
+    b2 = sc_mode == 2u ? (lo ? scope_ls : scope_r) : scope_r;
+    start = w - span;
     if (sc_trig)
         for (i = 0; i < SCOPE_N - span - 2u; i++) {
             uint32_t q = w - span - 1u - i;
             if (b[(q - 1u) & (SCOPE_N - 1u)] < 0 && b[q & (SCOPE_N - 1u)] >= 0) { start = q; break; }
         }
-    {                                                     /* AUTO (GAIN 0): the window's peak to near the top, x1 .. x16 */
+    {
         uint32_t pk = 1;
         int32_t g = (int32_t)sc_gain - 1;
-        if (!sc_gain) {
-            for (i = 0; i < 240u; i++) {
-                int32_t v = b[(start + i * st) & (SCOPE_N - 1u)];
-                if ((uint32_t)(v < 0 ? -v : v) > pk) pk = (uint32_t)(v < 0 ? -v : v);
+        for (i = 0; i < 240u; i++) {
+            uint32_t q = (start + i * st) & (SCOPE_N - 1u);
+            int32_t v = b[q], v2 = b2[q];
+            if (!lo && sc_mode != 1u) {                   /* (44.1 kHz: the mid and the side from L and R) */
+                v = (scope_buf[q] + scope_r[q]) >> 1;
+                v2 = (scope_buf[q] - scope_r[q]) >> 1;
             }
-            for (g = 0; g < 4 && (pk << (g + 1)) < 26000u; g++) {}
+            sc.y[i] = (int16_t)v; sc.y2[i] = (int16_t)v2;
+            if ((uint32_t)(v < 0 ? -v : v) > pk) pk = (uint32_t)(v < 0 ? -v : v);
+            if (two && (uint32_t)(v2 < 0 ? -v2 : v2) > pk) pk = (uint32_t)(v2 < 0 ? -v2 : v2);
         }
+        if (!sc_gain) for (g = 0; g < 4 && (pk << (g + 1)) < 26000u; g++) {}
         sc.g = (uint8_t)g;
-    }
-    for (i = 0; i < 240u; i++) {
-        int32_t v = b[(start + i * st) & (SCOPE_N - 1u)] << sc.g;
-        v = clamp(v, -32767, 32767);
-        sc.y[i] = (int16_t)(-v * h / 65536);
+        for (i = 0; i < 240u; i++) {
+            int32_t v = clamp(sc.y[i] << g, -32767, 32767), v2 = clamp(sc.y2[i] << g, -32767, 32767);
+            sc.y[i] = (int16_t)(-v * h / 65536);
+            sc.y2[i] = (int16_t)(two ? -v2 * h / 65536 : 0);
+        }
     }
 }
-#define SP_CAL 130                                        /* (a -8.7 dBFS sine read 233 uncalibrated: 0 dBFS at 120) */
-/* a band's power by Goertzel over a ring's 512 (Hann-windowed): its level in half dB over a floor ~84 dB down */
-static int32_t sp_band(const int16_t *b, uint32_t w, uint32_t fs, uint32_t f)
+/* a band's level by Goertzel over a ring's 512, Hann-windowed (a ring pair: the mid, (a + b) / 2, or the side), in half
+ * dB over -60 dBFS (SP_CAL: a full-scale sine at 120) */
+#define SP_CAL 130
+static int32_t sp_band(const int16_t *a, const int16_t *b, int32_t sgn, uint32_t w, uint32_t fs, uint32_t f)
 {
-    uint32_t i, ph = (f << 10) / fs;                     /* (the frequency, 1024 a turn a sample: 32 bits) */
-    int32_t c = cos_isin(ph + 256u);                       /* (2 cos in Q14: cos in Q15, the same number) */
+    uint32_t i, ph = (f << 10) / fs, l2 = 0;
+    int32_t c = cos_isin(ph + 256u);                     /* (2 cos in Q14: cos in Q15, the same number) */
     int64_t s1 = 0, s2 = 0, pw;
-    uint32_t l2 = 0;
     for (i = 0; i < SCOPE_N; i++) {
-        int32_t x = b[(w + i) & (SCOPE_N - 1u)], win = 16384 - (cos_isin(i * 2u + 256u) >> 1);   /* (Hann, Q15) */
+        uint32_t q = (w + i) & (SCOPE_N - 1u);
+        int32_t x = b ? (a[q] + sgn * b[q]) >> 1 : a[q], win = 16384 - (cos_isin(i * 2u + 256u) >> 1);   /* (Hann) */
         int64_t s0 = ((int64_t)x * win >> 15) + ((c * s1) >> 14) - s2;
         s2 = s1; s1 = s0;
     }
     pw = s1 * s1 + s2 * s2 - ((c * s1) >> 14) * s2;
     if (pw <= 0) return 0;
     while (pw >> 3) { pw >>= 1; l2++; }                     /* (log2 in quarters: the top bit's place, the next two) */
-    return ((int32_t)(l2 * 4u + ((uint32_t)pw & 3u)) * 6) / 4 - SP_CAL;   /* (half dB: 3 dB a power of 2; SP_CAL: a
-                                                         * full-scale sine at 120) */
+    return ((int32_t)(l2 * 4u + ((uint32_t)pw & 3u)) * 6) / 4 - SP_CAL;
 }
 static void cos_spec_prep(void)
 {
     static const uint8_t DEC[3] = {20, 8, 3};             /* (SPEED: the bars' fall a frame, half dB) */
     uint32_t k, t = fm1_ms, wl = scope_lw, wh = scope_w;
+    int32_t sg = sp_src ? -1 : 1;                         /* (SOURCE: MID, SIDE) */
     for (k = 0; k < 32u; k++) {
-        int32_t v = SP_F[k] < 700u ? sp_band(scope_lo, wl, 5513u, SP_F[k]) : sp_band(scope_buf, wh, 22050u, SP_F[k]);
+        int32_t v = SP_F[k] < 700u ? sp_band(sp_src ? scope_ls : scope_lo, 0, 1, wl, 5513u, SP_F[k])
+                                   : sp_band(scope_buf, scope_r, sg, wh, 44100u, SP_F[k]);
         v = clamp(v, 0, 120);
         if (v >= sc.lv[k]) sc.lv[k] = (uint8_t)v;
         else sc.lv[k] = (uint8_t)(sc.lv[k] > DEC[sp_speed % 3u] ? sc.lv[k] - DEC[sp_speed % 3u] : 0);
@@ -1878,23 +1940,81 @@ static void cos_spec_prep(void)
         if (sc.wf_n < 80u) sc.wf_n++;
     }
 }
-/* the scope drawn: from x0 to x0 + 239, its middle at y0 (sc.y), a faint middle line */
+/* LOUDNESS (ITU-R BS.1770 / EBU R128): every 100 ms block audio.c sums; here, each frame, the new ones taken in. MOMENTARY
+ * the last 4 (400 ms), SHORT the last 30 (3 s), INTEGRATED all since RESET, gated (-70 LUFS, then 10 LU under its own
+ * mean: a histogram of the momentary levels in half-LU steps from -70 to +5); PEAK the sample peak since RESET; the
+ * STEREO page's correlation, width and balance over the last 3 blocks */
+static struct {
+    uint32_t seen, n;                                     /* the blocks taken, since RESET */
+    uint32_t hist[150];
+    float pk, m, s, i, corr, width, bal;
+} lu;
+static float cos_q30(uint64_t v) { return (float)v * (1.0f / 1073741824.0f); }   /* (cos_meter.c's sums: Q30) */
+static void cos_lu_reset(void) { memset(&lu, 0, sizeof lu); lu.seen = mt_n; lu.i = -120.0f; }
+static void cos_lu_poll(void)
+{
+    uint32_t now = mt_n, k, nb;
+    float e;
+    if (now == lu.seen) return;                           /* (nothing new: the readings as they are; 10 a second) */
+    if (now - lu.seen > 30u) lu.seen = now - 30u;         /* (a long gap: the ring's last 3 s) */
+    for (; lu.seen != now; lu.seen++) {
+        const mt_blk_t *b = &mt_ring[lu.seen & 31u];
+        if ((float)b->pk * (1.0f / 32768.0f) > lu.pk) lu.pk = (float)b->pk * (1.0f / 32768.0f);
+        if (++lu.n >= 4u) {                               /* (a gating block: the 400 ms to this one) */
+            for (e = 0.0f, k = 0; k < 4u; k++) e += cos_q30(mt_ring[(lu.seen - k) & 31u].kw);
+            e = -0.691f + cos_db(e / (4.0f * 4410.0f));
+            if (e > -70.0f) lu.hist[clamp((int32_t)((e + 70.0f) * 2.0f), 0, 149)]++;
+        }
+    }
+    nb = lu.n < 30u ? lu.n : 30u;
+    for (e = 0.0f, k = 0; k < 4u && k < nb; k++) e += cos_q30(mt_ring[(now - 1u - k) & 31u].kw);
+    lu.m = nb ? -0.691f + cos_db(e / ((float)(nb < 4u ? nb : 4u) * 4410.0f)) : -120.0f;
+    for (e = 0.0f, k = 0; k < nb; k++) e += cos_q30(mt_ring[(now - 1u - k) & 31u].kw);
+    lu.s = nb ? -0.691f + cos_db(e / ((float)nb * 4410.0f)) : -120.0f;
+    {                                                     /* INTEGRATED: the gated mean of the histogram's blocks */
+        float sum = 0.0f, gate, cnt = 0.0f;
+        for (k = 0; k < 150u; k++) if (lu.hist[k]) { sum += (float)lu.hist[k] * cos_exp2f(((float)k * 0.5f - 69.75f + 0.691f) * 0.33219281f); cnt += (float)lu.hist[k]; }
+        if (cnt > 0.0f) {
+            gate = -0.691f + cos_db(sum / cnt) - 10.0f;
+            sum = cnt = 0.0f;
+            for (k = 0; k < 150u; k++)
+                if (lu.hist[k] && (float)k * 0.5f - 69.75f >= gate) {
+                    sum += (float)lu.hist[k] * cos_exp2f(((float)k * 0.5f - 69.75f + 0.691f) * 0.33219281f);
+                    cnt += (float)lu.hist[k];
+                }
+            lu.i = cnt > 0.0f ? -0.691f + cos_db(sum / cnt) : -120.0f;
+        } else lu.i = -120.0f;
+    }
+    {                                                     /* the stereo: L R's correlation, the side to the mid, L to R */
+        float ll = 0.0f, rr = 0.0f, lr = 0.0f, d;
+        for (k = 0; k < 3u && k < nb; k++) { const mt_blk_t *b = &mt_ring[(now - 1u - k) & 31u]; ll += cos_q30(b->ll); rr += cos_q30(b->rr); lr += b->lr < 0 ? -cos_q30((uint64_t)-b->lr) : cos_q30((uint64_t)b->lr); }
+        d = ll * rr;
+        lu.corr = d > 1e-12f ? lr * cos_exp2f(-0.5f * cos_log2f(d)) : 1.0f;
+        d = ll + rr + 2.0f * lr;
+        lu.width = d > 1e-9f ? (ll + rr - 2.0f * lr) / d : 0.0f;   /* (the side's power over the mid's) */
+        lu.bal = rr > 1e-12f && ll > 1e-12f ? cos_db(ll / rr) : 0.0f;
+    }
+}
+/* the scope drawn: its middle at y0 (sc.y), the second trace red (L/R: R; M/S: S), faint guides */
 static void cos_scope_draw(int32_t y0, int32_t h, uint16_t col)
 {
     uint32_t i;
     cv_rect(0, y0, 240, 1, C_DARK);
     cv_rect(0, y0 - h, 240, 1, C_DARK);
     cv_rect(0, y0 + h, 240, 1, C_DARK);
+    if (sc_mode)
+        for (i = 1; i < 240u; i++) cv_line((int32_t)i - 1, y0 + sc.y2[i - 1u], (int32_t)i, y0 + sc.y2[i], C_RED);
     for (i = 1; i < 240u; i++) cv_line((int32_t)i - 1, y0 + sc.y[i - 1u], (int32_t)i, y0 + sc.y[i], col);
 }
 static void cos_body_scope(void)
 {
-    cos_scope_draw(90, 56, C_FG);
-    {
-        char b[24] = "THE MASTER, MONO  X";
-        fmt_int(b + str_len(b), 1 << sc.g);
-        cos_tx(4, 150, b, C_DIM);
-    }
+    static const char *const MD[3] = {"MONO (MID)", "L WHITE  R RED", "MID WHITE  SIDE RED"};
+    char b[32];
+    cos_scope_draw(86, 50, C_FG);
+    str_cpy(b, MD[sc_mode % 3u], sizeof b);
+    str_cpy(b + str_len(b), "  X", 4);
+    fmt_int(b + str_len(b), 1 << sc.g);
+    cos_tx(4, 140, b, C_DIM);
 }
 static void cos_body_spec(void)
 {
@@ -1903,10 +2023,10 @@ static void cos_body_spec(void)
     uint32_t k, rg = RG[sp_range % 3u];
     if (!sp_view) {                                       /* BARS: 32 of them, 7 wide, the peaks a line over them */
         for (k = 0; k < 32u; k++) {
-            int32_t x = 1 + (int32_t)k * 7 + (int32_t)(k / 4u) * 0, lv = (int32_t)sc.lv[k] + (int32_t)rg - 120;
-            int32_t pv = (int32_t)sc.pk[k] + (int32_t)rg - 120, hh = lv > 0 ? lv * 110 / (int32_t)rg : 0;
-            if (hh) cv_rect(x, 140 - hh, 6, hh, lv >= (int32_t)rg - 6 ? C_RED : C_FG);
-            if (pv > 0) cv_rect(x, 140 - pv * 110 / (int32_t)rg, 6, 1, C_MID);
+            int32_t x = 1 + (int32_t)k * 7, lv = (int32_t)sc.lv[k] + (int32_t)rg - 120;
+            int32_t pv = (int32_t)sc.pk[k] + (int32_t)rg - 120, hh = lv > 0 ? lv * 104 / (int32_t)rg : 0;
+            if (hh) cv_rect(x, 140 - hh, 6, hh, lv >= (int32_t)rg - 6 ? C_RED : sp_src ? C_MID : C_FG);
+            if (pv > 0) cv_rect(x, 140 - pv * 104 / (int32_t)rg, 6, 1, C_MID);
         }
         cv_rect(0, 141, 240, 1, C_DARK);
     } else {                                              /* WATERFALL: time left to right (the newest right), lows below */
@@ -1920,10 +2040,90 @@ static void cos_body_spec(void)
             }
         }
     }
-    cos_tx(2 + 7 * 2, 146, "50", C_DIM);                  /* (the bands under: 50 Hz, 200, 1K, 4K) */
-    cos_tx(1 + 7 * 10, 146, "200", C_DIM);
-    cos_tx(1 + 7 * 19, 146, "1K", C_DIM);
-    cos_tx(1 + 7 * 25, 146, "4K", C_DIM);
+    cos_tx(1 + 7 * 3, 146, "50", C_DIM);                  /* (the bands under: 56 Hz, 198, 1061, 3735, 20000) */
+    cos_tx(1 + 7 * 9, 146, "200", C_DIM);
+    cos_tx(1 + 7 * 17, 146, "1K", C_DIM);
+    cos_tx(1 + 7 * 23, 146, "4K", C_DIM);
+    cos_txr(238, 146, "20K", C_DIM);
+    if (sp_src) cos_txr(238, 34, "SIDE", C_RED);
+}
+/* STEREO: the vectorscope (mono a line straight up; out of phase lying flat), the correlation (-1 .. +1), the width and
+ * the balance */
+static void cos_body_stereo(void)
+{
+    uint32_t i, w = scope_w, pk = 1;
+    int32_t cx = 70, cy = 88, r = 54, g;
+    char b[24], n[12];
+    for (i = 0; i < 512u; i++) {
+        int32_t l = scope_buf[i], rr = scope_r[i], a = l < 0 ? -l : l, c = rr < 0 ? -rr : rr;
+        if ((uint32_t)(a > c ? a : c) > pk) pk = (uint32_t)(a > c ? a : c);
+    }
+    g = sc_zoom ? (int32_t)sc_zoom - 1 : 0;
+    if (!sc_zoom) for (g = 0; g < 4 && (pk << (g + 1)) < 30000u; g++) {}
+    cv_line(cx - r, cy, cx + r, cy, C_DARK);              /* (the guides: M up, S across, L and R at 45 degrees) */
+    cv_line(cx, cy - r, cx, cy + r, C_DARK);
+    cv_line(cx - r * 7 / 10, cy - r * 7 / 10, cx + r * 7 / 10, cy + r * 7 / 10, C_DARK);
+    cv_line(cx + r * 7 / 10, cy - r * 7 / 10, cx - r * 7 / 10, cy + r * 7 / 10, C_DARK);
+    cos_tx(cx - r * 7 / 10 - 8, cy - r * 7 / 10 - 8, "L", C_DIM);
+    cos_tx(cx + r * 7 / 10 + 2, cy - r * 7 / 10 - 8, "R", C_DIM);
+    for (i = 0; i < 512u; i++) {
+        uint32_t q = (w + i) & (SCOPE_N - 1u);
+        int32_t l = clamp(scope_buf[q] << g, -32767, 32767), rr = clamp(scope_r[q] << g, -32767, 32767);
+        int32_t x = cx + (rr - l) * r / 65536, y = cy - (l + rr) * r / 65536;
+        cv_rect(x, y, 1, 1, C_FG);
+    }
+    {                                                     /* the correlation: a bar from -1 (left, red) to +1 */
+        int32_t x0 = 136, x1 = 236, xm = (x0 + x1) / 2, xc = xm + (int32_t)(lu.corr * (float)(x1 - xm));
+        cos_tx(x0, 34, "CORRELATION", C_DIM);
+        cv_rect(x0, 52, x1 - x0, 1, C_DARK);
+        cv_rect(xm, 46, 1, 12, C_DIM);
+        cv_rect(xc < xm ? xc : xm, 48, (xc < xm ? xm - xc : xc - xm) + 1, 8, lu.corr < 0.0f ? C_RED : C_FG);
+        { char t[8]; int32_t c2 = (int32_t)(lu.corr * 100.0f + (lu.corr < 0 ? -0.5f : 0.5f)); t[0] = 0;
+          if (c2 < 0) str_cpy(t, "-", 2); fmt_int(n, (c2 < 0 ? -c2 : c2) / 100); str_cpy(t + str_len(t), n, 3);
+          str_cpy(t + str_len(t), ".", 2); fmt_int(n, (c2 < 0 ? -c2 : c2) % 100 + 100); str_cpy(t + str_len(t), n + 1, 3);
+          cos_px(x0, 62, t, lu.corr < 0.0f ? C_RED : C_FG, CZ_TALL); }
+        str_cpy(b, "WIDTH ", sizeof b);                   /* (the side's power to the mid's, percent) */
+        fmt_int(n, (int32_t)(lu.width * 100.0f + 0.5f)); str_cpy(b + str_len(b), n, 8); str_cpy(b + str_len(b), "%", 2);
+        cos_tx(x0, 94, b, C_MID);
+        str_cpy(b, "BAL ", sizeof b);
+        cos_fmt1(n, lu.bal); str_cpy(b + str_len(b), n, 10); str_cpy(b + str_len(b), " DB", 4);
+        cos_tx(x0, 108, b, C_MID);
+        cos_tx(x0, 122, lu.bal > 0.5f ? "LEFT LOUDER" : lu.bal < -0.5f ? "RIGHT LOUDER" : "CENTRED", C_DIM);
+    }
+    cos_tx(4, 140, "+1 MONO 0 WIDE -1 PHASE", C_DIM);
+}
+/* LOUDNESS: MOMENTARY, SHORT, INTEGRATED in LUFS, the sample PEAK in dBFS; a bar of the short-term against TARGET */
+static void cos_body_loud(void)
+{
+    static const int8_t TG[6] = {-14, -12, -10, -9, -8, -6};
+    char b[24], n[12];
+    int32_t tg = TG[lu_tgt % 6u], k;
+    static const char *const NM[3] = {"MOMENTARY", "SHORT 3S", "INTEGRATED"};
+    float v[3] = {lu.m, lu.s, lu.i};
+    for (k = 0; k < 3; k++) {
+        cos_tx(4, 36 + k * 20, NM[k], C_DIM);
+        if (v[k] > -70.0f) cos_fmt1(n, v[k]); else str_cpy(n, "-INF", 6);
+        str_cpy(b, n, sizeof b);
+        cos_px(132, 32 + k * 20, b, k == 1 && v[k] > (float)tg + 1.0f ? C_RED : C_FG, CZ_TALL);
+        cos_tx(206, 36 + k * 20, "LUFS", C_DIM);
+    }
+    cos_tx(4, 96, "PEAK", C_DIM);
+    {
+        float pk = lu.pk > 1e-6f ? cos_db(lu.pk * lu.pk) : -120.0f;   /* (a level: 20 log10) */
+        if (pk > -70.0f) cos_fmt1(n, pk); else str_cpy(n, "-INF", 6);
+        cos_px(132, 92, n, pk > -1.0f ? C_RED : C_FG, CZ_TALL);
+        cos_tx(206, 96, "DBFS", C_DIM);
+    }
+    {                                                     /* the short-term as a bar, -30 .. 0 LUFS, TARGET a red mark */
+        int32_t x0 = 4, x1 = 236, w = x1 - x0, x = x0 + (int32_t)((lu.s + 30.0f) * (float)w / 30.0f), xt = x0 + (tg + 30) * w / 30;
+        x = clamp(x, x0, x1);
+        cv_rect(x0, 122, w, 8, C_DARK);
+        if (x > x0) cv_rect(x0, 122, x - x0, 8, lu.s > (float)tg + 1.0f ? C_RED : C_MID);
+        cv_rect(xt, 118, 2, 16, C_RED);
+        str_cpy(b, "TARGET ", sizeof b); fmt_int(n, tg); str_cpy(b + str_len(b), n, 6);
+        cos_tx(4, 140, b, C_DIM);
+        cos_txr(236, 140, "AFTER LIMIT", C_DIM);
+    }
 }
 static void cos_idle_scene(void)                         /* the IDLE screen: the scope, the whole screen */
 {
@@ -2035,15 +2235,17 @@ static void cos_tabs(void)
     {
         uint32_t cur = cz.tab[cz.mode] % n, f = 0, j;
         const engine_t *e = trk_engp(TSEL);
-        const char *nm[12];
+        const char *nm[CZ_TABS];                         /* (0.9.2: 16, MIX has 14; was 12, past its end) */
         int32_t span;
-        for (i = 0; i < n && i < 12u; i++)                /* (EDIT's first two: the engine's own names for them) */
+        if (n > CZ_TABS) n = CZ_TABS;
+        cur = cz.tab[cz.mode] % n;
+        for (i = 0; i < n; i++)                /* (EDIT's first two: the engine's own names for them) */
             nm[i] = cz.mode == CM_SRC && i < 2u && !cos_kit() && e->page_title[i] ? e->page_title[i] : p[i].tab;
         do {                                             /* (the first one shown: the page picked fits) */
             for (span = 0, j = f; j <= cur; j++) span += cos_w(nm[j]) + 10;
         } while (span > 236 && ++f < cur);
         if (f) cos_tx(0, 22, "<", C_DIM);
-        for (i = f, x = f ? 10 : 2; i < n && i < 12u; i++) {
+        for (i = f, x = f ? 10 : 2; i < n; i++) {
             int32_t w = cos_w(nm[i]) + 6;
             if (x + w > 240) { cos_txr(240, 22, ">", C_DIM); break; }
             if (i == cur) { cv_rect(x, 20, w, 12, C_FG); cos_tx(x + 3, 22, nm[i], C_BG); }
@@ -2084,7 +2286,8 @@ static void cos_dial(int32_t cx, int32_t cy, uint32_t k)
         return;
     }
     v = *vp;
-    if (held && p->kind == CK_TRK) {
+    if (held && p->kind == CK_TRK && motion_param(p->id[k & 3u])) {   /* (0.9.2: a lockable one only, as
+                                                         * cos_lock_turn: OCT and the like read nothing of the motion's) */
         uint32_t i;
         for (i = 0; i < NSTEP && !((held >> i) & 1u); i++) {}
         locked = (uint32_t)motion_lock_get(TSEL, i, p->id[k & 3u], &lv);
@@ -2824,6 +3027,8 @@ static void cos_scene(void)
         if (pg->kind == CK_COS && pg->id[0] == CC_OUTCH) cos_body_midi();
         else if (pg->kind == CK_COS && pg->id[0] == CC_SCT) cos_body_scope();
         else if (pg->kind == CK_COS && pg->id[0] == CC_SPV) cos_body_spec();
+        else if (pg->kind == CK_COS && pg->id[0] == CC_SCZ) cos_body_stereo();
+        else if (pg->kind == CK_COS && pg->id[0] == CC_LUT) cos_body_loud();
         else if (pg->kind == CK_COS && pg->id[0] == CC_TRKS) cos_body_sys();
         else if (pg->kind == CK_COS && (pg->id[0] == CC_COMP || pg->id[0] == CC_CIN || pg->id[0] == CC_CSC)) cos_body_master();
         else if (pg->kind == CK_COS && pg->id[0] == CC_LIN) cos_body_lim();
@@ -2853,7 +3058,7 @@ dials:
 /* the splash (ui_draw.c draw_splash / splash_write under COS_SLIM; main.c's boot loop calls it every ~4 ms for
  * SPL_WRITE + SPL_HOLD ms): black, a few still stars, the name 2x, the version, a 16-block bar filling like a pattern
  * (the block being filled red), READY. Drawn whole once, then only the bar's strip when a block fills */
-#define COS_VERSION "0.9.1"
+#define COS_VERSION "0.9.2"
 static void cos_px2(int32_t x, int32_t y, const char *s, uint16_t c)      /* (the face 2 x 2) */
 {
     int32_t r, b, b0;
@@ -2910,7 +3115,8 @@ static __attribute__((noinline)) void cos_draw(void)
     ui.frame++;
     if (!scr_frame())
         return;
-    if (cz.idle_up) { uint8_t g = sc_gain; sc_gain = 0; cos_scope_prep(100); sc_gain = g; }   /* (AUTO gain) */   /* (the frame's picture, once for its six strips) */
+    cos_lu_poll();                                        /* (the loudness, kept up whichever page) */
+    if (cz.idle_up) { uint8_t g = sc_gain, m = sc_mode; sc_gain = 0; sc_mode = 0; cos_scope_prep(100); sc_gain = g; sc_mode = m; }   /* (AUTO gain) */   /* (the frame's picture, once for its six strips) */
     else if (cz.mode == CM_MIX && cos_page()->kind == CK_COS && cos_page()->id[0] == CC_SCT) cos_scope_prep(56);
     else if (cz.mode == CM_MIX && cos_page()->kind == CK_COS && cos_page()->id[0] == CC_SPV) cos_spec_prep();
     for (s = 0; s < 6u; s++) {

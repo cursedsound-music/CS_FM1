@@ -120,9 +120,16 @@ static __attribute__((noinline)) void fault_tail(const fm1_crash_t *c, char *b)
     b[23] = 0;
     draw_text_line(10, 48 + 17 * 10, 220, &AF_S, b, UI_CRASH_INK, UI_CRASH_BG, 0);
     t0 = fm1_ticks();
-    while ((uint32_t)(fm1_ticks() - t0) < 10000u * 1000u * FM1_TICKS_PER_US)
+    while ((uint32_t)(fm1_ticks() - t0) < 5000u * 1000u * FM1_TICKS_PER_US)   /* (cursed-os: 5 s, was 10: back on stage sooner) */
         ;
     fm1_reboot();
+}
+/* (cursed-os 0.9.2) out of fm1_fault (its room): "SAVING THE JAM" while the music goes to flash (project.c crash_keep) */
+static __attribute__((noinline)) void fault_keep(uint32_t uptime_ms)
+{
+    lcd_fill(0, 0, 240, 240, UI_CRASH_BG);
+    draw_text_line(0, 110, 240, &AF_M, "SAVING THE JAM", UI_CRASH_INK, UI_CRASH_BG, 1);
+    crash_keep(uptime_ms);
 }
 static void fm1_fault(const fm1_crash_t *c)
 {
@@ -141,6 +148,7 @@ static void fm1_fault(const fm1_crash_t *c)
     fm1_crash.app = (felucca_dbg.in_audio ? 1u : 0u) | (uint32_t)felucca_dbg.stage << 8 | (uint32_t)felucca_dbg.page << 16;
     fm1_audio_stop();
     scr_wake_now();                                   /* (MENU > SCREEN OFF: the panel on first) */
+    fault_keep(c->uptime_ms);                         /* (cursed-os 0.9.2) the music kept for the next power-on */
     lcd_fill(0, 0, 240, 240, UI_CRASH_BG);            /* fixed, outside the palettes */
     draw_text_line(0, 6, 240, &AF_M, "JIANT CRASH", UI_CRASH_INK, UI_CRASH_BG, 1);
     str_cpy(b, FELUCCA_VERSION "  CORE ", 24);
@@ -355,7 +363,12 @@ static void fm1_main(void)
         fm1_irq_on();
     }
 #endif
-    autosave_boot(boot_clean);                /* (1.2) the last session's music, under the splash */
+    {                                         /* (1.2) the last session's music, under the splash; (cursed-os 0.9.2)
+                                               * after a crash in a jam, the music it kept, playing on if it played */
+        uint32_t cr = crash_resume(!boot_clean && fm1_crash.magic == FM1_CRASH_MAGIC);
+        if (autosave_boot(cr ? 2 : boot_clean) && cr == 2u)
+            transport_req = 1;
+    }
     session_dice(fm1_ticks() ^ (uint32_t)fm1_adc_read(FM1_ADC_BATT) << 16);   /* (JIANT 0.4) this session's macros */
     boot_splash();                            /* (p1: out of line, fm1_main's room is pinned) */
     kb_boot_hold = 0;

@@ -119,7 +119,7 @@ static const char *why_quiet(uint32_t m, const cpg_t *p, uint32_t k)
         if (id == CC_SLOT) return "SAVE: the slot a press saves to";
         if (id == CC_NAME) return "SAVE: the name the next save takes";
         if (id == CC_IDLE) return "SYSTEM: when the IDLE screen comes up";
-        if (id >= CC_SCT && id <= CC_SPS) return "GLO > SCOPE, SPECTRUM: how they show the sound";
+        if (id >= CC_SCT && id <= CC_LUR) return "GLO > SCOPE .. LOUDNESS: how they show and measure the sound";
         if (id == CC_MCCH || id == CC_MCDIR || id == CC_MCMAP || (id >= CC_MC0 && id <= CC_MC3) || id == CC_MOCC)
             return "LINK 2/3: the macros' and MORPH's MIDI CCs";
         if (id == CC_PCCH || id == CC_PCOUT || id == CC_VJCH) return "LINK: program changes and the VJ notes";
@@ -225,6 +225,9 @@ static void engage(uint32_t m, const char *tab)
                 continue;
             if (d->fmt == F_ENUM && !(d->names && d->names[0] && str_eq(d->names[0], "OFF")) && d->max - d->min > 1)
                 continue;                                 /* (a list: only an OFF is switched on; a type is left as it is) */
+            if (pp[t].kind == CK_GLO && (pp[t].id[k] == G_DPIT || pp[t].id[k] == G_DSPRY) && !str_eq(tab, pp[t].tab))
+                continue;                                 /* (the GRAIN delay: only on its own page; it takes over the
+                                                         * delay's other knobs, PING's) */
             if (*vp == d->min || (d->min < 0 && d->max > 0 && *vp == 0))
                 set_knob(m, pp[t].tab, k, d->min < 0 && d->max > 0 ? (d->max * 6 / 10 > 0 ? d->max * 6 / 10 : 1)
                                                                     : d->min + ((d->max - d->min) * 6 / 10 > 0 ? (d->max - d->min) * 6 / 10 : 1), 0);   /* (an ON / OFF: ON) */

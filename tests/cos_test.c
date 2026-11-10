@@ -883,7 +883,9 @@ int main(void)
         const cpg_t *pp; uint32_t n;
         cz.mode = CM_HOME; song.sel = 3;
         cos_pages(CM_FX, &pp, &n);
-        CHECK(n == 7u && !strcmp(pp[4].tab, "DELAY 2") && !strcmp(pp[6].tab, "RUMBLE") && pp[4].id[0] == G_DMIX && pp[4].id[3] == G_DMOD, "FX: DELAY 2 after DELAY");
+        CHECK(n == 9u && !strcmp(pp[4].tab, "DELAY 2") && !strcmp(pp[8].tab, "RUMBLE") && pp[4].id[0] == G_DMIX && pp[4].id[3] == G_DMOD, "FX: DELAY 2 after DELAY");
+        CHECK(!strcmp(pp[5].tab, "DELAY 3") && pp[5].id[1] == G_DPIT && !strcmp(pp[7].tab, "REVERB 2") && pp[7].id[0] == G_RMOD && pp[7].id[3] == G_RWIDE,
+              "FX: DELAY 3 (WIDE, the GRAIN delay), REVERB 2 (MOD RATE FILT WIDE)");
         CHECK(!strcmp(pp[0].tab, "DJ") && pp[0].id[0] == CC_DJF && pp[0].id[1] == CC_EQL, "FX's first page: DJ (DJ FILTER, the ISOLATOR)");
         {
             int16_t *vp, djf = song.g[G_DJF];
@@ -1779,26 +1781,71 @@ int main(void)
         perf_latched = lat0;
         cz.fx_down = 1; cos_leds(); cz.fx_down = 0; cos_leds();
     }
-    {   /* GLO > SPECTRUM: a 110 Hz sine lights its band, a 4.6 kHz one its; SCOPE: the wave from a rising crossing */
+    {   /* GLO > SPECTRUM: a 130 Hz sine lights its band, 5.7 kHz and 20 kHz theirs (the mid); SIDE: nothing for a mono one;
+         * SCOPE: the wave from a rising crossing */
         uint32_t i2, k2, top, f2;
-        static const uint32_t FQ[2] = {110u, 4576u};
-        for (f2 = 0; f2 < 2u; f2++) {
+        static const uint32_t FQ[3] = {130u, 5682u, 20000u};
+        for (f2 = 0; f2 < 3u; f2++) {
             for (i2 = 0; i2 < SCOPE_N; i2++) {
-                scope_buf[i2] = (int16_t)(12000.0 * sin(6.2831853 * FQ[f2] * i2 / 22050.0));
+                scope_buf[i2] = scope_r[i2] = (int16_t)(12000.0 * sin(6.2831853 * FQ[f2] * i2 / 44100.0));
                 scope_lo[i2] = (int16_t)(12000.0 * sin(6.2831853 * FQ[f2] * i2 / 5512.5));
+                scope_ls[i2] = 0;
             }
             scope_w = scope_lw = SCOPE_N;
             memset(sc.lv, 0, sizeof sc.lv);
+            sp_src = 0;
             cos_spec_prep();
             for (k2 = 0, top = 0; k2 < 32u; k2++) if (sc.lv[k2] > sc.lv[top]) top = k2;
             CHECK(SP_F[top] == FQ[f2] && sc.lv[top] >= 98u && sc.lv[top] <= 108u, "SPECTRUM: %u Hz in its band (%u Hz, %u)", FQ[f2], SP_F[top], sc.lv[top]);
-            CHECK(sc.lv[(top + 6u) % 32u] + 30u < sc.lv[top], "two octaves off: far lower (%u)", sc.lv[(top + 6u) % 32u]);
+            CHECK(sc.lv[(top + 7u) % 32u] + 30u < sc.lv[top], "two octaves off: far lower (%u)", sc.lv[(top + 7u) % 32u]);
+            memset(sc.lv, 0, sizeof sc.lv);
+            sp_src = 1;
+            cos_spec_prep();
+            for (k2 = 0, top = 0; k2 < 32u; k2++) if (sc.lv[k2] > sc.lv[top]) top = k2;
+            CHECK(sc.lv[top] < 20u, "SPECTRUM SIDE: a mono sine has none (%u)", sc.lv[top]);
+            sp_src = 0;
         }
-        sc_time = 1; sc_trig = 1; sc_gain = 1;
+        for (i2 = 0; i2 < SCOPE_N; i2++) scope_buf[i2] = scope_r[i2] = (int16_t)(12000.0 * sin(6.2831853 * 441.0 * i2 / 44100.0 + 1.0));
+        sc_time = 0; sc_trig = 1; sc_gain = 1; sc_mode = 0;
         cos_scope_prep(56);
         CHECK(sc.y[0] <= 1 && sc.y[0] >= -1 && sc.y[3] < 0, "SCOPE: from a rising crossing (%d, %d)", sc.y[0], sc.y[3]);
+        for (i2 = 0; i2 < SCOPE_N; i2++) scope_r[i2] = (int16_t)-scope_buf[i2];   /* (R the inverse of L) */
+        sc_mode = 2; cos_scope_prep(56);
+        CHECK(sc.y[10] == 0 && sc.y2[10] != 0, "SCOPE M/S: out of phase, the mid nothing, the side all (%d, %d)", sc.y[10], sc.y2[10]);
+        sc_mode = 1; cos_scope_prep(56);
+        CHECK(sc.y[10] == -sc.y2[10] && sc.y[10] != 0, "SCOPE L/R: the two traces (%d, %d)", sc.y[10], sc.y2[10]);
+        sc_mode = 0;
         memset(scope_buf, 0, sizeof scope_buf); memset(scope_lo, 0, sizeof scope_lo);
+        memset(scope_r, 0, sizeof scope_r); memset(scope_ls, 0, sizeof scope_ls);
         memset(&sc, 0, sizeof sc);
+    }
+    {   /* LOUDNESS: blocks at -14 LUFS read -14 (MOMENTARY, SHORT, INTEGRATED); quieter ones under the gate leave
+         * INTEGRATED; PEAK; STEREO's correlation +1 for mono, -1 out of phase */
+        uint32_t b2;
+        float e14 = 4410.0f * 0.0466659f;                  /* (10^((-14 + 0.691) / 10), the power a sample) */
+        cos_lu_reset();
+        for (b2 = 0; b2 < 40u; b2++) {
+            mt_blk_t *q = &mt_ring[mt_n & 31u];
+            q->kw = (uint64_t)(e14 * 1073741824.0); q->ll = q->rr = 100ull << 30; q->lr = 100ll << 30; q->pk = 16384;
+            mt_n++;
+            if (b2 % 8u == 7u) cos_lu_poll();
+        }
+        cos_lu_poll();
+        CHECK(fabsf(lu.m + 14.0f) < 0.2f && fabsf(lu.s + 14.0f) < 0.2f && fabsf(lu.i + 14.0f) < 0.4f,
+              "LOUDNESS: -14 LUFS (%.2f %.2f %.2f)", (double)lu.m, (double)lu.s, (double)lu.i);
+        CHECK(fabsf(lu.corr - 1.0f) < 0.02f && lu.width < 0.01f, "STEREO: mono, correlation +1 (%.2f)", (double)lu.corr);
+        CHECK(fabsf(cos_db(lu.pk * lu.pk) + 6.02f) < 0.1f, "PEAK: -6 dBFS (%.2f)", (double)cos_db(lu.pk * lu.pk));
+        for (b2 = 0; b2 < 40u; b2++) {                     /* (40 dB quieter: under the relative gate) */
+            mt_blk_t *q = &mt_ring[mt_n & 31u];
+            q->kw = (uint64_t)(e14 * 0.0001 * 1073741824.0); q->ll = q->rr = 100ull << 30; q->lr = -(100ll << 30); q->pk = 300;
+            mt_n++;
+            if (b2 % 8u == 7u) cos_lu_poll();
+        }
+        cos_lu_poll();
+        CHECK(lu.m < -50.0f && fabsf(lu.i + 14.0f) < 0.6f, "the quiet part gated out of INTEGRATED (%.2f %.2f)", (double)lu.m, (double)lu.i);
+        CHECK(lu.corr < -0.98f, "STEREO: out of phase, -1 (%.2f)", (double)lu.corr);
+        cos_cput(CC_LUR, 1);
+        CHECK(lu.i < -100.0f && lu.pk == 0.0f, "RESET: from now");
     }
     {   /* the keyboards drawn (KEY, DRONE) as the FM-1's keys: from F, a black one where the panel has one */
         uint32_t ok = 1, j, bl;

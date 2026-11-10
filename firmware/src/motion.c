@@ -158,6 +158,10 @@ static int16_t motion_base_value(const track_t *t, uint32_t id)
     uint32_t k = trk_index(t);
     if (id == MOT_DJF)
         return motion_djf_value();
+    if (id >= P_COUNT || k >= NTRK)                    /* (cursed-os 0.9.2) a page's pseudo id (OCT, a drum's): no
+                                                         * parameter, nothing read past the tables (cos_dial, found by
+                                                         * tests/cos_soak.c) */
+        return 0;
     return (motion_active[k][id / 32u] >> (id % 32u)) & 1u ? motion_base[k][id] : mom_base(k, id, t->p[id]);
 }
 static void motion_restore(track_t *t)

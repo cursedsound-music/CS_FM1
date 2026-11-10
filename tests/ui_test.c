@@ -100,8 +100,7 @@ static void lcd_wake_now(void) { host_pw_log(3u); }
 #define SCOPE_N 512u                              /* audio.c: the HOME oscilloscope */
 static int16_t scope_buf[SCOPE_N];
 static uint32_t scope_w;
-static int16_t scope_lo[SCOPE_N];                 /* (cursed-os) audio.c: the same at a quarter of the rate */
-static uint32_t scope_lw;
+#include "../firmware/src/cos_meter.c"            /* (cursed-os) audio.c's: the output's rings and meters */
 static uint32_t host_blit_rows;                    /* rows blitted (what a frame draws) */
 static void lcd_blit(uint32_t x, uint32_t y, uint32_t w, uint32_t h, const uint16_t *p)
 {
