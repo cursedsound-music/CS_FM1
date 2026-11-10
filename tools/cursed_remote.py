@@ -303,6 +303,23 @@ class PlayPage(ui.View):
         w2 = (fw - g) / 2
         self.add_subview(button('BPM \u2212 1', (10, y, w2, 46), tap(P.CC_BPMDN)))
         self.add_subview(button('BPM + 1', (10 + w2 + g, y, w2, 46), tap(P.CC_BPMDN + 1)))
+        y += 46 + g
+        self.bpm = ui.TextField(frame=(10, y, w2, 46), placeholder='BPM 60\u2013187', background_color=PANEL,
+                                text_color=FG, alignment=ui.ALIGN_CENTER, keyboard_type=ui.KEYBOARD_NUMBER_PAD)
+        self.bpm.font = ('Menlo-Bold', 20)
+        self.add_subview(self.bpm)
+        self.add_subview(button('SET BPM', (10 + w2 + g, y, w2, 46), self.set_bpm, HOT))
+
+    def set_bpm(self, s):
+        self.bpm.end_editing()
+        try:
+            v = int(round(float(self.bpm.text.replace(',', '.'))))
+        except ValueError:
+            self.bpm.text = ''
+            return
+        v = max(60, min(187, v))
+        self.bpm.text = str(v)
+        cc(P.CC_BPM, v - 60)
 
 
 class PadPage(ui.View):
