@@ -1822,6 +1822,10 @@ static struct {
 /* 32 bands 30 Hz .. 20 kHz, 0.3 of an octave apart (Hz); under 700 Hz from the 5.5 kHz rings */
 static const uint16_t SP_F[32] = {30, 37, 46, 56, 69, 86, 106, 130, 161, 198, 244, 301, 372, 459, 566, 697, 860, 1061, 1309,
                                   1614, 1991, 2455, 3028, 3735, 4607, 5682, 7007, 8643, 10660, 13147, 16216, 20000};
+/* (0.9.2) a float's order as an integer: the main unit's clang has no float compare (__ltsf2 missing at the link),
+ * so every float comparison here goes through it: FLT(a, b) a < b */
+static int32_t cos_fk(float f) { union { float f; int32_t i; } v = {f}; return v.i ^ ((v.i >> 31) & 0x7FFFFFFF); }
+#define FLT(a, b) (cos_fk(a) < cos_fk(b))
 /* floats' logs and powers, cheap (to ~0.01 dB): log2 from the exponent and a cubic, 2^x the other way */
 static float cos_log2f(float x)
 {
@@ -1834,17 +1838,18 @@ static float cos_log2f(float x)
 static float cos_exp2f(float x)
 {
     union { float f; uint32_t u; } v;
-    int32_t i = (int32_t)(x < 0.0f ? x - 1.0f : x);
+    int32_t i = (int32_t)x;
     float f = x - (float)i;
+    if (FLT(f, 0.0f)) { i--; f += 1.0f; }               /* (the floor: f in 0 .. 1) */
     if (i < -126) return 0.0f;
     v.u = (uint32_t)(i + 127) << 23;
     return v.f * (1.0f + f * (0.6960656f + f * (0.2244012f + f * 0.0790209f)));
 }
-static float cos_db(float p) { return p > 1e-12f ? 3.0103f * cos_log2f(p) : -120.0f; }   /* (power: 10 log10) */
+static float cos_db(float p) { return FLT(1e-12f, p) ? 3.0103f * cos_log2f(p) : -120.0f; }   /* (power: 10 log10) */
 /* "-9.4": one decimal */
 static void cos_fmt1(char *b, float v)
 {
-    int32_t t = (int32_t)(v < 0.0f ? v * 10.0f - 0.5f : v * 10.0f + 0.5f), a = t < 0 ? -t : t;
+    int32_t t = (int32_t)(FLT(v, 0.0f) ? v * 10.0f - 0.5f : v * 10.0f + 0.5f), a = t < 0 ? -t : t;
     char n[12];
     b[0] = 0;
     if (t < 0) str_cpy(b, "-", 2);
@@ -1959,11 +1964,11 @@ static void cos_lu_poll(void)
     if (now - lu.seen > 30u) lu.seen = now - 30u;         /* (a long gap: the ring's last 3 s) */
     for (; lu.seen != now; lu.seen++) {
         const mt_blk_t *b = &mt_ring[lu.seen & 31u];
-        if ((float)b->pk * (1.0f / 32768.0f) > lu.pk) lu.pk = (float)b->pk * (1.0f / 32768.0f);
+        if (FLT(lu.pk, (float)b->pk * (1.0f / 32768.0f))) lu.pk = (float)b->pk * (1.0f / 32768.0f);
         if (++lu.n >= 4u) {                               /* (a gating block: the 400 ms to this one) */
             for (e = 0.0f, k = 0; k < 4u; k++) e += cos_q30(mt_ring[(lu.seen - k) & 31u].kw);
             e = -0.691f + cos_db(e / (4.0f * 4410.0f));
-            if (e > -70.0f) lu.hist[clamp((int32_t)((e + 70.0f) * 2.0f), 0, 149)]++;
+            if (FLT(-70.0f, e)) lu.hist[clamp((int32_t)((e + 70.0f) * 2.0f), 0, 149)]++;
         }
     }
     nb = lu.n < 30u ? lu.n : 30u;
@@ -1974,25 +1979,25 @@ static void cos_lu_poll(void)
     {                                                     /* INTEGRATED: the gated mean of the histogram's blocks */
         float sum = 0.0f, gate, cnt = 0.0f;
         for (k = 0; k < 150u; k++) if (lu.hist[k]) { sum += (float)lu.hist[k] * cos_exp2f(((float)k * 0.5f - 69.75f + 0.691f) * 0.33219281f); cnt += (float)lu.hist[k]; }
-        if (cnt > 0.0f) {
+        if (FLT(0.0f, cnt)) {
             gate = -0.691f + cos_db(sum / cnt) - 10.0f;
             sum = cnt = 0.0f;
             for (k = 0; k < 150u; k++)
-                if (lu.hist[k] && (float)k * 0.5f - 69.75f >= gate) {
+                if (lu.hist[k] && !FLT((float)k * 0.5f - 69.75f, gate)) {
                     sum += (float)lu.hist[k] * cos_exp2f(((float)k * 0.5f - 69.75f + 0.691f) * 0.33219281f);
                     cnt += (float)lu.hist[k];
                 }
-            lu.i = cnt > 0.0f ? -0.691f + cos_db(sum / cnt) : -120.0f;
+            lu.i = FLT(0.0f, cnt) ? -0.691f + cos_db(sum / cnt) : -120.0f;
         } else lu.i = -120.0f;
     }
     {                                                     /* the stereo: L R's correlation, the side to the mid, L to R */
         float ll = 0.0f, rr = 0.0f, lr = 0.0f, d;
         for (k = 0; k < 3u && k < nb; k++) { const mt_blk_t *b = &mt_ring[(now - 1u - k) & 31u]; ll += cos_q30(b->ll); rr += cos_q30(b->rr); lr += b->lr < 0 ? -cos_q30((uint64_t)-b->lr) : cos_q30((uint64_t)b->lr); }
         d = ll * rr;
-        lu.corr = d > 1e-12f ? lr * cos_exp2f(-0.5f * cos_log2f(d)) : 1.0f;
+        lu.corr = FLT(1e-12f, d) ? lr * cos_exp2f(-0.5f * cos_log2f(d)) : 1.0f;
         d = ll + rr + 2.0f * lr;
-        lu.width = d > 1e-9f ? (ll + rr - 2.0f * lr) / d : 0.0f;   /* (the side's power over the mid's) */
-        lu.bal = rr > 1e-12f && ll > 1e-12f ? cos_db(ll / rr) : 0.0f;
+        lu.width = FLT(1e-9f, d) ? (ll + rr - 2.0f * lr) / d : 0.0f;   /* (the side's power over the mid's) */
+        lu.bal = FLT(1e-12f, rr) && FLT(1e-12f, ll) ? cos_db(ll / rr) : 0.0f;
     }
 }
 /* the scope drawn: its middle at y0 (sc.y), the second trace red (L/R: R; M/S: S), faint guides */
@@ -2077,18 +2082,18 @@ static void cos_body_stereo(void)
         cos_tx(x0, 34, "CORRELATION", C_DIM);
         cv_rect(x0, 52, x1 - x0, 1, C_DARK);
         cv_rect(xm, 46, 1, 12, C_DIM);
-        cv_rect(xc < xm ? xc : xm, 48, (xc < xm ? xm - xc : xc - xm) + 1, 8, lu.corr < 0.0f ? C_RED : C_FG);
-        { char t[8]; int32_t c2 = (int32_t)(lu.corr * 100.0f + (lu.corr < 0 ? -0.5f : 0.5f)); t[0] = 0;
+        cv_rect(xc < xm ? xc : xm, 48, (xc < xm ? xm - xc : xc - xm) + 1, 8, FLT(lu.corr, 0.0f) ? C_RED : C_FG);
+        { char t[8]; int32_t c2 = (int32_t)(lu.corr * 100.0f + (FLT(lu.corr, 0.0f) ? -0.5f : 0.5f)); t[0] = 0;
           if (c2 < 0) str_cpy(t, "-", 2); fmt_int(n, (c2 < 0 ? -c2 : c2) / 100); str_cpy(t + str_len(t), n, 3);
           str_cpy(t + str_len(t), ".", 2); fmt_int(n, (c2 < 0 ? -c2 : c2) % 100 + 100); str_cpy(t + str_len(t), n + 1, 3);
-          cos_px(x0, 62, t, lu.corr < 0.0f ? C_RED : C_FG, CZ_TALL); }
+          cos_px(x0, 62, t, FLT(lu.corr, 0.0f) ? C_RED : C_FG, CZ_TALL); }
         str_cpy(b, "WIDTH ", sizeof b);                   /* (the side's power to the mid's, percent) */
         fmt_int(n, (int32_t)(lu.width * 100.0f + 0.5f)); str_cpy(b + str_len(b), n, 8); str_cpy(b + str_len(b), "%", 2);
         cos_tx(x0, 94, b, C_MID);
         str_cpy(b, "BAL ", sizeof b);
         cos_fmt1(n, lu.bal); str_cpy(b + str_len(b), n, 10); str_cpy(b + str_len(b), " DB", 4);
         cos_tx(x0, 108, b, C_MID);
-        cos_tx(x0, 122, lu.bal > 0.5f ? "LEFT LOUDER" : lu.bal < -0.5f ? "RIGHT LOUDER" : "CENTRED", C_DIM);
+        cos_tx(x0, 122, FLT(0.5f, lu.bal) ? "LEFT LOUDER" : FLT(lu.bal, -0.5f) ? "RIGHT LOUDER" : "CENTRED", C_DIM);
     }
     cos_tx(4, 140, "+1 MONO 0 WIDE -1 PHASE", C_DIM);
 }
@@ -2102,23 +2107,23 @@ static void cos_body_loud(void)
     float v[3] = {lu.m, lu.s, lu.i};
     for (k = 0; k < 3; k++) {
         cos_tx(4, 36 + k * 20, NM[k], C_DIM);
-        if (v[k] > -70.0f) cos_fmt1(n, v[k]); else str_cpy(n, "-INF", 6);
+        if (FLT(-70.0f, v[k])) cos_fmt1(n, v[k]); else str_cpy(n, "-INF", 6);
         str_cpy(b, n, sizeof b);
-        cos_px(132, 32 + k * 20, b, k == 1 && v[k] > (float)tg + 1.0f ? C_RED : C_FG, CZ_TALL);
+        cos_px(132, 32 + k * 20, b, k == 1 && FLT((float)tg + 1.0f, v[k]) ? C_RED : C_FG, CZ_TALL);
         cos_tx(206, 36 + k * 20, "LUFS", C_DIM);
     }
     cos_tx(4, 96, "PEAK", C_DIM);
     {
-        float pk = lu.pk > 1e-6f ? cos_db(lu.pk * lu.pk) : -120.0f;   /* (a level: 20 log10) */
-        if (pk > -70.0f) cos_fmt1(n, pk); else str_cpy(n, "-INF", 6);
-        cos_px(132, 92, n, pk > -1.0f ? C_RED : C_FG, CZ_TALL);
+        float pk = FLT(1e-6f, lu.pk) ? cos_db(lu.pk * lu.pk) : -120.0f;   /* (a level: 20 log10) */
+        if (FLT(-70.0f, pk)) cos_fmt1(n, pk); else str_cpy(n, "-INF", 6);
+        cos_px(132, 92, n, FLT(-1.0f, pk) ? C_RED : C_FG, CZ_TALL);
         cos_tx(206, 96, "DBFS", C_DIM);
     }
     {                                                     /* the short-term as a bar, -30 .. 0 LUFS, TARGET a red mark */
         int32_t x0 = 4, x1 = 236, w = x1 - x0, x = x0 + (int32_t)((lu.s + 30.0f) * (float)w / 30.0f), xt = x0 + (tg + 30) * w / 30;
         x = clamp(x, x0, x1);
         cv_rect(x0, 122, w, 8, C_DARK);
-        if (x > x0) cv_rect(x0, 122, x - x0, 8, lu.s > (float)tg + 1.0f ? C_RED : C_MID);
+        if (x > x0) cv_rect(x0, 122, x - x0, 8, FLT((float)tg + 1.0f, lu.s) ? C_RED : C_MID);
         cv_rect(xt, 118, 2, 16, C_RED);
         str_cpy(b, "TARGET ", sizeof b); fmt_int(n, tg); str_cpy(b + str_len(b), n, 6);
         cos_tx(4, 140, b, C_DIM);
