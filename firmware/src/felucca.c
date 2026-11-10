@@ -64,8 +64,6 @@
 #include "fm1_multicore.h"
 #endif
 #include "fm1_input.h"
-#include "fm1_xip.h"                    /* (cursed-os 0.9.5) the sampler reads its sounds through XIP (cos_smp.h) */
-#define COS_SMP_XIP 1
 #include "fm1_timer.h"
 #include "fm1_audio.h"
 #include "fm1_adc.h"

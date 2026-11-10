@@ -1,10 +1,6 @@
 /* SPDX-License-Identifier: GPL-3.0-only
- * (cursedsound) the phone remote, the device's side (firmware/src/cos_remote.c, cos_sample.c, eng_sampler.c), fed the
- * frames tools/cursed_remote_proto.py makes (tests/remote_proto_test.py runs it):
- *   remote_test <frames file> <slot>   each frame (F0 .. F7) into rmt_frame, its reply printed (ACK n / NAK c);
- *                                      then "DEC" and the slot's samples as the engine decodes them (a line each),
- *                                      then "PLAY <rms> <crossings at C4> <crossings at C5>": the SAMPLER playing it
- *   remote_test                        its own checks: the CCs, TEXT, a NAK while playing, a sound out of order */
+ * (cursedsound) the phone remote, the device's side (firmware/src/cos_remote.c):
+ *   remote_test   its own checks: the CCs, TEXT, the sampler's frames refused (0.10.0: gone), BLE's frame assembly */
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -32,37 +28,6 @@ static void rt_feed(const uint8_t *f, uint32_t n)        /* a whole F0 .. F7 */
 static int fails;
 #define CHECK(c, ...) do { if (!(c)) { fails++; printf("FAIL: "); printf(__VA_ARGS__); printf("\n"); } } while (0)
 
-static void play_stats(uint32_t slot, uint32_t note, double *rms, uint32_t *cross)
-{
-    static int32_t o[2 * CTL];
-    track_t *t = &trk[1];
-    uint32_t b, i, nb = FS / 2u / CTL, x = 0;
-    double e = 0;
-    int32_t last = 0;
-    set_engine_of(t, getenv("RT_ENG") ? (uint32_t)atoi(getenv("RT_ENG")) : ENGI_SAMPLE);
-    t->engine = t->eng_req;
-    t->p[P_E0] = (int16_t)slot; t->p[P_E1] = 0; t->p[P_E2] = 127; t->p[P_E3] = 0; t->p[P_E4] = 0; t->p[P_E5] = 0; t->p[P_E6] = 100;
-    t->p[P_MUTE] = 0; t->p[P_LEVEL] = 100; t->p[P_DLY] = t->p[P_REV] = t->p[P_CHOR] = t->p[P_DIST] = 0;
-    t->p[P_ATK] = 0; t->p[P_SUS] = 127; t->p[P_DEC] = 64;
-    for (i = 0; i < NTRK; i++) if (i != 1u) trk[i].p[P_MUTE] = 1;
-    for (b = 0; b < 40u; b++) mix_block(o, CTL);          /* (the engine's switch faded through first) */
-    trk_note_on(t, note, 100);
-    if (getenv("RT_DBG")) { int32_t pk = 0, q; mix_block(o, CTL); for (q = 0; q < 2 * CTL; q++) if (abs(o[q]) > pk) pk = abs(o[q]); printf("dbg peak %d mute %d lvl %d live %u solo %u\n", pk, t->p[P_MUTE], t->p[P_LEVEL], trk_live, perf_solo); printf("dbg eng %u req %u active %d s6 %d ph0 %u end %u\n", t->engine, t->eng_req, t->v[0].active, t->v[0].s[6], t->v[0].ph[0], t->v[0].ph[2]); }
-    for (b = 0; b < nb; b++) {
-        mix_block(o, CTL);
-        for (i = 0; i < CTL; i++) {
-            int32_t s = o[2u * i];
-            e += (double)s * s;
-            if ((s >= 0) != (last >= 0) && b * CTL < FS * 3u / 10u) x++;   /* (crossings: the first 0.3 s) */
-            last = s;
-        }
-    }
-    trk_note_off(t, note);
-    for (b = 0; b < 40u; b++) mix_block(o, CTL);
-    *rms = sqrt(e / (nb * CTL));
-    *cross = x;
-}
-
 int main(int argc, char **argv)
 {
     ui_power_on();
@@ -70,38 +35,6 @@ int main(int argc, char **argv)
     song.master_q12 = 4096;                              /* (the master pot at unity: 0 in the tests) */
     usb.config = 1;
     song.playing = 0;
-    if (argc >= 3) {                                     /* frames from the Python side */
-        FILE *fp = fopen(argv[1], "rb");
-        static uint8_t buf[1 << 20];
-        uint32_t n, i, s = 0, slot = (uint32_t)atoi(argv[2]), cc, v;
-        const smp_ent_t *e;
-        if (!fp) return 2;
-        n = (uint32_t)fread(buf, 1, sizeof buf, fp);
-        fclose(fp);
-        for (i = 0; i < n; i++) {
-            if (buf[i] == 0xF0u) s = i;
-            if (buf[i] == 0xF7u) {
-                rt_feed(buf + s, i - s + 1u);
-                if (rt_reply(&cc, &v)) printf("%s %u\n", cc == 118u ? "ACK" : "NAK", v);
-                else printf("NONE\n");
-            }
-        }
-        e = smp_ent(slot);
-        printf("DEC %u %u\n", e ? e->len : 0u, e ? e->rate : 0u);
-        if (e) {
-            int32_t pr = 0, ix = 0;
-            uint32_t k;
-            for (k = 0; k < e->len; k++) printf("%d\n", smp_next(e, k, &pr, &ix));
-            {
-                double r1, r2;
-                uint32_t c1, c2;
-                play_stats(slot, 60, &r1, &c1);
-                play_stats(slot, 72, &r2, &c2);
-                printf("PLAY %.0f %u %u\n", r1, c1, c2);
-            }
-        }
-        return 0;
-    }
     {   /* channel 16's CCs: PLAY, a mute, the DJ FILTER, a pad key held and let go, a track picked */
         uint32_t m0 = trk[2].p[P_MUTE];
         cos_mq = 0;
@@ -169,22 +102,11 @@ int main(int argc, char **argv)
         CHECK(!strcmp(lyr_get(t), "hello me") && trk[t].p[P_VLYR] == 0 && trk[t].p[P_VLANG] == LG_EN,
               "TEXT: track %u sings 'hello me' (%s)", t + 1u, lyr_get(t));
     }
-    {   /* the sampler: playing, a BEGIN is refused (NAK 2); DATA before a BEGIN: NAK 6 */
-        static const uint8_t B[] = {0xF0, 0x7D, 0x63, 0x10, 0, 0, 'A', 'A', 'A', 'A', 'A', 'A', 'A', 'A', 0x22, 0x2C, 0x01,
-                                    0x00, 0x02, 0x00, 0x04, 0x01, 0x00, 0xF7};   /* (22050 Hz, 256 samples, 132 bytes) */
-        static const uint8_t D[] = {0xF0, 0x7D, 0x63, 0x11, 5, 0, 1, 2, 3, 0xF7};
+    {   /* (0.10.0) the sampler's frames (0x10..0x13, 0.9.5..0.9.9): gone, NAK 1 */
+        static const uint8_t B[] = {0xF0, 0x7D, 0x63, 0x10, 0, 0, 'A', 0xF7};
         uint32_t cc = 0, v = 0;
-        song.playing = 1;
         rt_feed(B, sizeof B);
-        CHECK(rt_reply(&cc, &v) && cc == 119u && v == 2u, "BEGIN while playing: NAK 2 (%u %u)", cc, v);
-        song.playing = 0;
-        su.on = 0;
-        rt_feed(D, sizeof D);
-        CHECK(rt_reply(&cc, &v) && cc == 119u && v == 6u, "DATA with no BEGIN: NAK 6 (%u %u)", cc, v);
-        rt_feed(B, sizeof B);
-        CHECK(rt_reply(&cc, &v) && cc == 118u && v == 0u, "BEGIN stopped: ACK 0 (%u %u)", cc, v);
-        rt_feed(D, sizeof D);
-        CHECK(rt_reply(&cc, &v) && cc == 119u && v == 6u, "DATA out of order (5 after 0): NAK 6 (%u %u)", cc, v);
+        CHECK(rt_reply(&cc, &v) && cc == 119u && v == 1u, "a sampler frame: NAK 1 (%u %u)", cc, v);
     }
     {   /* the ISR's frame assembly: BLE's SysEx packets (CIN 4..7) into one frame; a second while one waits: dropped */
         rmt_fready = 0;

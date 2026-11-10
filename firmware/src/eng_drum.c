@@ -501,12 +501,17 @@ static __attribute__((noinline)) void drum_side_ramp(int32_t *sl, int32_t *sr, i
     }
 }
 
+static const dx_lane_t *kick_patch(const track_t *t);  /* (cursed-os 0.10.0: eng_kick.c, KICK's own sound) */
 static void drum_render(track_t *t, voice_t *v, int32_t *out, uint32_t n, const vmod_t *m)
 {
     const int16_t *p = t->p;
     drum_lane_t *L = drum_lane_of(t, v);
     int32_t y[CTL], pb0 = 4096, pb1 = 4096;
     int32_t lv = clamp(p[P_LN0 + ((uint32_t)v->s[0] & (DV_NLANE - 1u))], 0, 127);
+    int kick = t->engine == ENGI_KICK;                   /* (cursed-os 0.10.0) KICK: its own sound, no lane LEVEL (the
+                                                          * track's), its own MORPH-less offsets (eng_kick.c) */
+    if (kick)
+        lv = 127;
     if (((uint32_t)v->s[0] & (DV_NLANE - 1u)) == DV_BELL)   /* (JIANT 0.6.49) the cowbell 4 dB under the others: it */
         lv = lv * 100 / 127;                                  /* stood out of every kit (its LEVEL at 100 % is this) */
     uint32_t i;
@@ -562,10 +567,10 @@ static void drum_render(track_t *t, voice_t *v, int32_t *out, uint32_t n, const 
         L->bc = (int16_t)(L->bc + (d > 0 ? (d < L->bs ? d : L->bs) : (-d < L->bs ? d : -L->bs)));
     }
     dx_lane_t acoustic_patch;
-    const dx_lane_t *patch=&dx_kit[(uint32_t)v->s[0] & (DV_NLANE-1u)];
+    const dx_lane_t *patch = kick ? kick_patch(t) : &dx_kit[(uint32_t)v->s[0] & (DV_NLANE-1u)];
     L->x.lg = (uint8_t)(((uint32_t)v->s[0] & (DV_NLANE - 1u)) | (v->gate ? 0x80u : 0u));   /* (cursed-os: its AHDSR's) */
     if(dx_acoustic) { dx_acoustic_patch(&acoustic_patch,patch,(uint32_t)v->s[0],v->vel);patch=&acoustic_patch; }
-    dx_run(patch, &L->x, p[P_E0] + dx_mot_v + L->rm + lfo_shp,
+    dx_run(patch, &L->x, kick ? 64 + lfo_shp : p[P_E0] + dx_mot_v + L->rm + lfo_shp,
            L->st * 16 + L->rt + L->bc + (p[P_E1] - 64) * 3 + t->pfx_pit + lfo_pit,
            p[P_E3] - 64 + DXO_DEC[L->dm & 3u], p[P_E2] - 64 + DXO_TON[L->dm & 3u], p[P_E4] - 64, p[P_E6], p[P_E5], y, n);
     {                                                    /* PUNCH: the boost before the knee (driven into it, as

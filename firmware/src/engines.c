@@ -7,10 +7,9 @@
 #include "eng_phase.c"
 #include "eng_lofi.c"
 #include "eng_formant.c"
-#include "cos_smp.h"             /* (cursed-os 0.9.5) the sampler's memory */
-#include "eng_sampler.c"          /* (cursed-os 0.9.5) SAMPLER (engine 4): the phone's sounds */
 #include "eng_wheel.c"
 #include "eng_drum.c"           /* DRUM: the 8-lane DRUM-X kit (drumx_voice.c) */
+#include "eng_kick.c"           /* (cursed-os 0.10.0) KICK (engine 4): DRUM-X's kick on a track of its own */
 #include "eng_noise.c"
 #include "eng_fm6.c"            /* FM6: 6-operator FM, msfa ported (fm6_core.c, Apache-2.0) */
 #include "eng_animal.c"         /* (JIANT 0.8.3) ANIMAL: animal calls (CMOS PULSE WHSTL WING GLOTT) */
@@ -57,7 +56,7 @@ static const engine_t *const ENGINES[NENGINES] = {
 #endif
     &ENG_PHASE,                  /* 2 */
     &ENG_LOFI,                   /* 3 */
-    &ENG_SAMPLER,                /* 4 (cursed-os 0.9.5) SAMPLER: the phone's sounds (SAMPLE's number, retired in JIANT) */
+    &ENG_KICK,                   /* 4 (cursed-os 0.10.0) KICK (0.9.5..0.9.9 SAMPLER; SAMPLE's number, retired in JIANT) */
     &ENG_FORMANT,                /* 5 VOICE (eng_formant.c: "voice" is a sounding note in voice.c) */
     &ENG_GONE,                   /* 6: reserved (TRIO, folded into ANALOG in JIANT 0.4: core.h analog_from_trio) */
     &ENG_WHEEL,                  /* 7 */
@@ -81,6 +80,7 @@ static inline uint32_t eng_idx(uint32_t e) { return e < NENGINES ? e : 0u; }
  * NOISE DRUM ANIMAL, which PROGRAM CHANGE keeps (ENGINE_PC_ORDER) */
 static const uint8_t ENGINE_ORDER[NENG_SHOWN] = {
     ENGI_DRUM,                   /* DRUM (DRUM-X) */
+    ENGI_KICK,                   /* (cursed-os 0.10.0) KICK */
     ENGI_ACID,                   /* (cursed-os) ACID: the 303 */
     ENGI_VOICE,                  /* VOICE */
     ENGI_ANIMAL,                 /* ANIMAL */
@@ -90,7 +90,6 @@ static const uint8_t ENGINE_ORDER[NENG_SHOWN] = {
     ENGI_PHASE, ENGI_WHEEL,      /* PHASE WHEEL */
     ENGI_NOISE,                  /* NOISE */
     ENGI_STRING, ENGI_ADD,       /* (0.9.9-snd5) STRING ADD */
-    ENGI_SAMPLE,                 /* (cursed-os 0.9.5) SAMPLER */
 #if FELUCCA_FM4
     ENGI_DIGITAL,                /* DIGITAL (retired, FELUCCA_FM4 builds only): after the rest */
 #endif
@@ -106,7 +105,7 @@ static const uint8_t ENGINE_PC_ORDER[NENG_SHOWN] = {
     ENGI_PHASE, ENGI_LOFI, ENGI_VOICE, ENGI_WHEEL, ENGI_NOISE, ENGI_DRUM, ENGI_ANIMAL,
     ENGI_STRING, ENGI_ADD,       /* (0.9.9-snd5: after ANIMAL, every number before kept) */
     ENGI_ACID,                   /* (cursed-os) */
-    ENGI_SAMPLE,                 /* (cursed-os 0.9.5) SAMPLER */
+    ENGI_KICK,                   /* (cursed-os 0.10.0) KICK (0.9.5: SAMPLER's place) */
 };
 
 /* the engines one can pick (engine 1 only with FELUCCA_FM4), in ENGINE_ORDER: eng_ok(e), the n-th of them
@@ -181,9 +180,11 @@ static const struct {
 #define TRK_PR_VOICE 9u          /* SINGER EN (eng_formant.c FORMANT_PRESETS) */
 #define TRK_PR_ANALOG 14u        /* FAT BASS (eng_analog.c) */
 #define TRK_PR_PAD 22u           /* (cursed-os) DARK PAD (eng_analog.c) */
-static const uint8_t TRK_DEF[NPART][3] = {{ENGI_DRUM, 0, 0}, {ENGI_ACID, 0, 0}, {ENGI_ANALOG, TRK_PR_ANALOG, 0},
-                                          {ENGI_ANALOG, TRK_PR_PAD, 0}, {ENGI_VOICE, TRK_PR_VOICE, 0}, {ENGI_FM6, 0, 0}};
-/* (cursed-os) DRUM-X, ACID's TB CLASSIC, FAT BASS, DARK PAD, SINGER EN (five tracks play: ui.c rp_apply), TINE EP.
+static const uint8_t TRK_DEF[NPART][3] = {{ENGI_DRUM, 0, 0}, {ENGI_KICK, 0, 0}, {ENGI_ACID, 0, 0},
+                                          {ENGI_ANALOG, TRK_PR_ANALOG, 0}, {ENGI_ANALOG, TRK_PR_PAD, 0}, {ENGI_VOICE, TRK_PR_VOICE, 0}};
+/* (cursed-os 0.10.0) DRUM-X with its kick lane at 0 (ui.c power_sound_of), the KICK (TECHNO), ACID's TB CLASSIC, FAT
+ * BASS, DARK PAD, SINGER EN: all six play (ui.c rp_apply). Through 0.9.9: DRUM-X, TB CLASSIC, FAT BASS, DARK PAD,
+ * SINGER EN (five played), TINE EP.
  * JIANT's: */
 /* DRUM-X (DRUM's first, the factory kit), SINGER EN, CMOS BIRD, BYTEBEAT, FAT BASS, TINE EP */
 /* the parts at power-on through 0.9.8 (the same columns): what an old project's tracks it had no room for load as

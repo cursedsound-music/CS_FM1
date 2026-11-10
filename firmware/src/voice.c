@@ -249,7 +249,7 @@ static __attribute__((noinline)) void tf_run(track_t *t, int32_t *out, uint32_t 
     }
     if (own && ft != FT_MS20)
         return;
-    if (t->engine == ENGI_DRUM)
+    if (t->engine == ENGI_DRUM || t->engine == ENGI_KICK)
         envq = (uint16_t)drum_env(t) + 1;                   /* (gen6d: the kit's ENV, its voices held at full) */
     else
         for (i = 0; i < NVOICE; i++)
@@ -432,7 +432,7 @@ static __attribute__((noinline)) void track_f2(track_t *t, int32_t *out, uint32_
     tsvf_t c;
     if (!ty && !was)
         return;
-    if (t->engine == ENGI_DRUM)
+    if (t->engine == ENGI_DRUM || t->engine == ENGI_KICK)
         envq = (uint16_t)drum_env(t) + 1;
     else
         for (i = 0; i < NVOICE; i++)
@@ -1076,7 +1076,7 @@ static void voice_begin(track_t *t, voice_t *v, uint32_t note, uint32_t vel, int
     v->pn_dbend = t->dbend;
     v->pn_dbt = t->dbt;
     v->pn_tch = (uint8_t)(dx_in_tch ? dx_in_tch : t->dtch);
-    if (e == &ENG_DRUM && drum_lane(note) == DV_KICK)
+    if ((e == &ENG_DRUM && drum_lane(note) == DV_KICK) || e == &ENG_KICK)
         duck_hit = 1;                                   /* (DUCK: the kick's, as drum_note_on tells it; this block's) */
     v->active = 1;
     v->gate = 1;
@@ -1236,7 +1236,8 @@ static void trk_note_on(track_t *t, uint32_t note, uint32_t vel)
         return;
     }
     if (t->p[P_MUTE] || ((trk_hush >> ((uint32_t)(t - trk) % NTRK)) & 1u) ||
-        (t->engine == ENGI_DRUM && drum_muted(note)))   /* (DRUM: its group mutes) */
+        (t->engine == ENGI_DRUM && drum_muted(note)) ||   /* (DRUM: its group mutes) */
+        (t->engine == ENGI_KICK && dx_lane_muted(DV_KICK)))   /* (0.10.0: KICK, the KICK KILL) */
         return;
     if (pfx_note(t, note, vel))                         /* the punch-in effects (pfx.c): a repeat holds the track */
         return;
@@ -1714,7 +1715,7 @@ static uint32_t track_render(track_t *t, int32_t *out, uint32_t n)
         drum_side_begin(t, n);
     if (e->block)                                       /* the engine's per-part work (WHEEL: bars, rotor) */
         e->block(t);
-    damt = e == &ENG_DRUM ? 0 : 127 - clamp(p[P_DRIFT], 0, 127);   /* (0.7.8) DRIFT, 127 stored = 0 % */
+    damt = ENG_HITS(e) ? 0 : 127 - clamp(p[P_DRIFT], 0, 127);   /* (0.7.8) DRIFT, 127 stored = 0 % */
     if (damt)
         drift_clk[ti]++;
     {
@@ -1760,10 +1761,10 @@ static uint32_t track_render(track_t *t, int32_t *out, uint32_t n)
             nr++;
         }
     }
-    if (nr && e == &ENG_DRUM)                           /* (0.6.16) DRUM-X: DRV and the knee on the kit's sum */
+    if (nr && ENG_HITS(e))                              /* (0.6.16) DRUM-X: DRV and the knee on the kit's sum (0.10.0: KICK's) */
         drum_bus(t, out, n);
     if (nr && (t->p[P_FTYPE] || t->p[P_FCUT] < 127 || t->p[P_FRES] || tf_on[(uint32_t)(t - trk) % NTRK] ||
-               ((e == &ENG_WHEEL || e == &ENG_DRUM) && (t->p[P_LD_FLT] || t->p[P_ED_FLT])) ||   /* (0.6.81: their
+               ((e == &ENG_WHEEL || ENG_HITS(e)) && (t->p[P_LD_FLT] || t->p[P_ED_FLT])) ||   /* (0.6.81: their
                                                          * only filter, for the LFO / ENV -> FILTER) */
                tf_xb[(uint32_t)(t - trk) % NTRK] || tf_cmb[(uint32_t)(t - trk) % NTRK]))
         /* (JIANT 0.5) the FILTER (track_post); 0.6.8: and a block more to leave the chain (track_filter's fade) */

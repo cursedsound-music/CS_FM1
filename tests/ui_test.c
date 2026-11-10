@@ -491,7 +491,7 @@ static int test_sound_loads(void)
     apply_preset_to(t, 0);
     track_defaults_steps(t);
     project_load(0);
-    bad += check("(cursed-os 0.9.5) a saved engine-4 track stays SAMPLER (no PERC kit: engine 4 is the sampler), its steps kept",
+    bad += check("(cursed-os) a saved engine-4 track stays engine 4 (KICK; no PERC kit), its steps kept",
                  t->eng_req == ENGI_SAMPLE && !memcmp(t->step, before.step, sizeof t->step));
     {   /* a user preset of SAMPLE PERC (UP_PUT from an older editor, or a bank read): DRUM, its kit */
         up_rec_t r;
@@ -509,7 +509,7 @@ static int test_sound_loads(void)
         memcpy(keep, t->p, sizeof keep);
         song.sel = (uint8_t)(t - trk);
         up_load(7);
-        bad += check("(cursed-os 0.9.5) an engine-4 user preset loads as SAMPLER", t->eng_req == ENGI_SAMPLE &&
+        bad += check("(cursed-os) an engine-4 user preset loads as engine 4 (KICK)", t->eng_req == ENGI_SAMPLE &&
                      t->p[P_LEVEL] == keep[P_LEVEL]);
         memset(up_rec(7), 0, sizeof r);
     }
@@ -518,7 +518,7 @@ static int test_sound_loads(void)
     bad += check("factory preset 4 of another engine stays that engine's", t->eng_req == 0u && t->preset == 4u);
     t->eng_req = t->engine = ENGI_SAMPLE;         /* (a SAMPLE sound arriving: SAMPLE is retired, set_engine_of gives ANALOG) */
     apply_preset_to(t, SMP_SET_PERC);             /* SAMPLE preset 4 (once PERC): the editor's PRESET, a favourite */
-    bad += check("(cursed-os 0.9.5) SAMPLER's preset 4: its own (KEYS), no PERC kit", t->eng_req == ENGI_SAMPLE && t->preset == 4u);
+    bad += check("(cursed-os) engine 4 (KICK) preset 4: its own (PUNCH), no PERC kit", t->eng_req == ENGI_SAMPLE && t->preset == 4u);
     ui_power_on();
     host_legacy_sample_perc(&trk[3]);
     my_steps(&trk[3]);
@@ -5767,7 +5767,7 @@ static int test_fm4_retired(void)
         if (e < NENGINES)
             seen |= 1u << e;
     }
-    bad += check("PRESETS: the list holds every engine's presets but the retired ones' (DIGITAL PHYS TRIO; 0.9.5: SAMPLER's)",
+    bad += check("PRESETS: the list holds every engine's presets but the retired ones' (DIGITAL PHYS TRIO; engine 4 KICK)",
                  seen == all && NENG_SHOWN == NENGINES - 3u);
     go_page(GR_BROWSE);
     set_engine_of(TSEL, 0);
@@ -12804,7 +12804,8 @@ static int test_power_on_099(void)
         ui_power_on_099();
         song.master_q12 = 4096;
         frame();
-        fm1_in.notes = host_notes = 1u << 7;            /* C4 */
+        fm1_in.notes = host_notes = 1u << 9;            /* D4 (cursed-os 0.10.0: the snare; C, the kick, is the KICK
+                                                         * track's: the kit's kick lane at 0) */
         for (b = 0; b < 400u; b++) {
             if (b % 16u == 0u) frame();
             mix_block(o, CTL);
@@ -12821,7 +12822,7 @@ static int test_power_on_099(void)
         midi_enqueue(0x08u | 0x80u << 8 | 64u << 16, 1u);
         for (b = 0; b < 64u; b++) mix_block(o, CTL);
         printf("  power-on HOME: C4 key peak %d, MIDI E4 peak %d\n", pk1, pk2);
-        bad += check("  HOME at power-on: a key (C4) and a MIDI note (E4, channel 1) sound on T1 DRUM-X", pk1 > 300 && pk2 > 300);
+        bad += check("  HOME at power-on: a key (D4) and a MIDI note (E4, channel 1) sound on T1 DRUM-X", pk1 > 300 && pk2 > 300);
     }
     ui_power_on();
     return bad;
@@ -12832,7 +12833,7 @@ static int test_power_on_099(void)
  * saved on 0.9.8's parts loads as it was saved, whatever the power-on */
 static int test_engine_order_099(void)
 {
-    static const char *const IDX[NENGINES] = {"ANALOG", 0, "PHASE", "LOFI", "SAMPLER", "VOICE", "-", "WHEEL", "STRING", "-", "DRUM",
+    static const char *const IDX[NENGINES] = {"ANALOG", 0, "PHASE", "LOFI", "KICK", "VOICE", "-", "WHEEL", "STRING", "-", "DRUM",
                                               "NOISE", "FM6", "ADD", "ANIMAL"};
     static const char *const PC[] = {"ANALOG", "FM6",
 #if FELUCCA_FM4

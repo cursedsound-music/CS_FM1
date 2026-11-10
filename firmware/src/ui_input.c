@@ -2161,10 +2161,10 @@ static void scale_link(void)
 {
     const track_t *t = TSEL;
     uint32_t k;
-    for (k = 0; k < NTRK && drum_track(t); k++) t = &trk[k];   /* (0.8.3) a DRUM track selected: the first melodic
+    for (k = 0; k < NTRK && trk_hits(t); k++) t = &trk[k];   /* (0.8.3) a DRUM track selected: the first melodic
                                                          * track's counts (a section the song brings in its own key:
                                                          * its key, not the one before it) */
-    if (!drum_track(t) && (t->p[P_ROOT] != sl_root || t->p[P_SCALE] != sl_scale || t->p[P_QUANT] != sl_quant)) {
+    if (!trk_hits(t) && (t->p[P_ROOT] != sl_root || t->p[P_SCALE] != sl_scale || t->p[P_QUANT] != sl_quant)) {
         sl_root = t->p[P_ROOT];
         sl_scale = t->p[P_SCALE];
         sl_quant = t->p[P_QUANT];
@@ -2172,7 +2172,7 @@ static void scale_link(void)
     if (sl_root < 0)
         return;                                         /* (a DRUM track selected from the start: nothing yet) */
     for (k = 0; k < NTRK; k++)
-        if (!drum_track(&trk[k])) {
+        if (!trk_hits(&trk[k])) {                       /* (0.10.0: nor a KICK) */
             trk[k].p[P_ROOT] = sl_root;
             trk[k].p[P_SCALE] = sl_scale;
             trk[k].p[P_QUANT] = sl_quant;

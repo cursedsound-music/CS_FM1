@@ -1324,7 +1324,7 @@ static void reso_block(uint32_t *per)
     uint32_t k, mask, s, fol = reso_folw(), up = reso_pitch();
     int32_t note[4], deg = 0, nn;
     for (k = 0; k < NTRK; k++)                           /* the song's scale: the first melodic track's (they share it) */
-        if (ENGINES[eng_idx(trk[k].eng_req)] != &ENG_DRUM) { t = &trk[k]; break; }
+        if (!ENG_HITS(ENGINES[eng_idx(trk[k].eng_req)])) { t = &trk[k]; break; }   /* (0.10.0: nor the KICK) */
     mask = scale_mask(t) & 0xFFFu;
     if (!mask) mask = 0xFFFu;
     nn = 48 + t->p[P_ROOT];
@@ -2604,7 +2604,7 @@ static inline __attribute__((always_inline)) void mix_part(track_t *t, uint32_t 
         int32_t pre[CTL];
         if (fx_stems)                                   /* (0.7.1) the part's stem: what it adds to the mix */
             stem_pre(pre, ol, or_, n);
-        if ((duck_g0 < 32767 || duck_g1 < 32767) && ENGINES[t->engine] != &ENG_DRUM)   /* DUCK: the kick's */
+        if ((duck_g0 < 32767 || duck_g1 < 32767) && !ENG_HITS(ENGINES[t->engine]))   /* DUCK: the kick's */
             lq = duck_ramp(l0 >> 8, mp_lvl[ti] >> 8, &dl);
         track_dist(t, b, n);
         int32_t pm0 = 32768, pm1 = 32768;               /* (0.6.48: drum_mix's; pf.mg counts only while muting) */
@@ -2618,7 +2618,7 @@ static inline __attribute__((always_inline)) void mix_part(track_t *t, uint32_t 
                 mod_end(t);
             return;
         }
-        if (rmb_v[0] && ENGINES[t->engine] == &ENG_DRUM) {   /* (cursed-os) RUMBLE's feed: the kit at its LEVEL */
+        if (rmb_v[0] && ENG_HITS(ENGINES[t->engine])) {   /* (cursed-os) RUMBLE's feed: the kit at its LEVEL (0.10.0: the KICK) */
             void (*f)(const int32_t *, uint32_t, int32_t, int32_t, uint32_t) = rmb_feed;
             FM1_OPAQUE(f);                              /* (as tape_block: out of the RAM code's direct reach) */
             f(b, n, lq, dl, c1);
@@ -2905,7 +2905,7 @@ static __attribute__((noinline)) uint32_t mc_split(uint32_t c1)   /* c1: what co
         const track_t *t = &trk[i];
         uint32_t bit = 1u << i;
         unit[i] = bit; cost[i] = 0;
-        if (ENGINES[t->engine] == &ENG_DRUM) dep[0] |= bit;
+        if (ENG_HITS(ENGINES[t->engine])) dep[0] |= bit;   /* (0.10.0: a KICK with the kit: DRUM-X's globals) */
         if (ENGINES[t->engine] == &ENG_FORMANT && mc_voice_noise(t)) dep[1] |= bit;
         if ((t->p[P_APDEP] && t->p[P_APWAVE] >= 4) || t->xf_on) dep[2] |= bit;
         if (mc_rng_part(i)) fixed |= bit;

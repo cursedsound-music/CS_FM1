@@ -36,14 +36,21 @@ Planned work. Done items move to the commit log.
 - **Tempo and key synced to Ableton.** The tempo works now: GLO > MIDI > CLOCK USB, and in Live the FM-1 as a
   clock destination (Preferences > Link/Tempo/MIDI: its output port's Sync on); START / STOP follow. Left: the key
   (Live has no key message: a CC or program change map from a Max for Live device, or the FM-1 sending its key).
-- ~~A sampler over Bluetooth~~ (0.9.5): the SAMPLER engine (engine 4, PERC's place), 16 slots in the flash of songs
-  5–8 (~11 s at 22 kHz, IMA ADPCM), sent by tools/cursed_remote.py (Pythonista) over BLE-MIDI SysEx, each frame
-  ACKed. Left: a computer sender (the same frames over USB), a sample editor on the FM-1, more room (the BLE segment's
-  spare flash?).
+- ~~A sampler over Bluetooth~~ (0.9.5, gone in 0.10.0): 11 s in the flash of songs 5..8 was too little to be useful
+  (GG); songs 5..8 back. What could use that room instead (wavetables, granular, a one-shot kit) is below.
 - ~~Phone control over Bluetooth MIDI~~ (0.9.5): channel 16's CC map (cos_remote.c) and tools/cursed_remote.py.
   Left: try it on GG's iPhone (written blind: the CoreMIDI and Bluetooth window code untested), a TouchOSC layout.
 - ~~Words from the phone~~ (0.9.5): SysEx TEXT into the VOICE track's lyric.
 - Recording what another app plays on the iPhone: iOS doesn't allow it (Files or the mic instead).
+- Ideas for flash room (GG to pick, 2026-11-10): wavetables from the phone for a WAVETABLE engine; granular textures
+  from a short sound; a one-shot kit of own hits; a VOICE phrase library.
+
+## Drums live (GG, 2026-11-10)
+
+- ~~A kick of its own~~ (0.10.0): engine 4 KICK (DRUM-X's kick, its own KIND), T2 at power-on; the kit's kick lane
+  at 0. GEN: PATTERN.
+- ~~The drums in one at a time, fast~~ (0.10.0): HOME + white 1..8 (on the beat / bar, MUTE Q), the phone's DRUMS page
+  (CC 91..98).
 
 - ~~The volume knob after the comp, the limiter and the meters~~ (0.9.9): MASTER always last (USB LEVEL FIXED for
   good): the headphones and the speaker only; the meters, the limiter and USB at the full level.

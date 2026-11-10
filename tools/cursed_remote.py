@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: GPL-3.0-only
 # Copyright (C) 2026 cursedsound
-"""CURSED REMOTE: the JIANT FM-1 (cursed-os 0.9.5+) from an iPhone, in Pythonista 3.
+"""CURSED REMOTE: the JIANT FM-1 (cursed-os 0.10.0+) from an iPhone, in Pythonista 3.
 
 Put this file and cursed_remote_proto.py in the same Pythonista folder and run this one.
 
@@ -9,12 +9,11 @@ Put this file and cursed_remote_proto.py in the same Pythonista folder and run t
   FX       the FX pad (hold a key)
   MIX      DJ filter, isolator, macros, morph: tap a value and it jumps back to rest
            (all channel 16 CCs: cos_remote.c; NUDGE and BPM -/+ need cursed-os 0.9.6, the exact BPM 0.9.7)
+  DRUMS    each drum sound in and out (KICK, SNARE, CLAP, HAT, OPEN HAT, TOM, RIM, BELL; cursed-os 0.10.0): lit = in,
+           on the beat / bar as the FM-1's MUTE Q says
   VOICE    type words: the first VOICE track sings them from its next note
-  SAMPLE   a sound from Files (wav, aif, mp3, m4a, caf) or the mic: trim, reverse, normalise, and send it into
-           one of the 16 slots (the SAMPLER engine plays it). Stop the music on the FM-1 first.
 
-iOS doesn't let a script record what another app is playing: save the sound to Files (or play it out loud and
-use the mic). Works over USB MIDI too (a camera adapter / USB-C): pick the FM-1's USB port as the output.
+Works over USB MIDI too (a camera adapter / USB-C): pick the FM-1's USB port as the output.
 """
 import ctypes, os, queue, struct, sys, threading, time
 from ctypes import c_void_p, c_uint32, c_int32, c_uint64, c_float, POINTER, byref
@@ -22,7 +21,7 @@ from ctypes import c_void_p, c_uint32, c_int32, c_uint64, c_float, POINTER, byre
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import cursed_remote_proto as P
 
-import ui, dialogs, sound
+import ui
 from objc_util import ObjCClass, ObjCInstance, ns, nsurl, on_main_thread, load_framework
 
 # ------------------------------------------------------------------------------------------------ CoreMIDI
@@ -331,6 +330,57 @@ class PlayPage(ui.View):
         return f
 
 
+class DrumsPage(ui.View):
+    """the drums' sounds in and out: big toggles, lit = in (the FM-1 does it on the beat / bar, its MUTE Q)"""
+    def __init__(self, **kw):
+        super().__init__(**kw)
+        g, fw = 8, W - 20
+        w2 = (fw - g) / 2
+        self.out = [False] * 8
+        self.b = []
+        for i, t in enumerate(P.DRUM_SOUNDS):
+            r, c = divmod(i, 2)
+            b = button(t, (10 + c * (w2 + g), 10 + r * 84, w2, 76), self.flip(i), PANEL, 20)
+            self.b.append(b)
+            self.add_subview(b)
+        y = 10 + 4 * 84 + 4
+        self.add_subview(button('ALL IN', (10, y, w2, 52), self.all_in, PANEL, 16))
+        self.add_subview(button('ONLY KICK + HATS', (10 + w2 + g, y, w2, 52), self.only(0, 3), PANEL, 13))
+        self.add_subview(label('KICK is the KICK track; the rest the DRUM track\'s sounds. On the FM-1: HOME + white 1\u20138.',
+                               (10, y + 60, fw, 40), 10))
+        self.subviews[-1].number_of_lines = 2
+        self.show()
+
+    def show(self):
+        for i, b in enumerate(self.b):
+            b.background_color = PANEL if self.out[i] else HOT
+            b.tint_color = DIM if self.out[i] else FG
+
+    def send(self, i):
+        cc(P.CC_DRUM0 + i, 127 if self.out[i] else 0)
+
+    def flip(self, i):
+        def f(s):
+            self.out[i] = not self.out[i]
+            self.send(i)
+            self.show()
+        return f
+
+    def all_in(self, s):
+        for i in range(8):
+            self.out[i] = False
+            self.send(i)
+        self.show()
+
+    def only(self, *keep):
+        def f(s):
+            for i in range(8):
+                self.out[i] = i not in keep
+                self.send(i)
+            self.show()
+        return f
+
+
 class PadPage(ui.View):
     """the FX pad: an effect runs while its key is touched"""
     def __init__(self, **kw):
@@ -418,239 +468,6 @@ def wait_reply(t):
         return None
 
 
-# the sampler's room: 30 sectors of 4096 bytes, 132 bytes per 256 samples
-MAX_SAMPLES = 30 * 4096 // P.BLKB * P.BLK
-
-
-def decode_file(path):
-    """any audio file iOS reads -> (mono int16 list, rate)"""
-    load_framework('AVFoundation')
-    AVAudioFile = ObjCClass('AVAudioFile')
-    AVAudioPCMBuffer = ObjCClass('AVAudioPCMBuffer')
-    f = AVAudioFile.alloc().initForReading_error_(nsurl(path), None)
-    if not f:
-        raise IOError("can't read that file")
-    fmt = f.processingFormat()
-    rate = int(fmt.sampleRate())
-    chans = int(fmt.channelCount())
-    n = min(int(f.length()), rate * 60)                  # (a minute at most: trimmed later)
-    buf = AVAudioPCMBuffer.alloc().initWithPCMFormat_frameCapacity_(fmt, n)
-    f.readIntoBuffer_frameCount_error_(buf, n, None)
-    got = int(buf.frameLength())
-    chp = ctypes.cast(buf.floatChannelData().ptr if hasattr(buf.floatChannelData(), 'ptr') else buf.floatChannelData(),
-                      POINTER(POINTER(c_float)))
-    ch = [chp[c][:got] for c in range(chans)]
-    if chans == 1:
-        mono = ch[0]
-    else:
-        mono = [sum(v) / chans for v in zip(*ch)]
-    return [int(max(-1.0, min(1.0, x)) * 32767) for x in mono], rate
-
-
-class SamplerPage(ui.View):   # (Pythonista: ui.ScrollView can't be subclassed: one inside)
-    def __init__(self, app, **kw):
-        super().__init__(**kw)
-        self.sv = ui.ScrollView(frame=(0, 0, self.width, self.height), flex='WH', background_color=BG)
-        ui.View.add_subview(self, self.sv)
-        self.app, self.src, self.rate, self.path, self.rec, self.busy = app, None, 0, None, None, False
-        g = 6
-        bw = (W - 20 - g) / 2
-        self.sv.add_subview(button('FROM FILES…', (10, 8, bw, 44), self.pick))
-        self.recb = button('● RECORD MIC', (10 + bw + g, 8, bw, 44), self.record)
-        self.sv.add_subview(self.recb)
-        self.info = label('no sound yet', (10, 58, W - 20, 36), 12, FG)
-        self.info.number_of_lines = 2
-        self.sv.add_subview(self.info)
-        self.wave = ui.ImageView(frame=(10, 96, W - 20, 70), background_color=PANEL)
-        self.sv.add_subview(self.wave)
-        self.start = Fader('START', -1, 0, frame=(10, 168, W - 20, 40))
-        self.length = Fader('LENGTH', -1, 127, frame=(10, 208, W - 20, 40))
-        for fd in (self.start, self.length):
-            fd.s.action = self.trim_moved
-            self.sv.add_subview(fd)
-        self.rev = ui.Switch(frame=(10, 252, 60, 32)); self.sv.add_subview(self.rev)
-        self.sv.add_subview(label('REVERSE', (70, 252, 80, 32), 11))
-        self.nrm = ui.Switch(frame=(150, 252, 60, 32), value=True); self.sv.add_subview(self.nrm)
-        self.sv.add_subview(label('NORMALISE', (210, 252, 90, 32), 11))
-        self.lng = ui.Switch(frame=(10, 290, 60, 32)); self.lng.action = self.trim_moved; self.sv.add_subview(self.lng)
-        self.sv.add_subview(label('LONG (11 kHz: twice the time, duller)', (70, 290, W - 80, 32), 11))
-        self.sv.add_subview(button('▶ HEAR IT', (10, 330, W - 20, 36), self.hear))
-        self.sv.add_subview(label('SLOT', (10, 374, 60, 16), 10))
-        self.slot = ui.SegmentedControl(frame=(10, 390, W - 20, 30), segments=[str(i + 1) for i in range(8)])
-        self.slot2 = ui.SegmentedControl(frame=(10, 424, W - 20, 30), segments=[str(i + 9) for i in range(8)])
-        self.slot.selected_index, self.slot2.selected_index = 0, -1
-        self.slot.action = lambda s: setattr(self.slot2, 'selected_index', -1)
-        self.slot2.action = lambda s: setattr(self.slot, 'selected_index', -1)
-        self.sv.add_subview(self.slot); self.sv.add_subview(self.slot2)
-        self.nm = ui.TextField(frame=(10, 462, W - 20, 34), placeholder='NAME (8 letters)', background_color=PANEL,
-                                 text_color=FG, autocapitalization_type=ui.AUTOCAPITALIZE_ALL)
-        self.sv.add_subview(self.nm)
-        self.sendb = button('SEND TO THE FM-1', (10, 506, W - 20, 50), self.send, HOT)
-        self.sv.add_subview(self.sendb)
-        self.sv.add_subview(button('DELETE THIS SLOT', (10, 564, W - 20, 34), self.delete))
-        self.prog = label('', (10, 604, W - 20, 40), 11, FG)
-        self.prog.number_of_lines = 2
-        self.sv.add_subview(self.prog)
-        self.sv.add_subview(label('Stop the music on the FM-1 first. A sound takes a minute or so over Bluetooth. '
-                               'Then on a track: ENGINE SAMPLER, SAMPLE = the slot.', (10, 646, W - 20, 50), 10))
-        self.sv.subviews[-1].number_of_lines = 3
-        self.sv.content_size = (W, 710)
-
-    # -- the sound
-    def load(self, samples, rate, nm):
-        self.src, self.rate = samples, rate
-        self.nm.text = ''.join(c for c in os.path.splitext(os.path.basename(nm))[0].upper() if c.isalnum())[:8]
-        self.trim_moved(None)
-
-    def pick(self, s):
-        p = dialogs.pick_document(types=['public.audio'])
-        if not p:
-            return
-        self.info.text = 'reading…'
-        try:
-            smp, rate = decode_file(p)
-        except Exception as e:
-            self.info.text = 'could not read it: %s' % e
-            return
-        self.path = p
-        self.load(smp, rate, p)
-
-    def record(self, s):
-        p = os.path.join(os.path.expanduser('~/Documents'), 'cursed_mic.m4a')
-        if self.rec is None:
-            self.rec = sound.Recorder(p)
-            self.rec.record()
-            self.recb.title, self.recb.background_color = '■ STOP', HOT
-            self.info.text = 'recording… (11 s at most is kept)'
-        else:
-            self.rec.stop()
-            self.rec = None
-            self.recb.title, self.recb.background_color = '● RECORD MIC', PANEL
-            try:
-                smp, rate = decode_file(p)
-            except Exception as e:
-                self.info.text = 'could not read the recording: %s' % e
-                return
-            self.path = p
-            self.load(smp, rate, 'MIC')
-
-    def rate_out(self):
-        return 11025 if self.lng.value else 22050
-
-    def cut(self):
-        """the trimmed, resampled, (reversed, normalised) sound to send"""
-        if not self.src:
-            return []
-        n = len(self.src)
-        a = int(self.start.s.value * n)
-        most = MAX_SAMPLES * self.rate // self.rate_out()
-        ln = max(1, min(n - a, most, int(self.length.s.value * most)))
-        x = self.src[a:a + ln]
-        if self.rev.value:
-            x = x[::-1]
-        x = P.resample(x, self.rate, self.rate_out())
-        if self.nrm.value:
-            x = P.normalize(x)
-        return x[:MAX_SAMPLES]
-
-    def trim_moved(self, s):
-        if not self.src:
-            return
-        n = len(self.src)
-        most = MAX_SAMPLES * self.rate // self.rate_out()
-        a = int(self.start.s.value * n)
-        ln = max(1, min(n - a, most, int(self.length.s.value * most)))
-        self.start.v.title = '%.2fs' % (a / self.rate)
-        self.length.v.title = '%.2fs' % (ln / self.rate)
-        self.info.text = '%.1f s at %d Hz; sending %.2f s (%.1f s at most)' % (
-            n / self.rate, self.rate, ln / self.rate, MAX_SAMPLES / self.rate_out())
-        self.draw_wave(a, ln)
-
-    def draw_wave(self, a, ln):
-        w, h = self.wave.width, self.wave.height
-        n = len(self.src)
-        step = max(1, n // int(w))
-        with ui.ImageContext(w, h) as ctx:
-            ui.set_color(PANEL); ui.fill_rect(0, 0, w, h)
-            ui.set_color('#333340'); ui.fill_rect(a * w / n, 0, ln * w / n, h)
-            ui.set_color(HOT)
-            for i in range(int(w)):
-                seg = self.src[i * step:(i + 1) * step]
-                if seg:
-                    m = max(abs(min(seg)), abs(max(seg))) / 32768
-                    ui.fill_rect(i, h / 2 - m * h / 2, 1, max(1, m * h))
-            self.wave.image = ctx.get_image()
-
-    def hear(self, s):
-        x = self.cut()
-        if not x:
-            return
-        import wave
-        p = os.path.join(os.path.expanduser('~/Documents'), 'cursed_preview.wav')
-        with wave.open(p, 'wb') as wf:
-            wf.setnchannels(1); wf.setsampwidth(2); wf.setframerate(self.rate_out())
-            wf.writeframes(struct.pack('<%dh' % len(x), *x))
-        self.player = sound.Player(p)
-        self.player.play()
-
-    def slot_no(self):
-        return self.slot.selected_index if self.slot.selected_index >= 0 else 8 + max(0, self.slot2.selected_index)
-
-    # -- sending, a frame at a time: each waits for its ACK (resent on a timeout)
-    @ui.in_background
-    def send(self, s):
-        if self.busy:
-            return
-        x = self.cut()
-        if not x:
-            self.prog.text = 'pick or record a sound first'
-            return
-        if not midi.dest:
-            self.prog.text = 'not connected: LINK first'
-            return
-        self.busy = True
-        try:
-            frames = P.sample_frames(self.slot_no(), self.nm.text or 'SOUND', self.rate_out(), x)
-            t0 = time.time()
-            drain()
-            for i, (seq, fr) in enumerate(frames):
-                ok = False
-                for attempt in range(6):
-                    midi.send(fr)
-                    end = time.time() + (3.0 if i == len(frames) - 1 or i == 0 else 1.2)
-                    while time.time() < end:
-                        r = wait_reply(end - time.time())
-                        if not r:
-                            break
-                        if r[0] == P.NAK_CC:
-                            self.prog.text = 'the FM-1 said no: ' + P.NAK_TEXT.get(r[1], str(r[1]))
-                            return
-                        if r[1] == seq:
-                            ok = True
-                            break
-                    if ok:
-                        break
-                if not ok:
-                    self.prog.text = 'no answer from the FM-1 (frame %d of %d)' % (i + 1, len(frames))
-                    return
-                if i % 4 == 0 or i == len(frames) - 1:
-                    self.prog.text = 'sending… %d%%  (%.0f s)' % ((i + 1) * 100 // len(frames), time.time() - t0)
-            self.prog.text = 'in slot %d: %.2f s. On the FM-1: ENGINE SAMPLER, SAMPLE %d' % (
-                self.slot_no() + 1, len(x) / self.rate_out(), self.slot_no() + 1)
-        finally:
-            self.busy = False
-
-    @ui.in_background
-    def delete(self, s):
-        if dialogs.alert('Delete slot %d on the FM-1?' % (self.slot_no() + 1), '', 'Delete') != 1:
-            return
-        drain()
-        midi.send(P.delete_frame(self.slot_no()))
-        r = wait_reply(3.0)
-        self.prog.text = ('slot %d emptied' % (self.slot_no() + 1) if r and r[0] == P.ACK_CC else
-                          'the FM-1: ' + P.NAK_TEXT.get(r[1], '?') if r else 'no answer')
-
-
 # ------------------------------------------------------------------------------------------------ the app
 class App(ui.View):
     def __init__(self):
@@ -659,13 +476,13 @@ class App(ui.View):
         sw, sh = ui.get_screen_size()
         self.frame = (0, 0, min(sw, sh), max(sw, sh))
         self.tabs = ui.SegmentedControl(frame=(10, 8, W - 20, 32),
-                                        segments=['PLAY', 'FX', 'MIX', 'VOICE', 'SAMPLE', 'LINK'], action=self.show)
+                                        segments=['PLAY', 'DRUMS', 'FX', 'MIX', 'VOICE', 'LINK'], action=self.show)
         self.tabs.tint_color = HOT
         self.add_subview(self.tabs)
         self.st = label('', (10, 42, W - 20, 18), 10)
         self.add_subview(self.st)
         f = (0, 62, W, self.height - 62)
-        self.pages = [PlayPage(frame=f), PadPage(frame=f), MixPage(frame=f), VoicePage(self, frame=f), SamplerPage(self, frame=f),
+        self.pages = [PlayPage(frame=f), DrumsPage(frame=f), PadPage(frame=f), MixPage(frame=f), VoicePage(self, frame=f),
                       ConnectPage(self, frame=f)]
         for p in self.pages:
             p.flex = 'WH'

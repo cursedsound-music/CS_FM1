@@ -133,14 +133,11 @@ static int st_current(uint32_t obj, st_hdr_t *h)
 }
 
 /* load the whole object into dst; returns its length, or -1 if it does not fit */
-/* (cursed-os 0.9.5) songs 5..8's objects: the sampler's memory now (cos_smp.h 0xB8000..0xD7FFF): never read, never
- * written as songs */
-#define ST_SMP_OBJ(obj) ((obj) >= OBJ_SONG1 + 12u && (obj) < OBJ_SONG1 + 28u)
 static int st_load(uint32_t obj, void *dst, uint32_t max)
 {
     uint32_t i;
     st_hdr_t h;
-    if (obj >= OBJ_COUNT || ST_SMP_OBJ(obj) || st_current(obj, &h) < 0 || h.len > max)
+    if (obj >= OBJ_COUNT || st_current(obj, &h) < 0 || h.len > max)
         return -1;
     for (i = 0; i < h.len; i++)
         ((uint8_t *)dst)[i] = st_buf[i];
@@ -151,8 +148,6 @@ static int st_load(uint32_t obj, void *dst, uint32_t max)
 static int st_save_to(uint32_t obj, const void *src, uint32_t len, int to)
 {
     uint32_t seq, base, off;
-    if (ST_SMP_OBJ(obj))
-        return -9;
     int cur, rc;
     st_hdr_t h;
     if (obj >= OBJ_COUNT || len > ST_PAYLOAD_MAX || to > 1)

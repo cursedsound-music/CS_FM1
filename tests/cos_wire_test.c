@@ -29,6 +29,7 @@ static void rng_seed_all(void)
     dx_mot_rng = 0x9E3779B9u; ap_rng = 0x2545F491u; rng_state = 0x1234567u; mod_seed = 0x2545F491u; pfx_seed = 0x9E3779B9u;
 }
 
+#define PAD_T 4u                                         /* (the pad, POLY: its chords; 0.10.0: T5, was T4 before the KICK) */
 /* the device's power-on, then a pattern on each track: the kit four on the floor with snare and hats, the synths a
  * line of six notes (the pad its chords) */
 static void boot(void)
@@ -54,10 +55,13 @@ static void boot(void)
                                    (i == 3u ? 4u : 0u) | (i == 7u ? 16u : 0u) | (i == 11u ? 32u : 0u) | (i == 13u ? 64u : 0u) |
                                    (i == 15u ? 128u : 0u) | (i == 9u ? 4u : 0u));
                 s->time = s->hit ? ST_NOTE : ST_REST;
+            } else if (trk_eng(tr) == ENGI_KICK) {        /* (0.10.0) the KICK: four on the floor, its C, and step 8 */
+                if (!(i & 3u) || i == 7u) { s->note[0] = 36; s->n = 1; s->time = ST_NOTE; }   /* (and an odd step: SWING) */
+                else s->time = ST_REST;
             } else if (i % 3u == 0u || i == 7u) {          /* (and an odd step: SWING) */
                 static const uint8_t L[6] = {48, 51, 55, 58, 53, 46};
-                s->note[0] = (uint8_t)(L[(i / 3u) % 6u] + (t == 3u ? 12u : 0u));
-                if (t == 3u) { s->note[1] = (uint8_t)(s->note[0] + 3u); s->note[2] = (uint8_t)(s->note[0] + 7u); s->n = 3; }
+                s->note[0] = (uint8_t)(L[(i / 3u) % 6u] + (t == PAD_T ? 12u : 0u));
+                if (t == PAD_T) { s->note[1] = (uint8_t)(s->note[0] + 3u); s->note[2] = (uint8_t)(s->note[0] + 7u); s->n = 3; }
                 else s->n = 1;
                 s->time = ST_NOTE;
                 if (i == 3u || i == 9u) s->flags |= SF_ACCENT;   /* (ACID's ACCENT and SLIDE: something to act on) */
@@ -68,6 +72,8 @@ static void boot(void)
         }
     }
     for (t = 0; t < trk_live; t++) { trk[t].p[P_DLY] = 50; trk[t].p[P_REV] = 50; }   /* (the FX pages: something in) */
+    /* (0.10.0: the kit's kick lane at 0, as at power-on: the kick is T2's, the KICK track; a kick in both would take a
+     * voice more of the shared budget, voice.c, and shorten the kit's tails here) */
     for (t = 0; t < 4u; t++) macro_v[t] = 64;            /* (the macros at their middle: a routing heard) */
     rng_seed_all();
 }
@@ -129,11 +135,16 @@ static const char *why_quiet(uint32_t m, const cpg_t *p, uint32_t k)
         if (id == CC_MOBARS) return "MORPH BARS: a glide's length";
         if (id == CC_MOPOS) return "MORPH A-B: nothing stored to morph between";
         if (id == CC_OUTCH) return "MIDI OUT CH";
-        if (id == CC_TRKS) return "TRACKS: how many play (5 already)";
+        if (id == CC_TRKS) return "TRACKS: how many play (6 already)";
         if (id == CC_DSEL) return "DRUM: which drum the knobs edit (cos_test.c)";
         if (id == CC_DE0 + DE_SUS) return "SUSTAIN: only while a step or key holds the drum (the test's steps are short)";
         if (id == CC_DSNP && dx_kit[dx_ui_lane & 7u].a[DXP_NOISE] < 16u)
             return "SNAP: the noise's envelope, and this drum has little noise";
+        if ((id == CC_DE0 + DE_REL || id == CC_DE0 + DE_HLD) && dx_ui_lane == 1u)   /* (0.10.0: the SNARE picked) */
+            return "the SNARE's RELEASE / HOLD: its tail given up to the PAD's chords by the shared voice budget (8, voice.c; "
+                   "muting the PAD they are heard), as on the device";
+        if (id == CC_DSNP && dx_de[dx_ui_lane & 7u][DE_SUS])   /* (0.10.0: the SNARE picked, its kick on the KICK track) */
+            return "SNAP: the noise's own decay; the ENV group's SUSTAIN (on here) rules the tail (drumx_voice.c)";
     }
     if (p->kind == CK_GLO && (id == G_CLOCK || id == G_CLOCK)) return "MIDI: the clock and MIDI out";
     if (m == CM_DRONE) return "DRONE: plays while keys hold notes";
@@ -155,7 +166,9 @@ static const char *why_quiet(uint32_t m, const cpg_t *p, uint32_t k)
     if (trk_engp(TSEL) == &ENG_FORMANT && (id == P_ED_FLT || id == P_LD_FLT || (str_eq(p->tab, "MOD 1") && k != 1u)))
         return "VOICE singing: its vowels are the words', no filter to move (MOD 1: to CUT)";
     if (trk_engp(TSEL) == &ENG_FORMANT && id == P_E7) return "VOICE's LOOP: the words' loop";
-    if (cos_kit() && str_eq(p->tab, "MOD 1") && k != 1u) return "a kit: CUT moved only with an LFO or ENV on it (voice.c)";
+    if ((cos_kit() || trk_engp(TSEL) == &ENG_KICK) && str_eq(p->tab, "MOD 1") && k != 1u)
+        return "a kit, a KICK: CUT moved only with an LFO or ENV on it (voice.c)";
+    if (trk_engp(TSEL) == &ENG_KICK && p->kind == CK_COS && id == CC_QUANT) return "KEY QUANT: a KICK's hits keep no scale";
     (void)m;
     return 0;
 }
@@ -238,6 +251,9 @@ static void engage(uint32_t m, const char *tab)
     if (str_eq(g, "VOICE")) set_knob(m, "VOICE", 0, 0, "UNI");    /* (DETUNE: the unison's) */
     if (str_eq(g, "LFO 2")) engage(m, "FILTER 2");        /* (LFO 2 moves FILTER 2: on) */
     if (str_eq(g, "DIST")) set_knob(m, "SEND", 0, 60, 0); /* (the DIST page: the send in) */
+    if (m == CM_FX && str_eq(tab, "DELAY 2")) song.g[G_DFDBK] = 112;   /* (0.10.0: TYPE, ANALOG / DIGITAL, differs past 100 %
+                                                         * FEEDBACK, where DIGITAL holds; at 60 % only a trace: heard by
+                                                         * chance before, 3e6 against the 1e6 asked) */
     if (str_eq(g, "AMP")) {                              /* (DEC, SUS: mid; the notes held long: the envelope heard) */
         set_knob(m, "AMP", 1, 30, 0); set_knob(m, "AMP", 2, 64, 0);   /* (a short DECAY: the SUSTAIN reached in a step) */
         TSEL->p[P_SGATE] = (int16_t)track_desc(TSEL, P_SGATE)->max;

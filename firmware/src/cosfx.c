@@ -118,7 +118,7 @@ static __attribute__((noinline)) void cfx_edges(uint32_t on, uint32_t was)
     }
     if ((on & ~was) & CX_BIT(CX_DRUMS)) {
         for (k = 0; k < NTRK; k++)
-            if (ENGINES[eng_idx(trk[k].eng_req)] == &ENG_DRUM)
+            if (ENG_HITS(ENGINES[eng_idx(trk[k].eng_req)]))   /* (0.10.0: the KICK too) */
                 m |= 1u << k;
         cx.solo0 = perf_solo;
         perf_solo = (uint8_t)(m ? m : 1u);

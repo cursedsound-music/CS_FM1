@@ -44,7 +44,7 @@ enum { CC_OUTCH, CC_MOUT, CC_CLOCK, CC_SLOT, CC_TRKS, CC_LOAD, CC_COMP, CC_CATK,
        CC_X2, CC_X2E = CC_X2 + 15, CC_OCT, CC_KICK, CC_KICKE = CC_KICK + 4, CC_LN0, CC_LNE = CC_LN0 + 7, CC_KDRV, CC_BT,
        CC_L1SYNC, CC_L1RATE, CC_L1WAVE, CC_L1MODE, CC_L1PH, CC_L1FADE, CC_L2SYNC, CC_L2RATE, CC_BPM,
        CC_CIN, CC_CTHR, CC_CRAT, CC_CMK, CC_CKNEE, CC_CSC, CC_CMIX, CC_LIN, CC_LREL, CC_LVL, CC_MUTEQ, CC_PCCH, CC_PCOUT, CC_VJCH, CC_EQL, CC_EQM, CC_EQH, CC_MAC0, CC_MAC3 = CC_MAC0 + 3, CC_RB0, CC_RB3 = CC_RB0 + 3, CC_MOPOS, CC_MOBARS, CC_LVLEN, CC_LVRATE, CC_LVDN, CC_LVSH, CC_MCCH, CC_MCCC, CC_MCDIR, CC_MCMAP, CC_MC0, CC_MC3 = CC_MC0 + 3, CC_MOCC,
-       CC_NAME, CC_IDLE, CC_SCT, CC_SCG, CC_SCTR, CC_SPV, CC_SPR, CC_SPS, CC_SCM, CC_SPSRC, CC_SCZ, CC_LUT, CC_LUR, CC_LOCAL, CC_SCALE, CC_QUANT, CC_DJF, CC_DSEL, CC_DLV, CC_DWAV, CC_DFLT, CC_DBT, CC_DDRV, CC_DLAY, CC_DFB, CC_DSNP, CC_DE0, CC_DEE = CC_DE0 + DE_N - 1 };
+       CC_NAME, CC_IDLE, CC_SCT, CC_SCG, CC_SCTR, CC_SPV, CC_SPR, CC_SPS, CC_SCM, CC_SPSRC, CC_SCZ, CC_LUT, CC_LUR, CC_LOCAL, CC_KPAT, CC_SCALE, CC_QUANT, CC_DJF, CC_DSEL, CC_DLV, CC_DWAV, CC_DFLT, CC_DBT, CC_DDRV, CC_DLAY, CC_DFB, CC_DSNP, CC_DE0, CC_DEE = CC_DE0 + DE_N - 1 };
 _Static_assert(CC_DEE < 0xFEu, "the CK_COS ids fit a page's byte (0xFE, 0xFF: OCTAVE, none)");
 _Static_assert(X2_N <= 16u, "CC_X2 .. CC_X2E: room for every trk_x2 field");
 #define ID_MUTEQ 0xFCu                          /* (HOME 2's: MUTE Q, cos_knob) */
@@ -79,6 +79,8 @@ static const cpg_t CZP_SRC[] = {{"SRC 1", CK_TRK, {P_E0, P_E1, P_E2, P_E3}}, {"S
                                {"VOICE", CK_TRK, {P_VOICE, P_GLIDE, P_DETUNE, ID_OCT}},
                                {"CHORD", CK_TRK, {P_CHRD, P_CVOI, P_CSTR, X}},   /* (a key plays a chord: seq.c chord_build) */
                                CZ_MOD(1), CZ_MOD(2), CZ_MOD(3), CZ_MOD(4)};
+static const cpg_t CZP_SRCK[] = {{"KICK", CK_TRK, {P_E0, P_E1, P_E2, P_E3}}, {"KICK 2", CK_TRK, {P_E4, P_E5, P_E6, P_E7}},
+                                CZ_FILT, CZ_MOD(1), CZ_MOD(2), CZ_MOD(3), CZ_MOD(4)};   /* (0.10.0) a KICK: hits, no VOICE / CHORD */
 static const cpg_t CZP_SRCN[] = {{"SRC 1", CK_TRK, {P_E0, P_E1, P_E2, P_E3}}, {"SRC 2", CK_TRK, {P_E4, P_E5, P_E6, P_E7}},
                                 {"FILTER", CK_TRK, {P_FTYPE, P_E4, P_E5, P_ED_FLT}},   /* (ANALOG: its CUT RES, E4 E5) */
                                 {"VOICE", CK_TRK, {P_VOICE, P_GLIDE, P_DETUNE, ID_OCT}},
@@ -153,6 +155,7 @@ static const cpg_t CZP_GENM[] = {{"ACID", CK_AC, {AK_DENS, AK_SLIDE, AK_ACC, ID_
                                 {"ACID 3", CK_AC, {AK_EVERY, AK_AMT, AK_ROOT, AK_SCALE}}, {"ACID 4", CK_AC, {AK_LOCK, AK_ROT, X, X}},
                                 {"DUB", CK_DB, {DK_SHAPE, DK_DENS, DK_MOVE, DK_LEN}}, {"DUB 2", CK_DB, {DK_BARS, DK_VOIC, DK_ECHO, ID_OCT}},
                                 {"DUB 3", CK_DB, {DK_ROOT, DK_EVERY, DK_AMT, DK_DLY}}};
+static const cpg_t CZP_GENK[] = {{"KICK", CK_COS, {CC_KPAT, X, X, X}}};   /* (0.10.0) a KICK track's GEN */
 static const cpg_t CZP_GENE[] = {{"EUCLID", CK_EU, {EK_HITS, EK_STEPS, EK_ROT, EK_K4}}, {"MODES", CK_EU, {EK_M0, EK_M0 + 1u, EK_M0 + 2u, EK_M0 + 3u}},
                                 {"MUTATE", CK_EU, {EK_U0, EK_U0 + 1u, EK_U0 + 2u, EK_U0 + 3u}}};
 static const cpg_t CZP_MIX[] = {{"MIX", CK_TRK, {P_LEVEL, P_PAN, P_GLIDE, P_MUTE}},
@@ -224,6 +227,8 @@ static int cos_active(void) { return (COS_DEFAULT ^ cz.flip) != 0; }
 #endif
 
 static int cos_kit(void) { return drum_track(TSEL) != 0; }
+/* (0.10.0) a track of hits, no notes to key: the kit, a KICK (the song's scale, key and root are the melodic tracks') */
+static int cos_hits(const track_t *t) { return trk_hits(t); }
 static int cos_dead(const track_t *t, uint32_t id);      /* (below: a parameter the track's engine does not use) */
 static void cos_pages(uint32_t m, const cpg_t **p, uint32_t *n)
 {
@@ -238,6 +243,7 @@ static void cos_pages(uint32_t m, const cpg_t **p, uint32_t *n)
     if (m == CM_SRC && cos_kit()) { *p = CZP_SRCD; *n = NELEM(CZP_SRCD); return; }
     if (m == CM_TRIG && cos_kit()) { *p = CZP_TRIGK; *n = NELEM(CZP_TRIGK); return; }   /* (a kit: KICK, LEVELS, its own ..) */
     if (m == CM_GEN && cos_kit()) { *p = CZP_GENE; *n = 3; return; }
+    if (m == CM_GEN && trk_eng(TSEL) == ENGI_KICK) { *p = CZP_GENK; *n = NELEM(CZP_GENK); return; }   /* (0.10.0) */
     if (m == CM_GEN && trk_eng(TSEL) != ENGI_ACID) {     /* (the pad: DUB first; the bass, a MONO one: ACID first) */
         int poly = TSEL->p[P_VOICE] == V_POLY;
         *p = poly ? CZP_GENS : CZP_GENM;
@@ -245,6 +251,7 @@ static void cos_pages(uint32_t m, const cpg_t **p, uint32_t *n)
         return;
     }
     if (m == CM_SRC && trk_engp(TSEL) == &ENG_ACID) { *p = CZP_SRCA; *n = NELEM(CZP_SRCA); return; }   /* (+ DEVIL) */
+    if (m == CM_SRC && trk_engp(TSEL) == &ENG_KICK) { *p = CZP_SRCK; *n = NELEM(CZP_SRCK); return; }   /* (0.10.0) */
     *p = vo ? CZP_SRCV : m == CM_AMP && trk_engp(TSEL) == &ENG_ANALOG ? CZP_AMPA :
          m == CM_SRC && trk_engp(TSEL) == &ENG_ANALOG ? CZP_SRCN : P[m % CM_N];
     *n = N[m % CM_N] + (uint32_t)vo;                                      /* (VOICE: WORDS too) */
@@ -345,15 +352,15 @@ static const char *const COS_NN[12] = {"C", "C#", "D", "D#", "E", "F", "F#", "G"
 static track_t *cos_mel(void)
 {
     uint32_t k;
-    if (!drum_track(TSEL)) return TSEL;
-    for (k = 0; k < NTRK && drum_track(&trk[k]); k++) {}
+    if (!cos_hits(TSEL)) return TSEL;
+    for (k = 0; k < NTRK && cos_hits(&trk[k]); k++) {}
     return k < NTRK ? &trk[k] : 0;
 }
 /* the song's key: the first synth track's root (C with none) */
 static uint32_t cos_key(void)
 {
     uint32_t k;
-    for (k = 0; k < NTRK && drum_track(&trk[k]); k++) {}
+    for (k = 0; k < NTRK && cos_hits(&trk[k]); k++) {}
     return k < NTRK ? (uint32_t)((trk[k].p[P_ROOT] % 12 + 12) % 12) : 0u;
 }
 /* WORDS (VOICE): OCT+ a new phrase of words (W1 .. W16 at random, a language set if none: EN), OCT- the one before */
@@ -411,7 +418,7 @@ static void cos_key_apply(uint32_t pc)
     uint32_t k, i, c;
     for (k = 0; d && k < NTRK; k++) {
         track_t *t = &trk[k];
-        if (drum_track(t)) continue;
+        if (cos_hits(t)) continue;
         for (i = 0; i < NSTEP; i++) {
             step_t *s = &t->step[i];
             if (s->time != ST_NOTE) continue;
@@ -419,7 +426,7 @@ static void cos_key_apply(uint32_t pc)
         }
         t->p[P_ROOT] = (int16_t)((t->p[P_ROOT] + d + 120) % 12);
     }
-    if (d && cz.dr_n && !drum_track(&trk[cz.dr_trk % NTRK])) {   /* (the drone moves with the song) */
+    if (d && cz.dr_n && !cos_hits(&trk[cz.dr_trk % NTRK])) {   /* (the drone moves with the song) */
         for (k = 0; k < cz.dr_n; k++) cz.dr_note[k] = (uint8_t)clamp((int32_t)cz.dr_note[k] + d, 12, 108);
         cos_drone_send();
     }
@@ -527,7 +534,9 @@ static void cos_proj_scan(void);
 static char *proj_name_buf(void);                       /* (project.c: the music's name, 13 bytes) */
 static void cos_lu_reset(void);                         /* (LOUDNESS's RESET, below) */
 static int song_open(uint32_t n);                       /* (song_main.c: song n's slots, the music kept) */
-#define COS_NSONG 4u                                    /* (0.9.5) the songs offered: 5..8's flash is the sampler's (cos_smp.h) */
+#define COS_NSONG 8u                                    /* the songs offered (0.9.5..0.9.9: 4, 5..8's flash the sampler's) */
+static uint8_t kick_pat_cur[NTRK];                       /* (0.10.0) each KICK track's last PATTERN (GEN > KICK) */
+static void cos_kick_pat(track_t *t, uint32_t n);
 static const param_desc_t *cos_cdesc(uint32_t id, int16_t **vp)
 {
     static const char *const MO[] = {"KEYS", "CLOCK", "ALL", "OFF", 0};
@@ -686,7 +695,7 @@ static const param_desc_t *cos_cdesc(uint32_t id, int16_t **vp)
     if (id == CC_OCT) {                                  /* OCTAVE: TRANS in octaves (-2 .. +2), its semitones kept; a kit none */
         static const param_desc_t DO = {"OCTAVE", F_INT, -2, 2, 0, 0, 0};
         int32_t tr = TSEL->p[P_TRANS];
-        if (cos_kit()) return 0;
+        if (cos_kit() || trk_eng(TSEL) == ENGI_KICK) return 0;   /* (0.10.0: a KICK, hits: TUNE is its pitch) */
         cz.cc_v[14] = (int16_t)(tr >= 0 ? (tr + 6) / 12 : -((-tr + 5) / 12));
         *vp = &cz.cc_v[14];
         return &DO;
@@ -753,6 +762,12 @@ static const param_desc_t *cos_cdesc(uint32_t id, int16_t **vp)
         *vp = &cz.cc_v[6 + i];
         return &DM[i];
     }
+    if (id == CC_KPAT) {                                 /* (0.10.0) a KICK track's PATTERN: the last one thrown */
+        static const param_desc_t DK = {"PATTERN", F_ENUM, 0, KICK_NPAT - 1u, 0, KICK_PAT_N, 0};
+        cz.cc_v[15] = (int16_t)(kick_pat_cur[song.sel % NTRK] % KICK_NPAT);
+        *vp = &cz.cc_v[15];
+        return &DK;
+    }
     if (id == CC_LOCAL) {                                /* (0.9.4) LOCAL ON / OFF: the settings' byte 0 (seq.c kb_local_off) */
         static const char *const LO[3] = {"ON", "OFF", 0};
         static const param_desc_t DLO = {"LOCAL", F_ENUM, 0, 1, 0, LO, 0};
@@ -777,6 +792,8 @@ static void cos_cput(uint32_t id, int32_t v)
     } else if (id == CC_MOUT) {
         midi_out_mode = (uint8_t)(clamp(v, 0, 3));
         settings_save();
+    } else if (id == CC_KPAT) {
+        cos_kick_pat(TSEL, (uint32_t)clamp(v, 0, KICK_NPAT - 1));
     } else if (id == CC_LOCAL) {
         uint32_t k;
         favorites.factory[15][0] = (uint8_t)(v > 0);
@@ -809,7 +826,7 @@ static void cos_cput(uint32_t id, int32_t v)
         if (!d) return;
         v = clamp(v, d->min, d->max);
         for (k = 0; k < NTRK; k++)                       /* (every melodic track at once: scale_link would, next frame) */
-            if (!drum_track(&trk[k])) trk[k].p[pi] = (int16_t)v;
+            if (!cos_hits(&trk[k])) trk[k].p[pi] = (int16_t)v;
     } else if (id == CC_IDLE) {
         favorites.factory[15][16] = (uint8_t)(0x80 | clamp(v, 0, 60));
         cz.act_ms = fm1_ms;
@@ -947,7 +964,7 @@ static void cos_cput(uint32_t id, int32_t v)
 static int cos_dead(const track_t *t, uint32_t id)
 {
     const engine_t *e = trk_engp(t);
-    if (e == &ENG_DRUM)
+    if (ENG_HITS(e))
         return id == P_ATK || id == P_DEC || id == P_SUS || id == P_REL || id == P_ED_PIT || id == P_ED_SHP ||
                id == P_GLIDE || id == P_SGATE || id == P_SCALE || id == P_QUANT;   /* (and no scale: hits) */
     if (e->ownenv && (((id == P_ATK || id == P_DEC || id == P_SUS || id == P_REL) && e != &ENG_ACID &&
@@ -1234,7 +1251,7 @@ static __attribute__((noinline)) uint32_t cos_acid_trk(uint32_t *made)
     for (i = 0; i < trk_live; i++)
         if (trk_eng(&trk[i]) == ENGI_ACID) return i;
     for (i = trk_live; i-- > 0u;)
-        if (!drum_track(&trk[i]) && trk_eng(&trk[i]) != ENGI_VOICE) { k = i; break; }
+        if (!cos_hits(&trk[i]) && trk_eng(&trk[i]) != ENGI_VOICE) { k = i; break; }
     if (k >= trk_live) k = trk_live - 1u;
     undo_mark();
     set_engine_of(&trk[k], ENGI_ACID);
@@ -1244,6 +1261,56 @@ static __attribute__((noinline)) uint32_t cos_acid_trk(uint32_t *made)
     cos_say(b);
     *made = 1;
     return k;
+}
+/* (0.10.0) the drums' sounds in and out, one at a time (HOME + white 1..8, the phone's CC 91..98): 0 the KICK (the
+ * first KICK track's mute; no KICK track: the kit's kick), 1..7 the kit's SNARE CLAP HATCL HATOP TOM RIM BELL (each
+ * sound's own mute, eng_drum.c DXM_LANE). With MUTE Q on the beat or the bar, as the tracks' mutes (cos_live.c) */
+static const char *const DRUM_SND_N[8] = {"KICK", "SNARE", "CLAP", "HAT", "OPEN HAT", "TOM", "RIM", "BELL"};
+static int cos_kick_trk(void)                            /* the first live KICK track, -1 none */
+{
+    uint32_t k;
+    for (k = 0; k < trk_live && k < NTRK; k++)
+        if (trk_eng(&trk[k]) == ENGI_KICK) return (int)k;
+    return -1;
+}
+static int cos_drum_out(uint32_t s)                      /* the sound out (muted), as it will be once a pending flip goes in */
+{
+    int kt = s ? -1 : cos_kick_trk();
+    if (kt >= 0) return (trk[kt].p[P_MUTE] != 0) != (((live_qmute >> kt) & 1u) != 0u);
+    return ((dx_mute & DXM_LANE(s & 7u)) != 0u) != (((live_qlane >> (s & 7u)) & 1u) != 0u);
+}
+static void cos_drum_flip(uint32_t s)
+{
+    int kt = (s &= 7u) ? -1 : cos_kick_trk(), out = !cos_drum_out(s);
+    char b[24];
+    if (kt >= 0) {
+        if (!cos_mq) trk[kt].p[P_MUTE] = (int16_t)!trk[kt].p[P_MUTE];
+        else { fm1_irq_off(); live_qmute ^= (uint8_t)(1u << kt); fm1_irq_on(); }
+    } else if (!cos_mq) {
+        dx_mute_set(dx_mute ^ DXM_LANE(s));
+    } else {
+        fm1_irq_off(); live_qlane ^= (uint8_t)(1u << s); fm1_irq_on();
+    }
+    str_cpy(b, DRUM_SND_N[s], sizeof b);
+    str_cpy(b + str_len(b), out ? " OUT" : " IN", 5);
+    if (cos_mq && song.playing) str_cpy(b + str_len(b), cos_mq == 1u ? " BEAT" : " BAR", 6);
+    cos_say(b);
+}
+static void cos_drum_set(uint32_t s, int out) { if (cos_drum_out(s & 7u) != !!out) cos_drum_flip(s); }
+/* (0.10.0) a KICK track's pattern: KICK_PAT's n into steps 1..16 (the kick's C, the first beat accented), LEN 16 */
+static void cos_kick_pat(track_t *t, uint32_t n)
+{
+    uint8_t note[16], fl[16];
+    uint32_t i;
+    n %= KICK_NPAT;
+    for (i = 0; i < 16u; i++) {
+        note[i] = (uint8_t)((KICK_PAT[n] >> i) & 1u ? 36u : 0u);
+        fl[i] = (uint8_t)(i == 0u ? SF_ACCENT : 0u);
+    }
+    undo_mark();
+    load_pat16(t, note, fl);
+    kick_pat_cur[(uint32_t)(t - trk) % NTRK] = (uint8_t)n;
+    cos_say(KICK_PAT_N[n]);
 }
 static int cos_empty(const track_t *t)
 {
@@ -1258,6 +1325,10 @@ static void cos_gen_enter(void)
     uint32_t made = 0;
     if (cos_kit()) { track_select(cos_acid_trk(&made)); cz.bank = 0; }
     cz.tab[CM_GEN] = 0;
+    if (trk_eng(TSEL) == ENGI_KICK) {                    /* (0.10.0) a KICK: FOUR ON THE FLOOR if empty, PATTERN on KNOB 1 */
+        if (cos_empty(TSEL) && !chain_busy()) cos_kick_pat(TSEL, 0);
+        return;
+    }
     if (cos_empty(TSEL) && !chain_busy()) {
         if (trk_eng(TSEL) == ENGI_ACID || TSEL->p[P_VOICE] != V_POLY) ac_throw(song.sel, 1);   /* (ACID, a MONO bass: a line) */
         else {                                           /* (a POLY synth, the pad: dub chord stabs, on DUB STAB; VOICE keeps
@@ -1481,7 +1552,7 @@ static void cos_pg_follow(void)
 }
 
 static int cos_idle_gate(void);                          /* (the IDLE screen, below) */
-#include "cos_remote.c"                                 /* (0.9.5) the phone remote: channel 16, its SysEx, the sampler's */
+#include "cos_remote.c"                                 /* (0.9.5) the phone remote: channel 16, its SysEx */
 static __attribute__((noinline)) void cos_input(void)
 {
     cos_remote_poll();                                   /* (0.9.5: the phone's, the IDLE screen up or not) */
@@ -1702,14 +1773,15 @@ static __attribute__((noinline)) void cos_input(void)
             cos_si_key(k);                               /* (STEP INPUT: the note into the cursor's step) */
         } else if (cz.mode == CM_PROJ) {
             if (w < 4u) cz.slot = (uint8_t)w;
-            else if (w >= 8u && w < 8u + COS_NSONG && !chain_busy()) {   /* (white 9 .. 12: the set list's songs 1 .. 4;
-                                                         * 5 .. 8 are the sampler's memory, 0.9.5) */
+            else if (w >= 8u && w < 8u + COS_NSONG && !chain_busy()) {   /* (white 9 .. 16: the set list's songs 1 .. 8) */
                 if (!song_go_live(w - 8u)) { cz.pn_ok = 0; cos_proj_scan(); }
             }
         } else if (cz.mode == CM_HOME) {                 /* white 1..6 the track, 9..12 the sections A..D on the bar; black
-                                                         * 1..6 mute (HOME held: solo), 7 FILL, 8 BREAKDOWN (cos_live.c) */
+                                                         * 1..6 mute (HOME held: solo), 7 FILL, 8 BREAKDOWN (cos_live.c);
+                                                         * (0.10.0) HOME + white 1..8: the drums' sounds in and out */
             if (cos_home_held()) cz.home_used = 1;
             if (w == 15u && cos_home_held()) cos_tap(fm1_ms);   /* (HOME + white 16: TAP TEMPO) */
+            else if (w < 8u && cos_home_held()) cos_drum_flip(w);
             else if (w < trk_live) track_select(w);
             else if (w == 12u || w == 13u) mph_key(w - 12u, cos_home_held());   /* (MORPH's A, B: cos_morph.c) */
             else if (w == 14u) {                         /* (LOOP: the track picked back in phase on the beat; HOME held:
@@ -2429,7 +2501,7 @@ static void cos_trk_label(const track_t *tr, char *b)
     static const char *const TAGN[PT_N] = {"", "BASS", "LEAD", "PAD", "KEYS", "PLUCK", "BELL", "VOICE", "DRUM", "FX"};
     const engine_t *e = ENGINES[trk_eng(tr)];
     uint32_t tg = PT_NONE;
-    if (e != &ENG_DRUM && e != &ENG_ACID && e != &ENG_FORMANT && !tr->user && e->npresets && tr->preset < e->npresets)
+    if (e != &ENG_DRUM && e != &ENG_KICK && e != &ENG_ACID && e != &ENG_FORMANT && !tr->user && e->npresets && tr->preset < e->npresets)
         tg = PR_TAG(&e->presets[tr->preset]);
     str_cpy(b, tg && tg < PT_N ? TAGN[tg] : e->name, 7);
     b[6] = 0;
@@ -2478,7 +2550,23 @@ static void cos_body_home(void)
             else { uint32_t q = (uint32_t)(mph.to ? mph.pos : 1000 - mph.pos) / 10u;   /* (how far: a percent) */
                    fmt_int(b + 5, (int32_t)q); str_cpy(b + str_len(b), "%", 2); }
         }
-        if (b[0]) cos_tx(4, 144, b, C_RED);
+        if (!b[0] && cos_home_held()) {                  /* (0.10.0) HOME held: white 1..8, the drums' sounds (out: dim) */
+            static const char *const AB[8] = {"KK", "SN", "CP", "HH", "OH", "TM", "RM", "BL"};
+            uint32_t s;
+            for (s = 0; s < 8u; s++) {
+                int out = cos_drum_out(s);
+                cos_tx(4 + (int32_t)s * 29, 144, AB[s], out ? C_DARK : C_FG);
+                if (out) cv_rect(3 + (int32_t)s * 29, 147, 14, 1, C_RED);
+            }
+        } else if (b[0]) cos_tx(4, 144, b, C_RED);
+        else if (dx_mute & 0xFE00u) {                    /* (0.10.0) a drum sound out: which */
+            static const char *const AB[8] = {"KK", "SN", "CP", "HH", "OH", "TM", "RM", "BL"};
+            uint32_t s;
+            str_cpy(b, "DRUMS OUT:", sizeof b);
+            for (s = 1; s < 8u; s++)
+                if (dx_mute & DXM_LANE(s)) { str_cpy(b + str_len(b), " ", 2); str_cpy(b + str_len(b), AB[s], 3); }
+            cos_tx(4, 144, b, C_MID);
+        }
         else if (cz.tab[CM_HOME] == 5u)                  /* (LOOP) */
             cos_tx(4, 144, "W15 BACK  HOME+W15 ALL BACK", C_DIM);
         else if (cz.tab[CM_HOME] == 4u)                  /* (MORPH: the keys; A and B lit when stored) */
@@ -2601,33 +2689,6 @@ static void cos_body_sound(void)
         str_cpy(b + str_len(b), N_LYRIC[(uint32_t)t->p[P_VLYR] % LYR_N], 6);
         cos_tx(20, 104, b, C_MID);
         cos_tx(20, 124, "OCT+ NEW WORDS  OCT- BEFORE", C_DIM);
-        return;
-    }
-    if (cz.mode == CM_SRC && trk_engp(t) == &ENG_SAMPLER && cos_page()->id[0] == P_E0) {   /* (0.9.5) SAMPLER: the sound,
-                                                         * its length, the part a note plays */
-        const smp_ent_t *e = smp_ent((uint32_t)clamp(t->p[P_E0], 0, SMP_NSLOT - 1));
-        b[0] = 'S'; fmt_int(b + 1, clamp(t->p[P_E0], 0, SMP_NSLOT - 1) + 1); str_cpy(b + str_len(b), " ", 2);
-        if (!e) {
-            str_cpy(b + str_len(b), "EMPTY", 6);
-            cos_px(12, 40, b, C_MID, CZ_TALL);
-            cos_tx(12, 76, "SEND ONE FROM THE PHONE:", C_DIM);
-            cos_tx(12, 90, "CURSED_REMOTE.PY, SAMPLER", C_DIM);
-            return;
-        }
-        {
-            char nm[9];
-            uint32_t k, a = 0, z = 0, ms = e->len * 10u / (e->rate / 100u ? e->rate / 100u : 1u);
-            for (k = 0; k < 8u; k++) nm[k] = e->name[k];
-            nm[8] = 0;
-            str_cpy(b + str_len(b), nm, 10);
-            cos_px(12, 40, b, C_FG, CZ_TALL);
-            fmt_int(b, (int32_t)(ms / 1000u)); str_cpy(b + str_len(b), ".", 2);
-            fmt_int(nm, (int32_t)(ms % 1000u / 100u)); str_cpy(b + str_len(b), nm, 3); str_cpy(b + str_len(b), " S", 3);
-            cos_tx(12, 72, b, C_MID);
-            smp_span(t, e, 60, &a, &z);                  /* (the part a C4 plays: START, LENGTH) */
-            cv_frame(12, 88, 216, 14, C_DIM);
-            cv_rect(13 + (int32_t)(a * 214u / e->len), 89, 1 + (int32_t)((z - a) * 214u / e->len), 12, C_RED);   /* (32 bits: under 2^21 samples) */
-        }
         return;
     }
     if (cz.mode == CM_SRC && cos_page()->id[0] >= P_M1SRC && cos_page()->id[0] <= P_M4SRC) {   /* MOD: the matrix */
@@ -2757,10 +2818,10 @@ static void cos_body_key(void)
     char b[24];
     const track_t *t = TSEL;
     uint32_t mask = 0;
-    for (i = 0; i < NTRK && drum_track(t); i++) t = &trk[i];   /* (the first melodic track's scale: all share it) */
-    if (!drum_track(t) && t->p[P_SCALE]) mask = scale_mask(t);
+    for (i = 0; i < NTRK && cos_hits(t); i++) t = &trk[i];   /* (the first melodic track's scale: all share it) */
+    if (!cos_hits(t) && t->p[P_SCALE]) mask = scale_mask(t);
     str_cpy(b, COS_NN[cur], sizeof b);
-    if (!drum_track(t)) { str_cpy(b + str_len(b), " ", 2); str_cpy(b + str_len(b), N_SCALE[clamp(t->p[P_SCALE], 0, 15)], 7); }
+    if (!cos_hits(t)) { str_cpy(b + str_len(b), " ", 2); str_cpy(b + str_len(b), N_SCALE[clamp(t->p[P_SCALE], 0, 15)], 7); }
     cos_px(20, 46, b, C_FG, CZ_TALL);
     cos_tx(20, 74, mask ? "KEY AND SCALE: THE KEYS LIT" : "THE SONG'S KEY", C_DIM);
     if (nx < 12u) { str_cpy(b, "NEXT BAR: ", sizeof b); str_cpy(b + str_len(b), COS_NN[nx], 4); cos_tx(110, 52, b, C_RED); }
@@ -3162,7 +3223,7 @@ dials:
 /* the splash (ui_draw.c draw_splash / splash_write under COS_SLIM; main.c's boot loop calls it every ~4 ms for
  * SPL_WRITE + SPL_HOLD ms): black, a few still stars, the name 2x, the version, a 16-block bar filling like a pattern
  * (the block being filled red), READY. Drawn whole once, then only the bar's strip when a block fills */
-#define COS_VERSION "0.9.9"
+#define COS_VERSION "0.10.0"
 static void cos_px2(int32_t x, int32_t y, const char *s, uint16_t c)      /* (the face 2 x 2) */
 {
     int32_t r, b, b0;
@@ -3258,7 +3319,7 @@ static uint32_t cos_key_in(const track_t *t, uint32_t k)
 static int cos_scale_view(void)
 {
     const track_t *t = cz.mode == CM_KEY ? cos_mel() : TSEL;   /* (the KEY page: the song's, a kit picked or not) */
-    if (!t || drum_track(t) || (cz.mode != CM_KEY && cos_kit()) || !t->p[P_SCALE] || cz.fx_down) return 0;
+    if (!t || cos_hits(t) || (cz.mode != CM_KEY && cos_kit()) || !t->p[P_SCALE] || cz.fx_down) return 0;
     if (cz.mode == CM_TRIG) return cz.si;
     return cz.mode != CM_HOME && cz.mode != CM_PROJ;
 }

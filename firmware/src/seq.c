@@ -55,6 +55,8 @@ static volatile uint8_t mo_ch[NTRK];
 static uint32_t trk_midi_ch(uint32_t i) { i %= NTRK; return mo_ch[i] ? (mo_ch[i] - 1u) & 15u : i; }   /* MIDI channel 0..15 */
 
 static int drum_track(const track_t *t) { return ENGINES[eng_idx(t->eng_req)] == &ENG_DRUM; }
+/* (cursed-os 0.10.0) a track of hits, no notes in a key: the kit, a KICK (the song's scale and root are the others') */
+static int trk_hits(const track_t *t) { return drum_track(t) || ENGINES[eng_idx(t->eng_req)] == &ENG_KICK; }
 
 /* (JIANT 0.6.72) MENU > CONTROL > MIDI OUT (ui.c midi_out_mode, over USB): KEYS (as ever: the keys' notes), CLOCK (and
  * the clock, 24 a beat, with START / STOP while the tempo is the FM-1's own), ALL (and every note the FM-1 plays: the
@@ -73,7 +75,7 @@ static void mo_send(uint32_t st, uint32_t d1, uint32_t d2)
 static int mo_plays(const track_t *t, uint32_t note)   /* trk_note_on would sound it (voice.c: the same tests) */
 {
     return trk_index(t) < trk_live && !t->p[P_MUTE] && !((trk_hush >> trk_index(t)) & 1u) &&
-           !(t->engine == ENGI_DRUM && drum_muted(note));
+           !(t->engine == ENGI_DRUM && drum_muted(note)) && !(t->engine == ENGI_KICK && dx_lane_muted(DV_KICK));
 }
 /* (0.9.9 ctl64) the block being handled (events_block: its samples) and the sample within it an event falls on (core.h
  * ev_off; voice.c starts or releases the voice there). Set around the note-ons and -offs fired inside the block, 0

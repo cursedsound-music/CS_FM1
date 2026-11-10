@@ -1668,7 +1668,7 @@ int main(void)
             cz.mode = CM_HOME;
         }
     }
-    {   /* SAVE: KNOB 1 every song's slots (1A .. 4D: 16), KNOB 2 a name drawn (the same turn: the same name), a music
+    {   /* SAVE: KNOB 1 every song's slots (1A .. 8D: 32), KNOB 2 a name drawn (the same turn: the same name), a music
          * with no name named as it is saved */
         int16_t *vp;
         char n1[13], n2[13];
@@ -1676,7 +1676,10 @@ int main(void)
         cz.mode = CM_PROJ;
         cos_cput(CC_SLOT, 6);                               /* (song 2's B) */
         CHECK(song_cur == 1u && cz.slot == 1u && cos_cdesc(CC_SLOT, &vp) && *vp == 6, "SLOT 6: SONG 2, B (%u %u)", song_cur, cz.slot);
-        CHECK(cos_cdesc(CC_SLOT, &vp)->max == 16, "16 slots on KNOB 1 (0.9.5: songs 5..8 the sampler's)");
+        CHECK(cos_cdesc(CC_SLOT, &vp)->max == 32, "32 slots on KNOB 1 (0.10.0: songs 5..8 back)");
+        cos_cput(CC_SLOT, 30);                              /* (song 8's B) */
+        CHECK(song_cur == 7u && cz.slot == 1u, "SLOT 30: SONG 8, B (%u %u)", song_cur, cz.slot);
+        cos_cput(CC_SLOT, 6);
         cos_cput(CC_NAME, 3);
         str_cpy(n1, proj_name, sizeof n1);
         cos_cput(CC_NAME, 4); cos_cput(CC_NAME, 3);

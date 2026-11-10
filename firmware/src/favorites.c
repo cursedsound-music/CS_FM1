@@ -22,7 +22,7 @@ static __attribute__((noinline)) void fav_rows_new(void)
 #ifndef ENGI_ACID
 #define ENGI_ACID 15u                                       /* (core.h's; a test without it) */
 #endif
-/* (cursed-os 0.9.5) SAMPLER (4) in TRIO's (6, retired; its bytes 0..7: its presets were < 64, so 0; 22..31 Bluetooth's) */
+/* (cursed-os) KICK (4; 0.9.5 SAMPLER) in TRIO's (6, retired; its bytes 0..7: its presets were < 64, so 0; 22..31 Bluetooth's) */
 static uint32_t fav_row(uint32_t engine) { return engine == ENGI_ACID ? 4u : engine == ENGI_SAMPLE ? 6u : engine; }
 static int favorite_has(uint32_t engine, uint32_t preset)
 {

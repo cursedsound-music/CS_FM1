@@ -22,7 +22,7 @@
 #define NENGINES 16              /* the stores' engine numbers 0..15 (cursed-os: 15 ACID) (engines.c ENGINES[], append-only; 0.8.3: 14 ANIMAL;
                                   * 0.9.9-snd5: STRING and ADD in the retired GRAIN's 8 and SLICE's 13) */
 #define ENGI_DIGITAL 1u          /* reserved without FELUCCA_FM4: never selectable (eng_ok), its sounds load as FM6 */
-#define NENG_SHOWN (NENGINES - !FELUCCA_FM4 - 2)   /* (cursed-os 0.9.5: SAMPLER is 4) the engines one can pick: PRESETS, the EDIT layer, the editor,
+#define NENG_SHOWN (NENGINES - !FELUCCA_FM4 - 2)   /* (cursed-os 0.10.0: KICK is 4, SAMPLER 0.9.5..0.9.9) the engines one can pick: PRESETS, the EDIT layer, the editor,
                                                 * in the display order of engines.c ENGINE_ORDER (PHYS 9, and in
                                                 * JIANT SAMPLE 4, GRAIN 8, SLICE 13: retired) */
 /* (JIANT 0.6.71) the second core (hal/fm1_multicore.h; fx.c mix_block hands it some synth tracks). MC_CPU(): the core
@@ -247,6 +247,7 @@ static void params_by_count(int16_t *out, const int16_t *in, uint32_t np, const 
 #define ENGI_GRAIN 8u
 #define ENGI_SLICE 13u
 #define ENGI_SAMPLE 4u
+#define ENGI_KICK 4u             /* (cursed-os 0.10.0) KICK in SAMPLE's number (eng_kick.c) */
 #define ENGI_ANIMAL 14u          /* (JIANT 0.8.3) eng_animal.c */
 #define ENGI_STRING 8u           /* (JIANT 0.9.9-snd5) eng_string.c: Karplus-Strong (GRAIN's number, retired in JIANT) */
 #define ENGI_ADD 13u             /* (JIANT 0.9.9-snd5) eng_add.c: additive (SLICE's number, retired in JIANT) */
@@ -263,7 +264,7 @@ static void params_by_count(int16_t *out, const int16_t *in, uint32_t np, const 
  * set as DRUM first: drum_from_perc) */
 static inline int eng_gone(uint32_t e)
 {
-    return e == ENGI_PHYS || e == ENGI_TRIO;   /* (cursed-os 0.9.5: SAMPLE's 4 is SAMPLER; 0.9.9-snd5: GRAIN's 8 and
+    return e == ENGI_PHYS || e == ENGI_TRIO;   /* (cursed-os: SAMPLE's 4 is KICK; 0.9.9-snd5: GRAIN's 8 and
                                                  * SLICE's 13 are STRING and ADD) */
 }
 /* (JIANT 0.4) a sound stored before 0.4 -> today's E values, in place: LOFI (3) {.., SWP, VIB, ARP, TONE} -> {.., CUT
@@ -326,7 +327,7 @@ static int drum_from_perc(uint32_t engine, int16_t *e)
 {
     static const int16_t KIT[8] = DRUM_KIT_E;
     uint32_t i;
-    if (1 || engine != ENGI_SAMPLE || e[0] != (int16_t)SMP_SET_PERC)   /* (cursed-os 0.9.5: off; engine 4 is SAMPLER, E0
+    if (1 || engine != ENGI_SAMPLE || e[0] != (int16_t)SMP_SET_PERC)   /* (cursed-os 0.9.5: off; engine 4 is KICK, E0
                                                          * 4 its slot S5: never a PERC kit) */
         return 0;
     for (i = 0; i < 8u; i++)

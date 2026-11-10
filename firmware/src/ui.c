@@ -179,9 +179,9 @@ static void rp_apply(void)                             /* the settings into clic
     trk_live = (ui_rec_prefs & (PREF_SIX >> 8)) ? NTRK : 4u;
 #if COS_SLIM
     {                                                   /* (cursed-os) its own TRACKS 4 .. 6: the settings' byte 15 of row 15
-                                                         * (0: the default, 5: drums, acid, bass, pad, voice) */
+                                                         * (0: the default: 6, cursed-os 0.10.0; was 5) */
         uint32_t c = favorites.factory[15][15];
-        trk_live = (uint8_t)(c >= 4u && c <= NTRK ? c : 5u);
+        trk_live = (uint8_t)(c >= 4u && c <= NTRK ? c : NTRK);   /* (0.10.0: 6, the KICK its own; was 5) */
     }
 #endif
     sys_load = (uint8_t)(ui_load <= LOAD_ECO ? ui_load : LOAD_FULL);   /* (0.6.30) LOAD (voice.c) */
@@ -1501,7 +1501,7 @@ static void apply_preset_to(track_t *t, uint32_t pi)
         return;
     }
 #endif
-    if (0 && trk_eng(t) == ENGI_SAMPLE && pi == SMP_SET_PERC) {   /* (cursed-os 0.9.5: off, SAMPLER's) SAMPLE preset 4 was PERC (retired, a stored */
+    if (0 && trk_eng(t) == ENGI_SAMPLE && pi == SMP_SET_PERC) {   /* (cursed-os 0.9.5: off, engine 4 is KICK) SAMPLE preset 4 was PERC (retired, a stored */
         set_engine_of(t, ENGI_DRUM);                  /* number: the editor's PRESET, a favourite): DRUM's kit */
         return;                                       /* (core.h drum_from_perc) */
     }
@@ -1620,6 +1620,7 @@ static void init_sound_of(track_t *t, uint32_t ei)
 /* (0.9.9) the power-on, INIT SYSTEM and NEW PROJECT: part i (engines.c TRK_DEF) its engine with its preset's sound
  * (the EDIT values, the envelope, MONO / POLY, VOICE's words, FM6's patch), over the engine's defaults as INIT SOUND
  * leaves them, and dry: no DIST CHOR DLY REV send (the effects are the player's to add). Was INIT SOUND's alone */
+static uint8_t dx_ui_lane;                       /* (the DRUM track's picked drum: ui_dx.c, cos.c; 0.10.0: here) */
 static void power_sound_of(track_t *t, uint32_t i)
 {
     uint32_t k;
@@ -1627,6 +1628,11 @@ static void power_sound_of(track_t *t, uint32_t i)
     apply_preset_to(t, TRK_DEF[i % NPART][1]);
     for (k = 0; k < 4u; k++)
         t->p[P_DIST + k] = 0;
+    if (TRK_DEF[i % NPART][0] == ENGI_DRUM && TRK_DEF[(i + 1u) % NPART][0] == ENGI_KICK)
+    {
+        t->p[P_LN0] = 0;                              /* (cursed-os 0.10.0) the kit without its kick: the KICK track's */
+        dx_ui_lane = 1;                               /* (.. and its EDIT on the SNARE: the kick's sound is the KICK's) */
+    }
 }
 
 static void track_defaults(track_t *t)
@@ -1911,7 +1917,7 @@ static void track_select(uint32_t i)
 
 #include "ui_events.c"                            /* SEQ > AUTO LIST: the locks and events as a list (an action page) */
 /* EDIT > SOUND / SOUND 2 (ui_dx.c, included by ui_input.c): the DRUM-X sound edited and its patch (0 A, 1 B) */
-static uint8_t dx_ui_lane, dx_ui_side;
+static uint8_t dx_ui_side;   /* (dx_ui_lane: above, power_sound_of's) */
 static uint32_t dx_pagen(const page_t *pg)            /* SOUND 1..3; (0.5.1) X-MOD 4; (0.6.54) SOUND 4: 8 */
 {
     if (pg->title[0] == 'X')
