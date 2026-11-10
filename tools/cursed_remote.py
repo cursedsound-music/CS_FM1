@@ -5,10 +5,10 @@
 Put this file and cursed_remote_proto.py in the same Pythonista folder and run this one.
 
   LINK     pair the FM-1 over Bluetooth MIDI (iOS's own Bluetooth MIDI window), pick it as the output
-  PLAY     PLAY, sections, FILL / BREAK / ALL BACK, mutes, TAP, NUDGE (hold), BPM -/+ 1
+  PLAY     PLAY, an exact BPM (128.5), TAP, NUDGE (hold), BPM -/+ 1, sections, FILL / BREAK / ALL BACK, mutes
   FX       the FX pad (hold a key)
   MIX      DJ filter, isolator, macros, morph: tap a value and it jumps back to rest
-           (all channel 16 CCs: cos_remote.c; NUDGE and BPM -/+ need cursed-os 0.9.6)
+           (all channel 16 CCs: cos_remote.c; NUDGE and BPM -/+ need cursed-os 0.9.6, the exact BPM 0.9.7)
   VOICE    type words: the first VOICE track sings them from its next note
   SAMPLE   a sound from Files (wav, aif, mp3, m4a, caf) or the mic: trim, reverse, normalise, and send it into
            one of the 16 slots (the SAMPLER engine plays it). Stop the music on the FM-1 first.
@@ -153,10 +153,10 @@ def label(text, frame, size=12, color=DIM, align=ui.ALIGN_LEFT):
     return l
 
 
-def button(title, frame, action, color=PANEL):
-    b = ui.Button(frame=frame, title=title, action=action, background_color=color, tint_color=FG,
-                  corner_radius=6)
-    b.font = ('Menlo-Bold', 12)
+def button(title, frame, action, color=PANEL, size=12):
+    b = ui.Button(title=title, action=action, background_color=color, tint_color=FG, corner_radius=8)
+    b.font = ('Menlo-Bold', size)
+    b.frame = frame                       # (after the title and the font: Pythonista sizes a button to its title)
     return b
 
 
@@ -265,61 +265,70 @@ def tap(n):
 
 
 class PlayPage(ui.View):
-    """the transport, the sections, the mutes, the tempo: big keys, no scrolling"""
+    """the transport, the tempo, the sections, the mutes: big keys, no scrolling"""
     def __init__(self, **kw):
         super().__init__(**kw)
-        g, y, fw = 8, 10, W - 20
-        b = button('PLAY / STOP', (10, y, fw, 60), tap(P.CC_PLAY), HOT)
-        b.font = ('Menlo-Bold', 18)
-        self.add_subview(b)
-        y += 60 + g
-        w4 = (fw - 3 * g) / 4
+        g, y, fw = 8, 8, W - 20
+        w2, w3, w4 = (fw - g) / 2, (fw - 2 * g) / 3, (fw - 3 * g) / 4
+        self.add_subview(button('PLAY / STOP', (10, y, fw, 54), tap(P.CC_PLAY), HOT, 18))
+        y += 54 + g
+        self.bpm = ui.TextField(frame=(10, y, w2, 48), placeholder='BPM  e.g. 128.5', background_color=PANEL,
+                                text_color=FG, alignment=ui.ALIGN_CENTER, keyboard_type=ui.KEYBOARD_DECIMAL_PAD,
+                                bordered=False, corner_radius=8)
+        self.bpm.font = ('Menlo-Bold', 18)
+        self.add_subview(self.bpm)
+        self.add_subview(button('SET BPM', (10 + w2 + g, y, w2, 48), self.set_bpm, HOT, 16))
+        y += 48 + g
+        self.add_subview(Pad('NUDGE\n\u2212', P.CC_NUDGE0, 15, frame=(10, y, w4, 110)))
+        self.add_subview(button('TAP', (10 + w4 + g, y, 2 * w4 + g, 110), tap(P.CC_TAP), '#2a2a33', 34))
+        self.add_subview(Pad('NUDGE\n+', P.CC_NUDGE0 + 1, 15, frame=(10 + 3 * (w4 + g), y, w4, 110)))
+        y += 110 + g
+        self.add_subview(button('BPM \u2212 1', (10, y, w2, 40), self.step(-1)))
+        self.add_subview(button('BPM + 1', (10 + w2 + g, y, w2, 40), self.step(1)))
+        y += 40 + 2 * g
         for i in range(4):
-            b = button('ABCD'[i], (10 + i * (w4 + g), y, w4, 56), tap(P.CC_SECT0 + i))
-            b.font = ('Menlo-Bold', 22)
-            self.add_subview(b)
-        y += 56 + g
-        w3 = (fw - 2 * g) / 3
+            self.add_subview(button('ABCD'[i], (10 + i * (w4 + g), y, w4, 52), tap(P.CC_SECT0 + i), PANEL, 22))
+        y += 52 + g
         for i, (t, n) in enumerate([('FILL', P.CC_FILL), ('BREAK', P.CC_BREAK), ('ALL BACK', P.CC_BACK)]):
-            self.add_subview(button(t, (10 + i * (w3 + g), y, w3, 48), tap(n)))
-        y += 48 + g + 4
+            self.add_subview(button(t, (10 + i * (w3 + g), y, w3, 44), tap(n)))
+        y += 44 + g + 2
         self.add_subview(label('MUTE', (10, y, 80, 14), 10))
         y += 16
         w6 = (fw - 5 * g) / 6
         for i in range(6):
-            b = button(str(i + 1), (10 + i * (w6 + g), y, w6, 52), tap(P.CC_MUTE0 + i))
-            b.font = ('Menlo-Bold', 18)
-            self.add_subview(b)
-        y += 52 + g + 4
-        self.add_subview(label('TEMPO   (hold NUDGE: 3 % slower / faster)', (10, y, fw, 14), 10))
-        y += 16
-        nw = (fw - 2 * g) / 4
-        self.add_subview(Pad('NUDGE\n\u2212', P.CC_NUDGE0, 15, frame=(10, y, nw, 130)))
-        b = button('TAP', (10 + nw + g, y, 2 * nw, 130), tap(P.CC_TAP), '#2a2a33')
-        b.font = ('Menlo-Bold', 34)
-        self.add_subview(b)
-        self.add_subview(Pad('NUDGE\n+', P.CC_NUDGE0 + 1, 15, frame=(10 + 3 * nw + 2 * g, y, nw, 130)))
-        y += 130 + g
-        w2 = (fw - g) / 2
-        self.add_subview(button('BPM \u2212 1', (10, y, w2, 46), tap(P.CC_BPMDN)))
-        self.add_subview(button('BPM + 1', (10 + w2 + g, y, w2, 46), tap(P.CC_BPMDN + 1)))
-        y += 46 + g
-        self.bpm = ui.TextField(frame=(10, y, w2, 46), placeholder='BPM 60\u2013187', background_color=PANEL,
-                                text_color=FG, alignment=ui.ALIGN_CENTER, keyboard_type=ui.KEYBOARD_NUMBER_PAD)
-        self.bpm.font = ('Menlo-Bold', 20)
-        self.add_subview(self.bpm)
-        self.add_subview(button('SET BPM', (10 + w2 + g, y, w2, 46), self.set_bpm, HOT))
+            self.add_subview(button(str(i + 1), (10 + i * (w6 + g), y, w6, 48), tap(P.CC_MUTE0 + i), PANEL, 18))
+
+    def touch_began(self, t):             # (a touch beside the keys: the keyboard away)
+        self.bpm.end_editing()
+
+    def bpm_now(self):
+        try:
+            return float(self.bpm.text.replace(',', '.'))
+        except ValueError:
+            return None
+
+    def send_bpm(self, v):
+        v = max(40.0, min(240.0, round(v, 1)))
+        self.bpm.text = ('%.1f' % v).rstrip('0').rstrip('.')
+        midi.send(P.bpm_exact(v))
 
     def set_bpm(self, s):
         self.bpm.end_editing()
-        try:
-            v = int(round(float(self.bpm.text.replace(',', '.'))))
-        except ValueError:
+        v = self.bpm_now()
+        if v is None:
             self.bpm.text = ''
             return
-        v = max(60, min(187, v))
-        self.bpm.text = str(v)
-        cc(P.CC_BPM, v - 60)
+        self.send_bpm(v)
+
+    def step(self, d):
+        def f(s):
+            self.bpm.end_editing()
+            v = self.bpm_now()
+            if v is None:
+                tap(P.CC_BPMDN + (d > 0))(s)        # (no tempo typed: the FM-1's own, a whole one)
+            else:
+                self.send_bpm(v + d)
+        return f
 
 
 class PadPage(ui.View):

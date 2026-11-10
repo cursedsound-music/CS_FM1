@@ -14,6 +14,7 @@ NAK_TEXT = {1: "not understood", 2: "stop the music first", 3: "no room (or too 
 # the performance CCs (cos_remote.c)
 CC_PLAY, CC_MUTE0, CC_SECT0, CC_FILL, CC_BREAK, CC_BACK, CC_TAP = 20, 22, 28, 32, 33, 34, 35
 CC_NUDGE0, CC_BPMDN = 36, 38                # (0.9.6) 36 37 NUDGE - + (held), 38 39 BPM - + 1
+CC_BPMX = 80                                # (0.9.7) 80 81: an exact BPM in tenths, high 7 bits then low
 CC_PADW0, CC_PADB0 = 40, 56
 CC_DJF, CC_ISO0, CC_MAC0, CC_MORPH, CC_BPM, CC_TRK0 = 70, 71, 74, 78, 79, 85
 
@@ -25,6 +26,12 @@ PAD_BLACK = ["M1", "M2", "M3", "M4", "M5", "M6", "KICK KILL", "LOW KILL", "DRUMS
 def cc(num, val):
     """a channel-16 CC: three bytes"""
     return bytes([0xB0 | CH, num & 127, max(0, min(127, int(val)))])
+
+
+def bpm_exact(bpm):
+    """an exact tempo (40.0 .. 240.0, a tenth): CC 80 then CC 81 (cursed-os 0.9.7)"""
+    t = max(400, min(2400, int(round(float(bpm) * 10))))
+    return cc(CC_BPMX, t >> 7) + cc(CC_BPMX + 1, t & 127)
 
 
 def frame(cmd, payload):

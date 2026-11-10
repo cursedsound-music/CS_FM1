@@ -9,6 +9,7 @@
  *   40..55 the FX pad's white keys 1..16, 56..66 its black keys 1..11: held while 64 or more (FX + OCT+'s latch too)
  *   70 DJ FILTER  71 72 73 the ISOLATOR's LOW MID HIGH  74..77 MACRO 1..4  78 MORPH A-B   (0..127 over the knob's range)
  *   79 BPM (60 + the value)   85..90 the track 1..6 selected
+ *   (0.9.7) 80 81 an exact BPM in tenths (400..2400): 80 its high 7 bits first, then 81 its low 7 bits sets it
  *   (0.9.6) 36 37 NUDGE - + (the tempo 3 % slower / faster while 64 or more; 5 s at most)   38 39 BPM - + 1
  * Channel 16's PROGRAM CHANGE stays a section / a project (midi_control.c).
  *
@@ -21,6 +22,7 @@
 #define RMT_ACK 118u
 #define RMT_NAK 119u
 enum { RN_NONE, RN_BAD, RN_STOP, RN_ROOM, RN_DATA, RN_FLASH, RN_ORDER };
+static uint8_t rmt_bpm_hi;                               /* (0.9.7) CC 80's: an exact BPM's high bits */
 static int8_t rmt_nudge;                                 /* (0.9.6) the remote's NUDGE held: -1, +1 */
 static uint32_t rmt_nudge_ms;                            /* .. since when (5 s at most: a link lost while held) */
 static uint32_t rmt_pad;                                 /* the pad's keys the remote holds (bit k: white 0..15, black 16..26) */
@@ -69,6 +71,8 @@ static __attribute__((noinline)) void rmt_cc(uint32_t cc, uint32_t v)
         return;
     }
     if (cc == 79u) { rmt_bpm((int32_t)(60u + v) * 10); return; }
+    if (cc == 80u) { rmt_bpm_hi = (uint8_t)v; return; }  /* (0.9.7) an exact BPM, tenths: 80 then 81 */
+    if (cc == 81u) { rmt_bpm((int32_t)((uint32_t)rmt_bpm_hi << 7 | v)); return; }
     if (cc == 36u || cc == 37u) {                        /* (0.9.6) NUDGE - / +: while held */
         int8_t d = (int8_t)(cc == 37u ? 1 : -1);
         if (on) { rmt_nudge = d; rmt_nudge_ms = fm1_ms; }
