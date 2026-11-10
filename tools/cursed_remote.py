@@ -128,7 +128,7 @@ def cc(num, val):
 # ------------------------------------------------------------------------------------------------ Bluetooth
 @on_main_thread
 def bluetooth_window():
-    """iOS's own Bluetooth MIDI window: tap the FM-1 there, then Done"""
+    """iOS's own Bluetooth MIDI window: tap the FM-1 there, then swipe the window down"""
     load_framework('CoreAudioKit')
     vc = ObjCClass('CABTMIDICentralViewController').new()
     nav = ObjCClass('UINavigationController').alloc().initWithRootViewController_(vc)
@@ -137,14 +137,7 @@ def bluetooth_window():
     while root.presentedViewController():
         root = root.presentedViewController()
 
-    def done(_self, _cmd, sender=None):
-        nav.dismissViewControllerAnimated_completion_(True, None)
-    from objc_util import create_objc_class
-    Closer = create_objc_class('CursedCloser', methods=[done])
-    closer = Closer.new()
-    bluetooth_window.closer = closer       # (kept alive)
-    item = ObjCClass('UIBarButtonItem').alloc().initWithBarButtonSystemItem_target_action_(0, closer, 'done')
-    vc.navigationItem().setRightBarButtonItem_(item)
+    nav.setModalPresentationStyle_(1)      # (a page sheet: swipe it down to close; no button of our own)
     root.presentViewController_animated_completion_(nav, True, None)
 
 
@@ -219,7 +212,7 @@ class ConnectPage(ui.View):
         super().__init__(**kw)
         self.app = app
         self.add_subview(button('BLUETOOTH MIDI…', (10, 10, W - 20, 44), lambda s: bluetooth_window(), HOT))
-        self.add_subview(label('Turn Bluetooth on on the FM-1 (GLO), tap it in the window, then Done.\n'
+        self.add_subview(label('Turn Bluetooth on on the FM-1 (GLO), tap it in the window, swipe it down.\n'
                                'Then pick it below (USB works too).', (10, 60, W - 20, 50), 11))
         self.subviews[-1].number_of_lines = 3
         self.add_subview(button('REFRESH', (10, 116, W - 20, 36), self.refresh))
