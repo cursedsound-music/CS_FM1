@@ -1842,13 +1842,10 @@ static void cos_idle_prep(void)
     }
     gl.lvl = pk;
     cos_cube_prep(t);
-    if (!gl.sk_on && t - gl.sk_next < 0x80000000u) {     /* a picture (the skull, or the hammer and sickle): under a
+    if (!gl.sk_on && t - gl.sk_next < 0x80000000u) {     /* a picture (the skull, or the circle-A): under a
                                                          * second, now and then (20 .. 40 s in, then every 40 .. 120 s) */
         gl.sk_on = t + 300u + gl_rnd() % 180u;            /* (about half a second) */
-        {                                                /* (the skull 40 %, the hammer and sickle 30 %, the circle-A 30) */
-            uint32_t r = (gl_rnd() >> 8) % 100u;
-            gl.pic = r < 40u ? 0u : r < 70u ? 1u : 2u;
-        }
+        gl.pic = (gl_rnd() >> 8) % 100u < 60u ? 0u : 1u;   /* (the skull 60 %, the circle-A 40 %) */
         gl.sk_next = t + 40000u + gl_rnd() % 80000u;
         gl.burst = t + 160u;                             /* (it tears in) */
     }
@@ -1908,11 +1905,11 @@ static void cos_idle_scene(void)
                                      {0, 4}, {1, 5}, {2, 6}, {3, 7}};   /* (the cube's edges: corners differing in a bit) */
     int32_t i;
     if (gl.sk_on) {                                      /* a picture: on black, a red ghost torn off it while it glitches */
-        static const uint8_t *const PIC[3] = {SKULL, HSKL, ANAR};
-        static const uint8_t PW[3] = {SKULL_W, HSKL_W, ANAR_W}, PH[3] = {SKULL_H, HSKL_H, ANAR_H};
-        uint32_t k = gl.pic % 3u, w = PW[k], h = PH[k];
+        static const uint8_t *const PIC[2] = {SKULL, ANAR};
+        static const uint8_t PW[2] = {SKULL_W, ANAR_W}, PH[2] = {SKULL_H, ANAR_H};
+        uint32_t k = gl.pic & 1u, w = PW[k], h = PH[k];
         int32_t sx = 120 - (int32_t)w, sy = 116 - (int32_t)h;
-        uint16_t ink = k == 2u ? C_RED : C_FG, ghost = k == 2u ? C_FG : C_RED;   /* (the circle-A red, its ghost white) */
+        uint16_t ink = k ? C_RED : C_FG, ghost = k ? C_FG : C_RED;   /* (the circle-A red, its ghost white) */
         if (gl.nb) cos_pic_at(PIC[k], w, h, sx + 4 + (int32_t)(gl.rng % 5u), sy, ghost);
         cos_pic_at(PIC[k], w, h, sx, sy, ink);
     } else
@@ -2620,6 +2617,14 @@ static int cos_fx_on(uint32_t c)
 {
     return c < CX_CODE ? (int)(((perf_held | perf_latched) >> c) & 1u) : (int)((cfx_now() >> (c - CX_CODE)) & 1u);
 }
+/* FX held: key k (0..26) lit, its effect on (the white keys CFX_W, the black CFX_B) */
+static int cos_pad_lit(uint32_t k)
+{
+    uint32_t i;
+    for (i = 0; i < 16u; i++) if (WK[i] == k) return cos_fx_on(CFX_W[i]);
+    for (i = 0; i < 11u; i++) if (BK[i] == k) return cos_fx_on(CFX_B[i]);
+    return 0;
+}
 static void cos_body_fxpad(void)
 {
     static const char *const WN[16] = {"RPT 1/8", "RPT 1/16", "RPT 1/32", "GATE1/16", "GATE 1/8", "TAPESTOP", "GLITCH",
@@ -2861,7 +2866,7 @@ dials:
 /* the splash (ui_draw.c draw_splash / splash_write under COS_SLIM; main.c's boot loop calls it every ~4 ms for
  * SPL_WRITE + SPL_HOLD ms): black, a few still stars, the name 2x, the version, a 16-block bar filling like a pattern
  * (the block being filled red), READY. Drawn whole once, then only the bar's strip when a block fills */
-#define COS_VERSION "0.8.9"
+#define COS_VERSION "0.9.0"
 static void cos_px2(int32_t x, int32_t y, const char *s, uint16_t c)      /* (the face 2 x 2) */
 {
     int32_t r, b, b0;
@@ -2970,7 +2975,10 @@ static __attribute__((noinline)) void cos_leds(void)
     led_put(nl, panel.btn[CM_BTN[cz.mode]], 1);
     led_put(nl, panel.btn[B_REC], song.rec != 0u);
     for (k = 0; k < NB; k++) led_put(nd, panel.btn[k], 1);
-    if ((cz.mode == CM_TRIG && !cz.si) || cz.mode == CM_HOME) {
+    if (cz.fx_down) {                                    /* (FX held: the pad's keys, each lit while its effect is on,
+                                                         * latched or held; the rest at the glow) */
+        for (k = 0; k < 27u; k++) led_put(nl, 14u + k, cos_pad_lit(k));
+    } else if ((cz.mode == CM_TRIG && !cz.si) || cz.mode == CM_HOME) {
         for (k = 0; k < 16u; k++) {
             uint32_t st = cz.bank * 16u + k;
             int on = cz.mode == CM_HOME ? k == song.sel : st < len && (cos_step(t, st, cos_kit() ? cz.lane : NLANE) != 0u) != (st == now);

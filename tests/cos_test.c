@@ -1767,6 +1767,18 @@ int main(void)
         t2->p[P_ROOT] = r0; t2->p[P_SCALE] = s0; t2->p[P_QUANT] = q0;
         cz.mode = m0; cz.si = (uint8_t)si0;
     }
+    {   /* FX held: each pad key lit while its effect is on (latched or held), the others not */
+        uint32_t lat0 = perf_latched, k2, n2 = 0;
+        perf_latched = 1u << PF_R16;                        /* (white 2: RPT 1/16 latched) */
+        for (k2 = 0; k2 < 27u; k2++) n2 += (uint32_t)cos_pad_lit(k2);
+        CHECK(cos_pad_lit(WK[1]) && n2 == 1u, "FX held: RPT 1/16's key lit, no other (%u)", n2);
+        perf_latched = (1u << PF_R16) | (1u << PF_M1);       /* (and black 1: track 1 muted) */
+        CHECK(cos_pad_lit(BK[0]) && cos_pad_lit(WK[1]), "a black key's effect too");
+        perf_latched = 0;
+        CHECK(!cos_pad_lit(WK[1]), "turned off: dark again");
+        perf_latched = lat0;
+        cz.fx_down = 1; cos_leds(); cz.fx_down = 0; cos_leds();
+    }
     {   /* the keyboards drawn (KEY, DRONE) as the FM-1's keys: from F, a black one where the panel has one */
         uint32_t ok = 1, j, bl;
         for (k = 0; k < 27u; k++) {

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: GPL-3.0-only
 # Copyright (C) 2026 cursedsound
-"""cursed-os: the IDLE screen's pictures, a skull, the hammer and sickle and the circle-A (firmware/src/cos_skull.h):
+"""cursed-os: the IDLE screen's pictures, a skull and the circle-A (firmware/src/cos_skull.h):
 drawn with PIL shapes at 8 x, scaled down to 1 bit.  python3 tools/cos_skull.py  (in an empty folder: writes cos_skull.h, PNGs)"""
 from PIL import Image, ImageDraw
 import math, sys
@@ -103,5 +103,5 @@ def emit(img, name, W, H, f):
     f.write("};\n")
 with open("cos_skull.h", "w") as f:
     f.write("/* SPDX-License-Identifier: GPL-3.0-only\n * Copyright (C) 2026 cursedsound */\n")
-    f.write("/* (cursed-os) the IDLE screen's two pictures, drawn for cursed-os (tools/cos_skull.py: PIL shapes at 8 x, scaled down):\n * a skull, the hammer and sickle and the circle-A; a bit a pixel, the rows top down, the left pixel the byte's top bit */\n")
-    emit(sk, "SKULL", W2, H2, f); emit(hs, "HSKL", W, H, f); emit(an, "ANAR", W3, H3, f)
+    f.write("/* (cursed-os) the IDLE screen's two pictures, drawn for cursed-os (tools/cos_skull.py: PIL shapes at 8 x, scaled down):\n * a skull and the circle-A; a bit a pixel, the rows top down, the left pixel the byte's top bit */\n")
+    emit(sk, "SKULL", W2, H2, f); emit(an, "ANAR", W3, H3, f)
