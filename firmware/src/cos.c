@@ -1967,6 +1967,12 @@ static struct {
 } lu;
 static void cos_lu_reset(void) { memset(&lu, 0, sizeof lu); lu.seen = mt_n; lu.m = lu.s = lu.i = lu.pk = -100000; }
 static int32_t cos_lufs(uint64_t sum, uint32_t blocks) { return sum ? cos_cdb(sum) - cos_cdb((uint64_t)blocks * 4410u) + LU_K : -100000; }
+/* n / d without a 64-bit divide (the toolchain has none): both shifted down until they fit 31 bits; d > 0 */
+static int32_t cos_div64(int64_t n, int64_t d)
+{
+    while (d >= (1ll << 31) || n >= (1ll << 31) || n < -(1ll << 31)) { n >>= 1; d >>= 1; }
+    return d ? (int32_t)n / (int32_t)d : 0;
+}
 static uint64_t cos_isqrt(uint64_t v)                     /* (the correlation's root) */
 {
     uint64_t r = 0, b = 1ull << 62;
@@ -2005,11 +2011,11 @@ static void cos_lu_poll(void)
         uint64_t sum = 0, cnt = 0;
         for (k = 0; k < 150u; k++) { sum += (uint64_t)lu.hist[k] * LU_PW[k]; cnt += lu.hist[k]; }
         if (cnt) {
-            int32_t gate = cos_cdb(sum / cnt) - 7294 - 1000;   /* (Q24 power to LUFS: -24 x 3.0103 dB, -0.691; then 10 LU under) */
+            int32_t gate = cos_cdb(sum) - cos_cdb(cnt) - 7294 - 1000;   /* (Q24 power to LUFS: -24 x 3.0103 dB, -0.691; then 10 LU under) */
             uint32_t g0 = (uint32_t)clamp((gate + 7000 + 49) / 50, 0, 150);
             sum = cnt = 0;
             for (k = g0; k < 150u; k++) { sum += (uint64_t)lu.hist[k] * LU_PW[k]; cnt += lu.hist[k]; }
-            lu.i = cnt ? cos_cdb(sum / cnt) - 7294 : -100000;
+            lu.i = cnt ? cos_cdb(sum) - cos_cdb(cnt) - 7294 : -100000;
         } else lu.i = -100000;
     }
     {                                                     /* the stereo: L R's correlation, the side to the mid, L to R */
@@ -2017,10 +2023,10 @@ static void cos_lu_poll(void)
         int64_t lr = 0;
         for (k = 0; k < 3u && k < nb; k++) { const mt_blk_t *b = &mt_ring[(now - 1u - k) & 31u]; ll += b->ll; rr += b->rr; lr += b->lr; }
         d = cos_isqrt(ll) * cos_isqrt(rr);
-        lu.corr = d ? (int32_t)clamp((int32_t)(lr * 1000 / (int64_t)d), -1000, 1000) : 1000;
+        lu.corr = d ? clamp(cos_div64(lr * 1000, (int64_t)d), -1000, 1000) : 1000;
         {
             int64_t dm = (int64_t)(ll + rr) + 2 * lr, ds = (int64_t)(ll + rr) - 2 * lr;   /* (the mid's and the side's power, x 4) */
-            lu.width = dm + ds > 0 ? (int32_t)(ds * 100 / (dm + ds)) : 0;   /* (0 % mono, 50 % as wide as
+            lu.width = dm + ds > 0 ? cos_div64(ds * 100, dm + ds) : 0;   /* (0 % mono, 50 % as wide as
                                                          * it is high: unrelated sides, 100 % all side) */
         }
         lu.bal = ll && rr ? cos_cdb(ll) - cos_cdb(rr) : 0;
