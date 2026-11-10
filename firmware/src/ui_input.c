@@ -2185,6 +2185,7 @@ static __attribute__((noinline)) void ui_polls(void)
 {
     fm6_poll();                                         /* FM6: PTCH turned -> its patch */
     mo_lvl = (uint8_t)(midi_out_mode & 3u);             /* (0.6.72) MENU > MIDI OUT (seq.c) */
+    kb_local_off = (uint8_t)(favorites.factory[15][0] == 1u);   /* (cursed-os 0.9.4) GLO > MIDI > LOCAL */
     midi_pc_poll();                                     /* (0.6.72) PROGRAM CHANGE in: the sounds it asked for */
     rp_apply();                                         /* (MENU > CLICK, CLICK LEVEL, COUNT-IN: click.c, seq.c) */
     perf_latch_on = fx_latch & 1u;                      /* (cursed-os: its FX pad, the frame JIANT's would have set it in) */

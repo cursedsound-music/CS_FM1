@@ -626,6 +626,7 @@ static sing_t sing[NTRK];
 typedef struct {
     int16_t fq[3];
     uint16_t vb, vph;
+    uint32_t rm;                 /* (cursed-os 0.9.4) STYLE ROBOT's ring modulator: its phase at the block's start */
 } sing_x_t;
 static sing_x_t sing_x[NTRK] __attribute__((section(".pool")));
 

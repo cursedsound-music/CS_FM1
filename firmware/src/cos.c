@@ -44,7 +44,7 @@ enum { CC_OUTCH, CC_MOUT, CC_CLOCK, CC_SLOT, CC_TRKS, CC_LOAD, CC_COMP, CC_CATK,
        CC_X2, CC_X2E = CC_X2 + 15, CC_OCT, CC_KICK, CC_KICKE = CC_KICK + 4, CC_LN0, CC_LNE = CC_LN0 + 7, CC_KDRV, CC_BT,
        CC_L1SYNC, CC_L1RATE, CC_L1WAVE, CC_L1MODE, CC_L1PH, CC_L1FADE, CC_L2SYNC, CC_L2RATE, CC_BPM,
        CC_CIN, CC_CTHR, CC_CRAT, CC_CMK, CC_CKNEE, CC_CSC, CC_CMIX, CC_LIN, CC_LREL, CC_LVL, CC_MUTEQ, CC_PCCH, CC_PCOUT, CC_VJCH, CC_EQL, CC_EQM, CC_EQH, CC_MAC0, CC_MAC3 = CC_MAC0 + 3, CC_RB0, CC_RB3 = CC_RB0 + 3, CC_MOPOS, CC_MOBARS, CC_LVLEN, CC_LVRATE, CC_LVDN, CC_LVSH, CC_MCCH, CC_MCCC, CC_MCDIR, CC_MCMAP, CC_MC0, CC_MC3 = CC_MC0 + 3, CC_MOCC,
-       CC_NAME, CC_IDLE, CC_SCT, CC_SCG, CC_SCTR, CC_SPV, CC_SPR, CC_SPS, CC_SCM, CC_SPSRC, CC_SCZ, CC_LUT, CC_LUR, CC_SCALE, CC_QUANT, CC_DJF, CC_DSEL, CC_DLV, CC_DWAV, CC_DFLT, CC_DBT, CC_DDRV, CC_DLAY, CC_DFB, CC_DSNP, CC_DE0, CC_DEE = CC_DE0 + DE_N - 1 };
+       CC_NAME, CC_IDLE, CC_SCT, CC_SCG, CC_SCTR, CC_SPV, CC_SPR, CC_SPS, CC_SCM, CC_SPSRC, CC_SCZ, CC_LUT, CC_LUR, CC_LOCAL, CC_SCALE, CC_QUANT, CC_DJF, CC_DSEL, CC_DLV, CC_DWAV, CC_DFLT, CC_DBT, CC_DDRV, CC_DLAY, CC_DFB, CC_DSNP, CC_DE0, CC_DEE = CC_DE0 + DE_N - 1 };
 _Static_assert(CC_DEE < 0xFEu, "the CK_COS ids fit a page's byte (0xFE, 0xFF: OCTAVE, none)");
 _Static_assert(X2_N <= 16u, "CC_X2 .. CC_X2E: room for every trk_x2 field");
 #define ID_MUTEQ 0xFCu                          /* (HOME 2's: MUTE Q, cos_knob) */
@@ -93,7 +93,7 @@ static const cpg_t CZP_SRCA[] = {{"SRC 1", CK_TRK, {P_E0, P_E1, P_E2, P_E3}}, {"
                                 CZ_MOD(1), CZ_MOD(2), CZ_MOD(3), CZ_MOD(4)};
 static const cpg_t CZP_SRCV[] = {{"SRC 1", CK_TRK, {P_E0, P_E1, P_E2, P_E3}}, {"SRC 2", CK_TRK, {P_E4, P_E5, P_E6, P_E7}},
                                 CZ_FILT,
-                                {"WORDS", CK_TRK, {P_VLANG, P_VLYR, X, X}},   /* (THEME, ARTIC: on the first page) */
+                                {"WORDS", CK_TRK, {P_VLANG, P_VLYR, P_VSTYLE, X}},   /* (THEME, ARTIC: on the first page; 0.9.4 STYLE) */
                                 {"VOICE", CK_TRK, {P_VOICE, P_GLIDE, P_DETUNE, ID_OCT}},
                                 {"CHORD", CK_TRK, {P_CHRD, P_CVOI, P_CSTR, X}},
                                 CZ_MOD(1), CZ_MOD(2), CZ_MOD(3), CZ_MOD(4)};
@@ -164,7 +164,7 @@ static const cpg_t CZP_MIX[] = {{"MIX", CK_TRK, {P_LEVEL, P_PAN, P_GLIDE, P_MUTE
                                {"COMP 2", CK_COS, {CC_CIN, CC_CATK, CC_CREL, CC_CKNEE}},
                                {"COMP 3", CK_COS, {CC_CSC, CC_CMIX, X, X}},
                                {"LIMIT", CK_COS, {CC_LIN, CC_LIM, CC_LREL, CC_LVL}},
-                               {"MIDI", CK_COS, {CC_OUTCH, CC_MOUT, CC_CLOCK, X}},
+                               {"MIDI", CK_COS, {CC_OUTCH, CC_MOUT, CC_CLOCK, CC_LOCAL}},   /* (0.9.4 LOCAL: OFF, the keys play Ableton only) */
                                {"LINK", CK_COS, {CC_PCCH, CC_PCOUT, CC_VJCH, X}},   /* (a Syntakt's patterns: the sections) */
                                {"LINK 2", CK_COS, {CC_MCCH, CC_MCDIR, CC_MCMAP, CC_MOCC}},   /* (the macros and MORPH as CCs, both
                                                          * ways) */
@@ -197,7 +197,7 @@ static struct {
     uint32_t tg_down, notes0;                           /* TRIG: the white keys down since their press; the keys a frame ago */
     uint8_t ly_prev;                                    /* WORDS: the lyric before OCT+ */
     int8_t dr_oct;
-    int16_t cc_v[15];                                   /* (CK_COS: the knobs' views) */
+    int16_t cc_v[16];                                   /* (CK_COS: the knobs' views) */
     uint8_t fx_down, fx_used;                           /* FX held: the pad (keys: perform.c's effects, knobs its macros) */
     uint8_t ed_down, ed_used;                           /* EDIT held (+ PRESETS: the next engine); its tap acts let go */
     uint8_t home_down, home_used, home_tab;             /* HOME held (the tempo's button): on HOME its tap, the next page, let go */
@@ -752,6 +752,13 @@ static const param_desc_t *cos_cdesc(uint32_t id, int16_t **vp)
         *vp = &cz.cc_v[6 + i];
         return &DM[i];
     }
+    if (id == CC_LOCAL) {                                /* (0.9.4) LOCAL ON / OFF: the settings' byte 0 (seq.c kb_local_off) */
+        static const char *const LO[3] = {"ON", "OFF", 0};
+        static const param_desc_t DLO = {"LOCAL", F_ENUM, 0, 1, 0, LO, 0};
+        cz.cc_v[15] = (int16_t)(favorites.factory[15][0] == 1u);
+        *vp = &cz.cc_v[15];
+        return &DLO;
+    }
     id %= 3u;
     *vp = &cz.cc_v[id];
     if (id == CC_OUTCH) { cz.cc_v[id] = (int16_t)(v && v <= 16u ? v : t + 1u); return &D[0]; }
@@ -768,6 +775,13 @@ static void cos_cput(uint32_t id, int32_t v)
         settings_save();
     } else if (id == CC_MOUT) {
         midi_out_mode = (uint8_t)(clamp(v, 0, 3));
+        settings_save();
+    } else if (id == CC_LOCAL) {
+        uint32_t k;
+        favorites.factory[15][0] = (uint8_t)(v > 0);
+        kb_local_off = (uint8_t)(v > 0);
+        for (k = 0; k < 16u; k++) midi_out_event(0x0Bu | (0xB0u | k) << 8 | 123u << 16);   /* (ALL NOTES OFF: none left
+                                                         * hanging in the computer across the change) */
         settings_save();
     } else if (id == CC_SLOT) {
         uint32_t w = (uint32_t)clamp(v, 1, NSONG * 4) - 1u;
@@ -2785,7 +2799,9 @@ static void cos_body_midi(void)
     cos_tx(4, 94, b, (midi_out_mode & 3u) == 2u ? C_FG : C_MID);
     str_cpy(b, "CLOCK: ", sizeof b); str_cpy(b + 7, CK[(uint32_t)song.g[G_CLOCK] % 3u], 8);
     cos_tx(4, 108, b, C_FG);
-    cos_tx(4, 128, (midi_out_mode & 3u) == 2u ? "NOTES GO OUT: SYNTAKT CAN REC" : "ALL: THE NOTES GO OUT TOO", C_DIM);
+    cos_tx(4, 128, favorites.factory[15][0] == 1u ? "LOCAL OFF: KEYS PLAY THE COMPUTER" :
+                   (midi_out_mode & 3u) == 2u ? "NOTES GO OUT: SYNTAKT CAN REC" : "ALL: THE NOTES GO OUT TOO",
+           favorites.factory[15][0] == 1u ? C_RED : C_DIM);
 }
 
 static void cos_body_gen(void)
@@ -3113,7 +3129,7 @@ dials:
 /* the splash (ui_draw.c draw_splash / splash_write under COS_SLIM; main.c's boot loop calls it every ~4 ms for
  * SPL_WRITE + SPL_HOLD ms): black, a few still stars, the name 2x, the version, a 16-block bar filling like a pattern
  * (the block being filled red), READY. Drawn whole once, then only the bar's strip when a block fills */
-#define COS_VERSION "0.9.3"
+#define COS_VERSION "0.9.4"
 static void cos_px2(int32_t x, int32_t y, const char *s, uint16_t c)      /* (the face 2 x 2) */
 {
     int32_t r, b, b0;

@@ -294,8 +294,12 @@ static const param_desc_t WROT_DESC[2] = {               /* (0.7.8) WHEEL's ROTO
     {"DEPTH", F_PCT, 0, 127, 127, 0, 0}, {"DUST", F_PCTINV, 0, 127, 127, 0, 0}};
 static const param_desc_t VLANG_DESC = {"LANG", F_ENUM, 0, LG_N - 1, 0, N_LANG, 0};   /* (0.8.5) VOICE's words: */
 static const param_desc_t VLYR_DESC = {"LYRIC", F_ENUM, 0, LYR_N - 1, 0, N_LYRIC, 0};  /* P_VLANG, P_VLYR (sing.c) */
+static const char *const N_VSTYLE[VS_N + 1] = {"HUMAN", "ROBOT", "GLADOS", "TALKBOX", 0};
+static const param_desc_t VSTYLE_DESC = {"STYLE", F_ENUM, 0, VS_N - 1, 0, N_VSTYLE, 0};   /* (cursed-os 0.9.4) VOICE */
 static const param_desc_t *track_desc(const track_t *t, uint32_t id)
 {
+    if (id == P_VSTYLE && ENGINES[eng_idx(t->eng_req)] == &ENG_FORMANT)
+        return &VSTYLE_DESC;
     if (id == MOT_DJF)                                /* (0.9.1) a DJ FILTER record (motion.c): the global's */
         return &GP[G_DJF];
     if ((id == P_VLANG || id == P_VLYR) && ENGINES[eng_idx(t->eng_req)] == &ENG_FORMANT)

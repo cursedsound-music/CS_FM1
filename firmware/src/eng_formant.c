@@ -142,6 +142,24 @@ static void formant_note_on(track_t *t, voice_t *v)
 /* WORDS (sing.c): the articulation's formants and gains through the same source and cascade; aspiration noise into
  * F1 with the breath's, frication (first-difference noise: high-passed) into F4, F4 at the consonant's resonance
  * while it sounds (3300 Hz between). The gains ramp across the block (sing_t pv -> gv): no step, no click */
+/* (cursed-os 0.9.4) STYLE (P_VSTYLE, EDIT > WORDS): HUMAN as it was; ROBOT a machine's voice: no vibrato, jitter or
+ * shimmer, the source at its buzziest, a ring modulator at ~55 Hz (the voice x 0 .. 1: half dry, half ringing); GLADOS the
+ * Portal computer's: steady and buzzy as ROBOT without the ring, the formants up 3 semitones (smaller, a woman's head),
+ * and each syllable sung on a step of its own (the note, a fourth, a fifth, a third up, a fourth or a tone down picked by the syllable's number:
+ * the auto-tuned melody), no glide between; TALKBOX: a sawtooth (each voice of a chord its own) through the mouth's
+ * formants instead of the glottis: a synth talking (Zapp, Daft Punk) */
+static inline uint32_t fmt_style(const track_t *t) { return (uint32_t)clamp(t->p[P_VSTYLE], 0, VS_N - 1); }
+#define FMT_RM_INC 5357142u                              /* (55 Hz: 2^32 x 55 / 44100) */
+static const int8_t FMT_GL_ST[8] = {0, 0, 5, 7, 0, 3, -5, -2};   /* GLADOS: a syllable's step, semitones */
+static inline uint32_t fmt_gl_inc(uint32_t inc, uint32_t nsy)
+{
+    int32_t st = FMT_GL_ST[(nsy * 2654435761u) >> 29];
+    return st ? (uint32_t)(umul64(inc, fmt_ratio(st * 16)) >> 16) : inc;
+}
+static inline int32_t fmt_saw(uint32_t ph, uint32_t inc)  /* (TALKBOX) a band-limited sawtooth, +-32768 */
+{
+    return (int32_t)(ph >> 16) - 32768 - blep(ph, inc);
+}
 static void __attribute__((noinline)) formant_word_render(track_t *t, voice_t *v, int32_t *out, uint32_t n,
                                                           const vmod_t *m)
 {
@@ -156,11 +174,12 @@ static void __attribute__((noinline)) formant_word_render(track_t *t, voice_t *v
     int32_t y1 = v->s[0], y2 = v->s[1], y3 = v->s[2], y4 = v->s[3], y5 = v->s[4], y6 = v->s[5];
     int32_t y7 = (int32_t)v->ph[1], y8 = (int32_t)v->ph[2], lp = v->s[6], nst = formant_nz, nzp = 0, nzq = 0;
     int32_t p16 = m->pitch16, incq;
+    uint32_t sty = fmt_style(t), rm = sx->rm;
     /* (0.9.8) the singer: a vibrato on a held note (~5.5 Hz, +-~20 ct, after ~0.3 s, in over ~0.4 s; none while the
      * pitch glides, then it waits again), each voice of a choir at its own phase; each glottal period its own length
      * (jitter, ~0.3 %) and level (shimmer, ~0.4 dB). BUZZ at its top (the last ~12 %) steadies them away: a machine */
-    hum = clamp((127 - p[P_E4]) * 4, 0, 64);
-    if (v->pitch_cur != v->pitch16) {                   /* gliding: as sung (an S-curve), no vibrato */
+    hum = sty ? 0 : clamp((127 - p[P_E4]) * 4, 0, 64);   /* (0.9.4: any STYLE but HUMAN: steady, a machine) */
+    if (v->pitch_cur != v->pitch16 && sty != VS_GLADOS) {                   /* gliding: as sung (an S-curve), no vibrato */
         inc = fmt_sung(v, m, &p16);
         sx->vb = 0;
     }
@@ -169,12 +188,13 @@ static void __attribute__((noinline)) formant_word_render(track_t *t, voice_t *v
         int32_t vib = (sine_i((uint32_t)(sx->vph + (uint32_t)(v - t->v) * 0x3A00u) << 16) * vd * 3) >> 17;
         inc += (uint32_t)((int32_t)(inc >> 12) * vib);   /* (+-48 / 4096: +-20 ct) */
     }
+    if (sty == VS_GLADOS) inc = fmt_gl_inc(inc, sg->nsy);   /* (the syllable's step) */
     jd = (hum * 3) >> 4;                                 /* +-12 / 4096 at the most */
     jr = v->vjit;                                        /* (the period under way: as it began) */
     incq = (int32_t)(inc >> 12);
     incj = inc + (uint32_t)(incq * jr);
     shim = 32768 + (jr << 7);
-    ratio = fmt_ratio(p[P_E3] * 16 + ((FMT_FOLOW * (p16 - 60 * 16) * 516) >> 16));   /* (the pitch sung: its glide) */
+    ratio = fmt_ratio(p[P_E3] * 16 + (sty == VS_GLADOS ? 48 : 0) + ((FMT_FOLOW * (p16 - 60 * 16) * 516) >> 16));   /* (the pitch sung: its glide) */
     bws = fmt_ratio((64 - p[P_E6]) * 4);
     f0 = (uint32_t)(umul64(inc, 705600u) >> 32);
     bm = clamp(sg->bm, 8, 64);
@@ -201,6 +221,7 @@ static void __attribute__((noinline)) formant_word_render(track_t *t, voice_t *v
               (uint32_t)clamp((int32_t)(umul64((uint32_t)clamp(sg->fb, 50, 5000) * 16u, r4r) >> 16), 20 * 16,
                               5000 * 16));
     buzz = clamp((p[P_E4] << 8) + m->shape - (64 << 8) + (v->vel - 96) * 40, 0, 127 << 8);
+    if (sty == VS_ROBOT || sty == VS_GLADOS) buzz = buzz > (112 << 8) ? buzz : 112 << 8;   /* (hard and buzzy) */
     oq = 58982 - ((buzz * 284) >> 8);
     tilt = 1900 + ((buzz * 96) >> 8);                   /* (0.9.8) a softer source than the vowels' (~6 kHz at 80 %) */
     te = (uint32_t)oq << 16;
@@ -227,6 +248,7 @@ static void __attribute__((noinline)) formant_word_render(track_t *t, voice_t *v
         else
             e = 0;
         e += blep(ph - te, incj) >> 1;
+        if (sty == VS_TALKBOX) e = (fmt_saw(ph, incj) * 3) >> 2;   /* (0.9.4: a synth through the mouth) */
         e = (e * shim) >> 15;
         lp += ((e - lp) * tilt) >> 14;
         x = (lp * gv) >> 15;
@@ -253,6 +275,11 @@ static void __attribute__((noinline)) formant_word_render(track_t *t, voice_t *v
         y8 = y7;
         y7 = clamp(a, -(1 << 28), 1 << 28);
         s = soft_knee(clamp((int32_t)(mac2_64(y7, og, y7 - y8, ogk) >> 21), -200000, 200000), 24000);
+        if (sty == VS_ROBOT) {                          /* (the ring: half the voice through it) */
+            s = (s * (((32768 + sine_i(rm)) * 23) >> 6)) >> 14;   /* (x 0 .. 1.44: the voice and its ring, half
+                                                         * each, as loud as HUMAN) */
+            rm += FMT_RM_INC;
+        }
         ph += incj;
         if (ph < incj) {                                /* a glottal period begins (the glottis shut: no step) */
             jr = (nz * jd) >> 15;
@@ -275,7 +302,11 @@ static void __attribute__((noinline)) formant_word_render(track_t *t, voice_t *v
     v->s[6] = lp;
 }
 
-static void formant_block(track_t *t) { sing_block(t); }   /* (LANG OFF: nothing) */
+static void formant_block(track_t *t)
+{
+    sing_block(t);
+    sing_x[(uint32_t)(t - trk) % NTRK].rm += FMT_RM_INC * CTL;   /* (0.9.4: STYLE ROBOT's ring, a block on) */
+}   /* (LANG OFF: nothing) */
 /* WORDS: the release sings the coda (the last consonants) at the level the note had, not faded with the release: the
  * level at the release (s[7]) held while a timed coda phoneme sounds (a held voiced one, n l m, fades as the ADSR
  * does). LANG OFF: the ADSR as it is */
@@ -315,6 +346,7 @@ static void formant_render(track_t *t, voice_t *v, int32_t *out, uint32_t n, con
     uint32_t ph = v->ph[0];
     int32_t y1 = v->s[0], y2 = v->s[1], y3 = v->s[2], y4 = v->s[3], y5 = v->s[4], y6 = v->s[5];
     int32_t y7 = (int32_t)v->ph[1], y8 = (int32_t)v->ph[2], lp = v->s[6], nst = 0;
+    uint32_t sty = fmt_style(t), rm = sing_x[(uint32_t)(t - trk) % NTRK].rm;
 
     if (p[P_VLANG]) {                                   /* (0.8.5) WORDS */
         formant_word_render(t, v, out, n, m);
@@ -349,7 +381,7 @@ static void formant_render(track_t *t, voice_t *v, int32_t *out, uint32_t n, con
         }
     }
     /* SHIFT (semitones) and FOLOW (key tracking around C4, fixed), one ratio for all four */
-    ratio = fmt_ratio(p[P_E3] * 16 + ((FMT_FOLOW * (v->pitch_cur - 60 * 16) * 516) >> 16));   /* FOLOW / 127 */
+    ratio = fmt_ratio(p[P_E3] * 16 + (sty == VS_GLADOS ? 48 : 0) + ((FMT_FOLOW * (v->pitch_cur - 60 * 16) * 516) >> 16));   /* FOLOW / 127 */
     bws = fmt_ratio((64 - p[P_E6]) * 4);                /* Q: bandwidth x2.5 .. x0.4 */
     f0 = (uint32_t)(umul64(inc, 705600u) >> 32);   /* F0 in Hz * 16 */
     for (j = 0; j < 3; j++) {
@@ -371,6 +403,7 @@ static void formant_render(track_t *t, voice_t *v, int32_t *out, uint32_t n, con
 
     /* source: BUZZ (+ SHP modulation, + velocity) -> open quotient and tilt */
     buzz = clamp((p[P_E4] << 8) + m->shape - (64 << 8) + (v->vel - 96) * 40, 0, 127 << 8);
+    if (sty == VS_ROBOT || sty == VS_GLADOS) buzz = buzz > (112 << 8) ? buzz : 112 << 8;   /* (0.9.4) */
     oq = 58982 - ((buzz * 284) >> 8);                   /* Q16: 0.90 .. 0.35 */
     tilt = 2500 + ((buzz * 109) >> 8);                  /* one-pole coefficient Q14: dark .. open */
     te = (uint32_t)oq << 16;                            /* closure (end of the open phase) */
@@ -393,6 +426,7 @@ static void formant_render(track_t *t, voice_t *v, int32_t *out, uint32_t n, con
         else
             e = 0;
         e += blep(ph - te, inc) >> 1;                   /* the closure step, band-limited */
+        if (sty == VS_TALKBOX) e = (fmt_saw(ph, inc) * 3) >> 2;   /* (0.9.4) */
         lp += ((e - lp) * tilt) >> 14;
         x = (lp * gv) >> 15;
         if (gn) {
@@ -414,6 +448,11 @@ static void formant_render(track_t *t, voice_t *v, int32_t *out, uint32_t n, con
         y8 = y7;
         y7 = clamp(a, -(1 << 28), 1 << 28);             /* int32 state stays far from overflow */
         s = soft_knee(clamp((int32_t)(mac2_64(y7, og, y7 - y8, ogk) >> 21), -200000, 200000), 24000);
+        if (sty == VS_ROBOT) {                          /* (0.9.4: the ring) */
+            s = (s * (((32768 + sine_i(rm)) * 23) >> 6)) >> 14;   /* (x 0 .. 1.44: the voice and its ring, half
+                                                         * each, as loud as HUMAN) */
+            rm += FMT_RM_INC;
+        }
         ph += inc;
         out[i] += voice_amp(s, m, i) << 1;
     }

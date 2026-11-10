@@ -168,6 +168,10 @@ enum {                          /* per-track parameters */
  * IMAGE slot; a preset sets both (preset_t.xp) */
 #define P_VLANG P_LRTRG
 #define P_VLYR P_DXIMG
+/* (cursed-os 0.9.4) VOICE's STYLE (EDIT > WORDS KNOB 3: HUMAN, ROBOT, GLADOS, TALKBOX; eng_formant.c fmt_style), in the
+ * MORPH slot (ANALOG PHASE LOFI's; 0 there in every VOICE project and preset before: HUMAN, as it sang) */
+#define P_VSTYLE P_MORPH
+enum { VS_HUMAN, VS_ROBOT, VS_GLADOS, VS_TALKBOX, VS_N };
 /* (JIANT 0.6.9) AUTO PAN (fx.c mix_part), in the slots of the old per-track SLICER (one on a bus since 0.6.3, its
  * slots stored, never read but by proj_sl_migrate). Laid so what old stores hold means OFF: DPTH where SLCR was (0, or
  * 1..2 from a project of before 0.6.3: inaudible), RATE where PAT was (1..16: slow), WAVE where RATE was (1: TRI), SYNC

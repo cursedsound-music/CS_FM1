@@ -1870,6 +1870,31 @@ int main(void)
         CHECK(!step_lanes(&trk[0].step[2]) && !proj_name_buf()[0], "SAVE: REC twice = NEW PROJECT (steps and name gone)");
         cz.mode = (uint8_t)m0;
     }
+    {   /* (0.9.4) GLO > MIDI > LOCAL OFF: a key sends its note on the track's channel and sounds nothing here; on again: as before */
+        uint32_t w0, i2, on = 0, off = 0, k2, act = 0, sel0 = song.sel;
+        song.sel = 1; set_engine_of(TSEL, ENGI_ANALOG); TSEL->p[P_MUTE] = 0;
+        cos_cput(CC_LOCAL, 1);
+        CHECK(kb_local_off == 1u && favorites.factory[15][0] == 1u, "LOCAL OFF set");
+        usb.config = 1; w0 = mo_w;
+        kb_note[3] = 60; kb_oct[3] = 0;
+        key_on(3, TSEL);
+        { static int32_t o2[2 * CTL]; mix_block(o2, CTL); }
+        for (k2 = 0; k2 < NVOICE; k2++) act += TSEL->v[k2].active;
+        key_off(3, TSEL);
+        for (i2 = w0; i2 != mo_w; i2++) {
+            uint32_t pk = midi_out_q[i2 % MQ], st = (pk >> 8) & 0xFFu, d1 = (pk >> 16) & 0xFFu;
+            if (st == (0x90u | trk_midi_ch(1)) && d1 == 60u) on++;
+            if (st == (0x80u | trk_midi_ch(1)) && d1 == 60u) off++;
+        }
+        CHECK(on == 1u && off == 1u && act == 0u, "LOCAL OFF: the key's note out (on %u off %u), no voice here (%u)", on, off, act);
+        cos_cput(CC_LOCAL, 0);
+        key_on(3, TSEL);
+        { static int32_t o2[2 * CTL]; mix_block(o2, CTL); }
+        for (act = 0, k2 = 0; k2 < NVOICE; k2++) act += TSEL->v[k2].active;
+        key_off(3, TSEL);
+        CHECK(act >= 1u && !kb_local_off, "LOCAL ON: the key plays here again");
+        mo_r = mo_w; usb.config = 0; song.sel = sel0;
+    }
     {   /* the keyboards drawn (KEY, DRONE) as the FM-1's keys: from F, a black one where the panel has one */
         uint32_t ok = 1, j, bl;
         for (k = 0; k < 27u; k++) {

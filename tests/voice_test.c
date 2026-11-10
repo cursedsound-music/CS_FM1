@@ -62,6 +62,7 @@ static void g2p_str(uint32_t lang, const char *w, char *out, uint32_t max)
 typedef struct { uint8_t note, len; } nt_t;   /* a note (0: a rest), its length in 1/8 beats at 100 BPM */
 /* track 0: preset pi, the lyric text; then the notes, each a syllable; the mix into w (if w), the voice sum into y
  * (if y: n samples at most); returns the frames */
+static int demo_style;                                   /* (cursed-os 0.9.4) the STYLE the demos sing in */
 static uint32_t sing_phrase(int32_t pi, const char *text, const nt_t *nt, uint32_t nn, FILE *w, double *y, uint32_t ymax)
 {
     static int32_t o[2 * CTL];
@@ -70,6 +71,7 @@ static uint32_t sing_phrase(int32_t pi, const char *text, const nt_t *nt, uint32
     memset(sing, 0, sizeof sing);
     host_tracks_init();
     host_preset(&trk[0], eng_voice(), (uint32_t)pi);
+    trk[0].p[P_VSTYLE] = (int16_t)demo_style;
     lyr_set(0, text);
     if (text && text[0])
         trk[0].p[P_VLYR] = 0;                           /* TEXT */
@@ -1203,6 +1205,20 @@ static void demos(const char *dir)
     demo_wav(dir, "es_phrase", preset_of("CANTOR ES"), "la noche es azul y el mar canta para ti", ES, NELEM(ES));
     demo_wav(dir, "es_phrase_cantora", preset_of("CANTORA ES"), "la noche es azul y el mar canta para ti", ES, NELEM(ES));
     demo_wav(dir, "en_phrase", preset_of("SINGER EN"), "you are my sunshine my only sunshine", EN, NELEM(EN));
+    {   /* (cursed-os 0.9.4) STYLE: a spoken line on one note in each style, and the sung one as TALKBOX */
+        static const nt_t TK[] = {{57, 1}, {57, 1}, {57, 1}, {57, 2}, {57, 1}, {57, 1}, {57, 1}, {57, 1}, {57, 2}, {0, 2},
+                                  {57, 1}, {57, 1}, {57, 1}, {57, 1}, {57, 2}, {57, 1}, {57, 3}, {0, 2}, {57, 1},
+                                  {57, 1}, {57, 1}, {57, 4}};
+        static const char *const SN[VS_N] = {"style_human", "style_robot", "style_glados", "style_talkbox"};
+        const char *line = "hello and welcome to the cursed test chamber please stay calm and keep dancing";
+        uint32_t st;
+        for (st = 0; st < VS_N; st++) {
+            demo_style = (int)st;
+            demo_wav(dir, SN[st], preset_of("SINGER EN"), line, TK, NELEM(TK));
+        }
+        demo_wav(dir, "en_phrase_talkbox", preset_of("SINGER EN"), "you are my sunshine my only sunshine", EN, NELEM(EN));
+        demo_style = 0;
+    }
     demo_wav(dir, "ja_phrase", preset_of("UTA JA"), "sakura sakura yayoi no sora wa", JA, NELEM(JA));
     demo_wav(dir, "rnd_es_W1", preset_of("CANTOR ES"), "", RN, NELEM(RN));
     demo_wav(dir, "rnd_en_W3", preset_of("SINGER EN"), "", RN, NELEM(RN));

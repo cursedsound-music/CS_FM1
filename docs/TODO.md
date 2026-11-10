@@ -28,14 +28,14 @@ Planned work. Done items move to the commit log.
 
 ## Ableton and Bluetooth (GG, 2026-11-10)
 
-- **A MIDI keyboard in Ableton.** The keys (and the knobs as CCs) on USB-MIDI to Live while the FM-1 plays or not:
-  a mode where the keys play the computer only (the local sound off), the octave and the channel picked on the device.
+- ~~A MIDI keyboard in Ableton~~ (0.9.4): GLO > MIDI > LOCAL OFF: the keys send on the track's channel over USB and
+  sound nothing here. Left: the knobs as CCs to Live.
 - **Multi-track recording in Ableton (if possible).** USB audio carries the master as one stereo pair now. Separate
   tracks need more channels on the USB audio interface (e.g. 4 or 6 stereo pairs, one a track or a bus) and the CPU
   and USB bandwidth for them: check what the chip's USB audio can declare before promising it.
-- **Tempo and key synced to Ableton.** The tempo: the FM-1 follows Live's MIDI clock (and start / stop / song
-  position); the key: Live has no key message, so a CC or program change map (a Max for Live device or a MIDI clip
-  sending the root and the scale), or the FM-1 sending its key to Live.
+- **Tempo and key synced to Ableton.** The tempo works now: GLO > MIDI > CLOCK USB, and in Live the FM-1 as a
+  clock destination (Preferences > Link/Tempo/MIDI: its output port's Sync on); START / STOP follow. Left: the key
+  (Live has no key message: a CC or program change map from a Max for Live device, or the FM-1 sending its key).
 - **A sampler over Bluetooth.** Samples sent from the phone or computer over Bluetooth into the flash (the BLE
   stack is in the Bluetooth segment already); a SAMPLER engine to play them. Check the flash room and the transfer
   speed (BLE: slow, ~10..30 KB/s).
@@ -46,8 +46,6 @@ Planned work. Done items move to the commit log.
 
 ## VOICE (GG, 2026-11-10)
 
-- **More robotic: the Portal (GLaDOS) voice.** Hard pitch quantization (every syllable snapped to the scale, no glide:
-  the auto-tune sound), a flat monotone option, the formants shifted up, a metallic ring (a short comb / ring mod),
-  clipped consonants. A VOICE STYLE knob: HUMAN / ROBOT / GLADOS.
-- **A talk box synth.** A synth (a saw / square chord from the track or another track) shaped by VOICE's formant
-  filters, the words moving the vowels: the talk box / vocoder sound (Zapp, Daft Punk).
+- ~~More robotic: the Portal (GLaDOS) voice~~ (0.9.4): EDIT > WORDS > STYLE ROBOT, GLADOS.
+- ~~A talk box synth~~ (0.9.4): STYLE TALKBOX (a sawtooth, each voice of a chord its own, through the formants). Left:
+  another track's sound as the talk box's source (a carrier bus).

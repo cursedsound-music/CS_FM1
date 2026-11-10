@@ -115,6 +115,9 @@ static __attribute__((noinline)) void mo_flush_of(uint32_t mask)   /* the notes 
                 }
 }
 #define mo_flush() mo_flush_of(0xFFu)
+/* (cursed-os 0.9.4) GLO > MIDI > LOCAL OFF: the keys play only what they send (USB MIDI, whatever MIDI OUT says: a
+ * keyboard for Ableton), on the track's channel, nothing sounding or recorded here; MIDI coming in still plays */
+static volatile uint8_t kb_local_off;                 /* (ui_input.c ui_polls: the settings' favorites.factory[15][0] == 1) */
 static void mo_key(const track_t *t, uint32_t pkt)   /* a key's note: not with OFF; with ALL, an arp sends its own */
 {
     if (mo_lvl != MO_OFF && !(mo_lvl == MO_ALL && t->p[P_AMODE]))
@@ -1102,6 +1105,15 @@ static void key_next(uint32_t k, track_t *t)
 static void key_on(uint32_t k, track_t *t)
 {
     uint32_t n = chord_build(t, kb_note[k], kb_snd[k]), gap = n > 1u ? chord_gap(t) : 0u, i;
+    if (kb_local_off) {                             /* (0.9.4) LOCAL OFF: sent, nothing here (no strum: at once) */
+        uint32_t mc = trk_midi_ch(trk_index(t));
+        for (i = 0; i < n; i++)
+            midi_out_event(0x09u | (0x90u | mc) << 8 | drum_oct_note(kb_snd[k][i], kb_oct[k]) << 16 | 100u << 24);
+        kb_on[k] = kb_sn[k] = (uint8_t)n;
+        kb_sdue[k] = 0;
+        last_note = kb_note[k];
+        return;
+    }
     if (key_latch(t)) {                             /* LATCH: a new chord lets the last one go */
         uint32_t j;
         if (!t->arp_phys)
@@ -1153,6 +1165,12 @@ static void key_off(uint32_t k, track_t *t)
     uint32_t n = kb_on[k], i, mc = trk_midi_ch(trk_index(t));
     if (!n)
         return;
+    if (kb_local_off) {                             /* (0.9.4) LOCAL OFF: the notes it sent end */
+        for (i = 0; i < n; i++)
+            midi_out_event(0x08u | (0x80u | mc) << 8 | drum_oct_note(kb_snd[k][i], kb_oct[k]) << 16);
+        kb_on[k] = kb_sn[k] = 0;
+        return;
+    }
     if (kb_oct[k] > 0)
         dxo_off(t, DXO_KEY + k);                    /* (0.8.5) its ratchet ends (LATCH too) */
     kb_on[k] = 0;                                   /* (the strum's notes not in yet: never) */

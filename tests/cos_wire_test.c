@@ -120,6 +120,7 @@ static const char *why_quiet(uint32_t m, const cpg_t *p, uint32_t k)
         if (id == CC_NAME) return "SAVE: the name the next save takes";
         if (id == CC_IDLE) return "SYSTEM: when the IDLE screen comes up";
         if (id >= CC_SCT && id <= CC_LUR) return "GLO > SCOPE .. LOUDNESS: how they show and measure the sound";
+        if (id == CC_LOCAL) return "GLO > MIDI > LOCAL: the keys only (OFF: they send, nothing here); this test plays the steps";
         if (id == CC_MCCH || id == CC_MCDIR || id == CC_MCMAP || (id >= CC_MC0 && id <= CC_MC3) || id == CC_MOCC)
             return "LINK 2/3: the macros' and MORPH's MIDI CCs";
         if (id == CC_PCCH || id == CC_PCOUT || id == CC_VJCH) return "LINK: program changes and the VJ notes";
