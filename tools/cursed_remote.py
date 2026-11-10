@@ -4,11 +4,13 @@
 
 Put this file and cursed_remote_proto.py in the same Pythonista folder and run this one.
 
-  CONNECT  pair the FM-1 over Bluetooth MIDI (iOS's own Bluetooth MIDI window), pick it as the output
-  PERFORM  PLAY, mutes, sections, FILL / BREAK / ALL BACK, TAP, the FX pad (hold), DJ filter, isolator,
-           macros, morph, BPM, track select: channel 16 CCs (cos_remote.c)
+  LINK     pair the FM-1 over Bluetooth MIDI (iOS's own Bluetooth MIDI window), pick it as the output
+  PLAY     PLAY, sections, FILL / BREAK / ALL BACK, mutes, TAP, NUDGE (hold), BPM -/+ 1
+  FX       the FX pad (hold a key)
+  MIX      DJ filter, isolator, macros, morph: tap a value and it jumps back to rest
+           (all channel 16 CCs: cos_remote.c; NUDGE and BPM -/+ need cursed-os 0.9.6)
   VOICE    type words: the first VOICE track sings them from its next note
-  SAMPLER  a sound from Files (wav, aif, mp3, m4a, caf) or the mic: trim, reverse, normalise, and send it into
+  SAMPLE   a sound from Files (wav, aif, mp3, m4a, caf) or the mic: trim, reverse, normalise, and send it into
            one of the 16 slots (the SAMPLER engine plays it). Stop the music on the FM-1 first.
 
 iOS doesn't let a script record what another app is playing: save the sound to Files (or play it out loud and
@@ -160,10 +162,10 @@ def button(title, frame, action, color=PANEL):
 
 class Pad(ui.View):
     """a key held while touched: CC value 127 down, 0 up (the FX pad's latch is the FM-1's)"""
-    def __init__(self, title, num, **kw):
+    def __init__(self, title, num, size=11, **kw):
         super().__init__(**kw)
-        self.num, self.background_color, self.corner_radius = num, PANEL, 6
-        self.l = label(title, (0, 0, self.width, self.height), 10, FG, ui.ALIGN_CENTER)
+        self.num, self.background_color, self.corner_radius = num, PANEL, 8
+        self.l = label(title, (0, 0, self.width, self.height), size, FG, ui.ALIGN_CENTER)
         self.l.flex = 'WH'
         self.l.number_of_lines = 2
         self.add_subview(self.l)
@@ -178,29 +180,35 @@ class Pad(ui.View):
 
 
 class Fader(ui.View):
-    def __init__(self, title, num, value=0.5, fmt=None, **kw):
+    """a slider under its title; its value on the right is a button: tap it and the slider jumps back to rest"""
+    def __init__(self, title, num, rest=0, fmt=None, **kw):
         super().__init__(**kw)
-        self.num, self.fmt, self.last = num, fmt, -1
-        self.add_subview(label(title, (0, 0, 90, self.height), 11))
-        self.s = ui.Slider(frame=(90, 0, self.width - 140, self.height), value=value, action=self.moved)
+        self.num, self.fmt, self.last, self.rest = num, fmt, -1, rest
+        self.add_subview(label(title, (0, 0, self.width - 80, 14), 10))
+        self.s = ui.Slider(frame=(0, 14, self.width - 76, self.height - 14), value=rest / 127, action=self.moved)
         self.s.flex = 'W'
         self.s.tint_color = HOT
         self.add_subview(self.s)
-        self.v = label('', (self.width - 48, 0, 48, self.height), 11, FG, ui.ALIGN_RIGHT)
+        self.v = button('', (self.width - 68, 4, 68, self.height - 8), self.reset)
         self.v.flex = 'L'
         self.add_subview(self.v)
         self.show()
 
     def show(self):
         x = int(round(self.s.value * 127))
-        self.v.text = self.fmt(x) if self.fmt else str(x)
+        self.v.title = self.fmt(x) if self.fmt else str(x)
         return x
 
     def moved(self, s):
         x = self.show()
         if x != self.last:
             self.last = x
-            cc(self.num, x)
+            if self.num >= 0:
+                cc(self.num, x)
+
+    def reset(self, s=None):
+        self.s.value = self.rest / 127
+        self.s.action(self.s)
 
 
 # ------------------------------------------------------------------------------------------------ pages
@@ -249,56 +257,94 @@ class ConnectPage(ui.View):
         self.app.status()
 
 
-class PerformPage(ui.View):   # (Pythonista: ui.ScrollView can't be subclassed: one inside)
+def tap(n):
+    def f(s):
+        cc(n, 127)
+        cc(n, 0)
+    return f
+
+
+class PlayPage(ui.View):
+    """the transport, the sections, the mutes, the tempo: big keys, no scrolling"""
     def __init__(self, **kw):
         super().__init__(**kw)
-        self.sv = ui.ScrollView(frame=(0, 0, self.width, self.height), flex='WH', background_color=BG)
-        ui.View.add_subview(self, self.sv)
-        y, g = 8, 6
-        bw = (W - 20 - 3 * g) / 4
-        for i, (t, n) in enumerate([('PLAY/STOP', P.CC_PLAY), ('FILL', P.CC_FILL), ('BREAK>', P.CC_BREAK),
-                                    ('ALL BACK', P.CC_BACK)]):
-            self.sv.add_subview(button(t, (10 + i * (bw + g), y, bw, 44), self.tap(n), HOT if i == 0 else PANEL))
-        y += 50
+        g, y, fw = 8, 10, W - 20
+        b = button('PLAY / STOP', (10, y, fw, 60), tap(P.CC_PLAY), HOT)
+        b.font = ('Menlo-Bold', 18)
+        self.add_subview(b)
+        y += 60 + g
+        w4 = (fw - 3 * g) / 4
         for i in range(4):
-            self.sv.add_subview(button('SECT ' + 'ABCD'[i], (10 + i * (bw + g), y, bw, 36), self.tap(P.CC_SECT0 + i)))
-        y += 42
-        sw = (W - 20 - 5 * g) / 6
-        self.sv.add_subview(label('MUTE', (10, y, 80, 16), 10)); y += 16
+            b = button('ABCD'[i], (10 + i * (w4 + g), y, w4, 56), tap(P.CC_SECT0 + i))
+            b.font = ('Menlo-Bold', 22)
+            self.add_subview(b)
+        y += 56 + g
+        w3 = (fw - 2 * g) / 3
+        for i, (t, n) in enumerate([('FILL', P.CC_FILL), ('BREAK', P.CC_BREAK), ('ALL BACK', P.CC_BACK)]):
+            self.add_subview(button(t, (10 + i * (w3 + g), y, w3, 48), tap(n)))
+        y += 48 + g + 4
+        self.add_subview(label('MUTE', (10, y, 80, 14), 10))
+        y += 16
+        w6 = (fw - 5 * g) / 6
         for i in range(6):
-            self.sv.add_subview(button('T%d' % (i + 1), (10 + i * (sw + g), y, sw, 34), self.tap(P.CC_MUTE0 + i)))
-        y += 40
-        self.sv.add_subview(label('SELECT', (10, y, 80, 16), 10)); y += 16
-        for i in range(6):
-            self.sv.add_subview(button('T%d' % (i + 1), (10 + i * (sw + g), y, sw, 30), self.tap(P.CC_TRK0 + i)))
-        y += 38
-        self.sv.add_subview(label('FX PAD (hold)', (10, y, 200, 16), 10)); y += 16
+            b = button(str(i + 1), (10 + i * (w6 + g), y, w6, 52), tap(P.CC_MUTE0 + i))
+            b.font = ('Menlo-Bold', 18)
+            self.add_subview(b)
+        y += 52 + g + 4
+        self.add_subview(label('TEMPO   (hold NUDGE: 3 % slower / faster)', (10, y, fw, 14), 10))
+        y += 16
+        nw = (fw - 2 * g) / 4
+        self.add_subview(Pad('NUDGE\n\u2212', P.CC_NUDGE0, 15, frame=(10, y, nw, 130)))
+        b = button('TAP', (10 + nw + g, y, 2 * nw, 130), tap(P.CC_TAP), '#2a2a33')
+        b.font = ('Menlo-Bold', 34)
+        self.add_subview(b)
+        self.add_subview(Pad('NUDGE\n+', P.CC_NUDGE0 + 1, 15, frame=(10 + 3 * nw + 2 * g, y, nw, 130)))
+        y += 130 + g
+        w2 = (fw - g) / 2
+        self.add_subview(button('BPM \u2212 1', (10, y, w2, 46), tap(P.CC_BPMDN)))
+        self.add_subview(button('BPM + 1', (10 + w2 + g, y, w2, 46), tap(P.CC_BPMDN + 1)))
+
+
+class PadPage(ui.View):
+    """the FX pad: an effect runs while its key is touched"""
+    def __init__(self, **kw):
+        super().__init__(**kw)
+        g, y = 8, 10
         pw = (W - 20 - 3 * g) / 4
         for i, t in enumerate(P.PAD_WHITE):
             r, c = divmod(i, 4)
-            self.sv.add_subview(Pad(t, P.CC_PADW0 + i, frame=(10 + c * (pw + g), y + r * 46, pw, 40)))
-        y += 4 * 46
+            self.add_subview(Pad(t, P.CC_PADW0 + i, frame=(10 + c * (pw + g), y + r * 64, pw, 56)))
+        y += 4 * 64 + 10
         for i, t in enumerate(P.PAD_BLACK):
             r, c = divmod(i, 4)
-            self.sv.add_subview(Pad(t, P.CC_PADB0 + i, frame=(10 + c * (pw + g), y + r * 46, pw, 40)))
-        y += 3 * 46 + 4
-        for t, n, v, f in [('DJ FILTER', P.CC_DJF, 0.5, None), ('ISO LOW', P.CC_ISO0, 1.0, None),
-                           ('ISO MID', P.CC_ISO0 + 1, 1.0, None), ('ISO HIGH', P.CC_ISO0 + 2, 1.0, None),
-                           ('MACRO 1', P.CC_MAC0, 0.0, None), ('MACRO 2', P.CC_MAC0 + 1, 0.0, None),
-                           ('MACRO 3', P.CC_MAC0 + 2, 0.0, None), ('MACRO 4', P.CC_MAC0 + 3, 0.0, None),
-                           ('MORPH A-B', P.CC_MORPH, 0.0, None),
-                           ('BPM', P.CC_BPM, 60 / 127, lambda x: str(60 + x))]:
-            self.sv.add_subview(Fader(t, n, v, f, frame=(10, y, W - 20, 34)))
-            y += 38
-        self.sv.add_subview(button('TAP TEMPO', (10, y, W - 20, 44), self.tap(P.CC_TAP)))
-        y += 56
-        self.sv.content_size = (W, y)
+            self.add_subview(Pad(t, P.CC_PADB0 + i, frame=(10 + c * (pw + g), y + r * 64, pw, 56)))
 
-    def tap(self, n):
-        def f(s):
-            cc(n, 127)
-            cc(n, 0)
-        return f
+
+class MixPage(ui.View):
+    """the DJ filter, the isolator, the macros, the morph: tap a value to send it back to rest"""
+    def __init__(self, **kw):
+        super().__init__(**kw)
+        self.sv = ui.ScrollView(frame=(0, 0, self.width, self.height), flex='WH', background_color=BG)
+        self.add_subview(self.sv)
+        y = 10
+        db = lambda x: '%+d dB' % (-25 + (x * 31 + 63) // 127)
+        self.f = []
+        for t, n, rest, f in [('DJ FILTER   (left: low pass, right: high pass)', P.CC_DJF, 64, lambda x: 'OFF' if x == 64 else str(x - 64)),
+                              ('ISOLATOR LOW', P.CC_ISO0, 102, db), ('ISOLATOR MID', P.CC_ISO0 + 1, 102, db),
+                              ('ISOLATOR HIGH', P.CC_ISO0 + 2, 102, db),
+                              ('MACRO 1', P.CC_MAC0, 0, None), ('MACRO 2', P.CC_MAC0 + 1, 0, None),
+                              ('MACRO 3', P.CC_MAC0 + 2, 0, None), ('MACRO 4', P.CC_MAC0 + 3, 0, None),
+                              ('MORPH A-B', P.CC_MORPH, 0, lambda x: str((x * 100 + 63) // 127))]:
+            fd = Fader(t, n, rest, f, frame=(10, y, W - 20, 50))
+            self.f.append(fd)
+            self.sv.add_subview(fd)
+            y += 56 if n not in (P.CC_DJF, P.CC_ISO0 + 2, P.CC_MAC0 + 3) else 68
+        self.sv.add_subview(button('ALL BACK TO REST', (10, y, W - 20, 44), self.all_rest))
+        self.sv.content_size = (W, y + 60)
+
+    def all_rest(self, s):
+        for fd in self.f:
+            fd.reset()
 
 
 class VoicePage(ui.View):
@@ -391,8 +437,8 @@ class SamplerPage(ui.View):   # (Pythonista: ui.ScrollView can't be subclassed: 
         self.sv.add_subview(self.info)
         self.wave = ui.ImageView(frame=(10, 96, W - 20, 70), background_color=PANEL)
         self.sv.add_subview(self.wave)
-        self.start = Fader('START', -1, 0.0, frame=(10, 172, W - 20, 34))
-        self.length = Fader('LENGTH', -1, 1.0, frame=(10, 208, W - 20, 34))
+        self.start = Fader('START', -1, 0, frame=(10, 168, W - 20, 40))
+        self.length = Fader('LENGTH', -1, 127, frame=(10, 208, W - 20, 40))
         for fd in (self.start, self.length):
             fd.s.action = self.trim_moved
             self.sv.add_subview(fd)
@@ -488,8 +534,8 @@ class SamplerPage(ui.View):   # (Pythonista: ui.ScrollView can't be subclassed: 
         most = MAX_SAMPLES * self.rate // self.rate_out()
         a = int(self.start.s.value * n)
         ln = max(1, min(n - a, most, int(self.length.s.value * most)))
-        self.start.v.text = '%.2fs' % (a / self.rate)
-        self.length.v.text = '%.2fs' % (ln / self.rate)
+        self.start.v.title = '%.2fs' % (a / self.rate)
+        self.length.v.title = '%.2fs' % (ln / self.rate)
         self.info.text = '%.1f s at %d Hz; sending %.2f s (%.1f s at most)' % (
             n / self.rate, self.rate, ln / self.rate, MAX_SAMPLES / self.rate_out())
         self.draw_wave(a, ln)
@@ -534,7 +580,7 @@ class SamplerPage(ui.View):   # (Pythonista: ui.ScrollView can't be subclassed: 
             self.prog.text = 'pick or record a sound first'
             return
         if not midi.dest:
-            self.prog.text = 'not connected: CONNECT first'
+            self.prog.text = 'not connected: LINK first'
             return
         self.busy = True
         try:
@@ -587,19 +633,19 @@ class App(ui.View):
         sw, sh = ui.get_screen_size()
         self.frame = (0, 0, min(sw, sh), max(sw, sh))
         self.tabs = ui.SegmentedControl(frame=(10, 8, W - 20, 32),
-                                        segments=['PERFORM', 'VOICE', 'SAMPLER', 'CONNECT'], action=self.show)
+                                        segments=['PLAY', 'FX', 'MIX', 'VOICE', 'SAMPLE', 'LINK'], action=self.show)
         self.tabs.tint_color = HOT
         self.add_subview(self.tabs)
         self.st = label('', (10, 42, W - 20, 18), 10)
         self.add_subview(self.st)
         f = (0, 62, W, self.height - 62)
-        self.pages = [PerformPage(frame=f), VoicePage(self, frame=f), SamplerPage(self, frame=f),
+        self.pages = [PlayPage(frame=f), PadPage(frame=f), MixPage(frame=f), VoicePage(self, frame=f), SamplerPage(self, frame=f),
                       ConnectPage(self, frame=f)]
         for p in self.pages:
             p.flex = 'WH'
             p.background_color = BG
             self.add_subview(p)
-        self.tabs.selected_index = 3 if not midi.pick_fm1() else 0
+        self.tabs.selected_index = 5 if not midi.pick_fm1() else 0
         self.show(None)
         self.status()
 

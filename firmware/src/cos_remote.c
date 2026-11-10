@@ -9,6 +9,7 @@
  *   40..55 the FX pad's white keys 1..16, 56..66 its black keys 1..11: held while 64 or more (FX + OCT+'s latch too)
  *   70 DJ FILTER  71 72 73 the ISOLATOR's LOW MID HIGH  74..77 MACRO 1..4  78 MORPH A-B   (0..127 over the knob's range)
  *   79 BPM (60 + the value)   85..90 the track 1..6 selected
+ *   (0.9.6) 36 37 NUDGE - + (the tempo 3 % slower / faster while 64 or more; 5 s at most)   38 39 BPM - + 1
  * Channel 16's PROGRAM CHANGE stays a section / a project (midi_control.c).
  *
  * SysEx frames F0 7D 63 <command> .. F7 (7D: non-commercial; 63 'c'), one at a time (midi_control.c rmt_f):
@@ -20,6 +21,8 @@
 #define RMT_ACK 118u
 #define RMT_NAK 119u
 enum { RN_NONE, RN_BAD, RN_STOP, RN_ROOM, RN_DATA, RN_FLASH, RN_ORDER };
+static int8_t rmt_nudge;                                 /* (0.9.6) the remote's NUDGE held: -1, +1 */
+static uint32_t rmt_nudge_ms;                            /* .. since when (5 s at most: a link lost while held) */
 static uint32_t rmt_pad;                                 /* the pad's keys the remote holds (bit k: white 0..15, black 16..26) */
 static void rmt_reply(uint32_t cc, uint32_t v) { midi_out_event(0x0Bu | 0xBFu << 8 | (cc & 127u) << 16 | (v & 127u) << 24); }
 static int32_t rmt_scale(uint32_t id, uint32_t v)        /* 0..127 over a cos knob's range */
@@ -49,6 +52,13 @@ static void rmt_pad_key(uint32_t k, int down)            /* the FX pad: white 0.
     cfx_press(k < 16u ? CFX_W[k] : CFX_B[k - 16u], down);
     fm1_irq_on();
 }
+static void rmt_bpm(int32_t v)                           /* the tempo, in tenths (as the BPM knob) */
+{
+    if (cos_follows()) { cos_say("EXT CLOCK LEADS"); return; }
+    v = clamp(v, 400, 2400);
+    song.g[G_BPM] = (int16_t)(v / 10);
+    bpm_frac = (uint8_t)(v % 10);
+}
 static __attribute__((noinline)) void rmt_cc(uint32_t cc, uint32_t v)
 {
     int on = v >= 64u;
@@ -58,7 +68,17 @@ static __attribute__((noinline)) void rmt_cc(uint32_t cc, uint32_t v)
         cos_cput(ID[cc - 70u], rmt_scale(ID[cc - 70u], v));
         return;
     }
-    if (cc == 79u) { cos_cput(CC_BPM, (int32_t)(60u + v) * 10); return; }
+    if (cc == 79u) { rmt_bpm((int32_t)(60u + v) * 10); return; }
+    if (cc == 36u || cc == 37u) {                        /* (0.9.6) NUDGE - / +: while held */
+        int8_t d = (int8_t)(cc == 37u ? 1 : -1);
+        if (on) { rmt_nudge = d; rmt_nudge_ms = fm1_ms; }
+        else if (rmt_nudge == d) rmt_nudge = 0;
+        return;
+    }
+    if ((cc == 38u || cc == 39u) && on) {                /* (0.9.6) BPM - / + 1 */
+        rmt_bpm(song.g[G_BPM] * 10 + bpm_frac % 10u + (cc == 39u ? 10 : -10));
+        return;
+    }
     if (!on) return;                                     /* (the rest: presses) */
     if (cc == 20u) transport_req = song.playing ? 2u : 1u;
     else if (cc >= 22u && cc <= 27u) rmt_mute(cc - 22u);

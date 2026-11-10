@@ -13,6 +13,7 @@ NAK_TEXT = {1: "not understood", 2: "stop the music first", 3: "no room (or too 
 
 # the performance CCs (cos_remote.c)
 CC_PLAY, CC_MUTE0, CC_SECT0, CC_FILL, CC_BREAK, CC_BACK, CC_TAP = 20, 22, 28, 32, 33, 34, 35
+CC_NUDGE0, CC_BPMDN = 36, 38                # (0.9.6) 36 37 NUDGE - + (held), 38 39 BPM - + 1
 CC_PADW0, CC_PADB0 = 40, 56
 CC_DJF, CC_ISO0, CC_MAC0, CC_MORPH, CC_BPM, CC_TRK0 = 70, 71, 74, 78, 79, 85
 

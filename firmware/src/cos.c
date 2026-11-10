@@ -1509,6 +1509,8 @@ static __attribute__((noinline)) void cos_input(void)
         int h = cos_home_held(), dn = (int)((fm1_in.buttons >> panel.btn[B_OCTDN]) & 1u),
             up = (int)((fm1_in.buttons >> panel.btn[B_OCTUP]) & 1u);
         bpm_nudge = (int8_t)(h ? up - dn : 0);
+        if (rmt_nudge && fm1_ms - rmt_nudge_ms > 5000u) rmt_nudge = 0;
+        if (!bpm_nudge) bpm_nudge = rmt_nudge;           /* (0.9.6) the phone remote's NUDGE */
         if (bpm_nudge && cos_follows()) {                /* (an external clock leads: nothing to nudge here; the other
                                                          * machine's tempo is nudged) */
             bpm_nudge = 0;
@@ -3160,7 +3162,7 @@ dials:
 /* the splash (ui_draw.c draw_splash / splash_write under COS_SLIM; main.c's boot loop calls it every ~4 ms for
  * SPL_WRITE + SPL_HOLD ms): black, a few still stars, the name 2x, the version, a 16-block bar filling like a pattern
  * (the block being filled red), READY. Drawn whole once, then only the bar's strip when a block fills */
-#define COS_VERSION "0.9.5"
+#define COS_VERSION "0.9.6"
 static void cos_px2(int32_t x, int32_t y, const char *s, uint16_t c)      /* (the face 2 x 2) */
 {
     int32_t r, b, b0;

@@ -124,6 +124,37 @@ int main(int argc, char **argv)
         CHECK(!((perf_held >> PF_LPF) & 1u), "a release repeated: nothing");
         transport_req = 0;
         trk[2].p[P_MUTE] = (int16_t)m0;
+        {   /* (0.9.6) NUDGE held, let go; lost after 5 s; BPM + 1 */
+            int16_t *vp; int32_t b0;
+            cos_cdesc(CC_BPM, &vp); b0 = *vp;
+            rmt_cc_put(37, 127); ui_input();
+            CHECK(bpm_nudge == 1, "CC 37 held: the tempo nudged up (%d)", bpm_nudge);
+            rmt_cc_put(37, 0); ui_input();
+            CHECK(bpm_nudge == 0, "CC 37 let go: no nudge (%d)", bpm_nudge);
+            rmt_cc_put(36, 127); ui_input();
+            CHECK(bpm_nudge == -1, "CC 36 held: nudged down (%d)", bpm_nudge);
+            fm1_ms += 6000u; ui_input();
+            CHECK(bpm_nudge == 0, "a nudge held 6 s (the link lost): over (%d)", bpm_nudge);
+            rmt_cc_put(39, 127); ui_input(); cos_cdesc(CC_BPM, &vp);
+            CHECK(*vp == b0 + 10, "CC 39: BPM + 1 (%d -> %d)", b0, *vp);
+            rmt_cc_put(38, 127); ui_input(); cos_cdesc(CC_BPM, &vp);
+            CHECK(*vp == b0, "CC 38: BPM - 1 (%d)", *vp);
+            rmt_cc_put(79, 72); ui_input(); cos_cdesc(CC_BPM, &vp);
+            CHECK(*vp == 1320, "CC 79 at 72: 132 BPM (%d)", *vp);
+            rmt_bpm(b0);
+            {   /* the faders: each of 70..78 moves its knob to the top and the bottom */
+                static const uint8_t ID[9] = {CC_DJF, CC_EQL, CC_EQM, CC_EQH, CC_MAC0, CC_MAC0 + 1u, CC_MAC0 + 2u, CC_MAC3, CC_MOPOS};
+                uint32_t c;
+                for (c = 0; c < 9u; c++) {
+                    const param_desc_t *d;
+                    int32_t hi, lo;
+                    rmt_cc_put(70u + c, 127); ui_input(); d = cos_cdesc(ID[c], &vp); hi = *vp;
+                    rmt_cc_put(70u + c, 0); ui_input(); d = cos_cdesc(ID[c], &vp); lo = *vp;
+                    CHECK(hi == d->max && lo == d->min, "CC %u: its knob top %d (%d) bottom %d (%d)", 70u + c, hi, d->max, lo, d->min);
+                    rmt_cc_put(70u + c, 64); ui_input();
+                }
+            }
+        }
     }
     {   /* TEXT: the first VOICE track's words; the reply an ACK */
         static const uint8_t F[] = {0xF0, 0x7D, 0x63, 0x01, 0x7F, 'h', 'e', 'l', 'l', 'o', ' ', 'm', 'e', 0xF7};
