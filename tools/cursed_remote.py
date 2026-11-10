@@ -256,36 +256,38 @@ class ConnectPage(ui.View):
         self.app.status()
 
 
-class PerformPage(ui.ScrollView):
+class PerformPage(ui.View):   # (Pythonista: ui.ScrollView can't be subclassed: one inside)
     def __init__(self, **kw):
         super().__init__(**kw)
+        self.sv = ui.ScrollView(frame=(0, 0, self.width, self.height), flex='WH', background_color=BG)
+        ui.View.add_subview(self, self.sv)
         y, g = 8, 6
         bw = (W - 20 - 3 * g) / 4
         for i, (t, n) in enumerate([('PLAY/STOP', P.CC_PLAY), ('FILL', P.CC_FILL), ('BREAK>', P.CC_BREAK),
                                     ('ALL BACK', P.CC_BACK)]):
-            self.add_subview(button(t, (10 + i * (bw + g), y, bw, 44), self.tap(n), HOT if i == 0 else PANEL))
+            self.sv.add_subview(button(t, (10 + i * (bw + g), y, bw, 44), self.tap(n), HOT if i == 0 else PANEL))
         y += 50
         for i in range(4):
-            self.add_subview(button('SECT ' + 'ABCD'[i], (10 + i * (bw + g), y, bw, 36), self.tap(P.CC_SECT0 + i)))
+            self.sv.add_subview(button('SECT ' + 'ABCD'[i], (10 + i * (bw + g), y, bw, 36), self.tap(P.CC_SECT0 + i)))
         y += 42
         sw = (W - 20 - 5 * g) / 6
-        self.add_subview(label('MUTE', (10, y, 80, 16), 10)); y += 16
+        self.sv.add_subview(label('MUTE', (10, y, 80, 16), 10)); y += 16
         for i in range(6):
-            self.add_subview(button('T%d' % (i + 1), (10 + i * (sw + g), y, sw, 34), self.tap(P.CC_MUTE0 + i)))
+            self.sv.add_subview(button('T%d' % (i + 1), (10 + i * (sw + g), y, sw, 34), self.tap(P.CC_MUTE0 + i)))
         y += 40
-        self.add_subview(label('SELECT', (10, y, 80, 16), 10)); y += 16
+        self.sv.add_subview(label('SELECT', (10, y, 80, 16), 10)); y += 16
         for i in range(6):
-            self.add_subview(button('T%d' % (i + 1), (10 + i * (sw + g), y, sw, 30), self.tap(P.CC_TRK0 + i)))
+            self.sv.add_subview(button('T%d' % (i + 1), (10 + i * (sw + g), y, sw, 30), self.tap(P.CC_TRK0 + i)))
         y += 38
-        self.add_subview(label('FX PAD (hold)', (10, y, 200, 16), 10)); y += 16
+        self.sv.add_subview(label('FX PAD (hold)', (10, y, 200, 16), 10)); y += 16
         pw = (W - 20 - 3 * g) / 4
         for i, t in enumerate(P.PAD_WHITE):
             r, c = divmod(i, 4)
-            self.add_subview(Pad(t, P.CC_PADW0 + i, frame=(10 + c * (pw + g), y + r * 46, pw, 40)))
+            self.sv.add_subview(Pad(t, P.CC_PADW0 + i, frame=(10 + c * (pw + g), y + r * 46, pw, 40)))
         y += 4 * 46
         for i, t in enumerate(P.PAD_BLACK):
             r, c = divmod(i, 4)
-            self.add_subview(Pad(t, P.CC_PADB0 + i, frame=(10 + c * (pw + g), y + r * 46, pw, 40)))
+            self.sv.add_subview(Pad(t, P.CC_PADB0 + i, frame=(10 + c * (pw + g), y + r * 46, pw, 40)))
         y += 3 * 46 + 4
         for t, n, v, f in [('DJ FILTER', P.CC_DJF, 0.5, None), ('ISO LOW', P.CC_ISO0, 1.0, None),
                            ('ISO MID', P.CC_ISO0 + 1, 1.0, None), ('ISO HIGH', P.CC_ISO0 + 2, 1.0, None),
@@ -293,11 +295,11 @@ class PerformPage(ui.ScrollView):
                            ('MACRO 3', P.CC_MAC0 + 2, 0.0, None), ('MACRO 4', P.CC_MAC0 + 3, 0.0, None),
                            ('MORPH A-B', P.CC_MORPH, 0.0, None),
                            ('BPM', P.CC_BPM, 60 / 127, lambda x: str(60 + x))]:
-            self.add_subview(Fader(t, n, v, f, frame=(10, y, W - 20, 34)))
+            self.sv.add_subview(Fader(t, n, v, f, frame=(10, y, W - 20, 34)))
             y += 38
-        self.add_subview(button('TAP TEMPO', (10, y, W - 20, 44), self.tap(P.CC_TAP)))
+        self.sv.add_subview(button('TAP TEMPO', (10, y, W - 20, 44), self.tap(P.CC_TAP)))
         y += 56
-        self.content_size = (W, y)
+        self.sv.content_size = (W, y)
 
     def tap(self, n):
         def f(s):
@@ -380,52 +382,54 @@ def decode_file(path):
     return [int(max(-1.0, min(1.0, x)) * 32767) for x in mono], rate
 
 
-class SamplerPage(ui.ScrollView):
+class SamplerPage(ui.View):   # (Pythonista: ui.ScrollView can't be subclassed: one inside)
     def __init__(self, app, **kw):
         super().__init__(**kw)
+        self.sv = ui.ScrollView(frame=(0, 0, self.width, self.height), flex='WH', background_color=BG)
+        ui.View.add_subview(self, self.sv)
         self.app, self.src, self.rate, self.path, self.rec, self.busy = app, None, 0, None, None, False
         g = 6
         bw = (W - 20 - g) / 2
-        self.add_subview(button('FROM FILES…', (10, 8, bw, 44), self.pick))
+        self.sv.add_subview(button('FROM FILES…', (10, 8, bw, 44), self.pick))
         self.recb = button('● RECORD MIC', (10 + bw + g, 8, bw, 44), self.record)
-        self.add_subview(self.recb)
+        self.sv.add_subview(self.recb)
         self.info = label('no sound yet', (10, 58, W - 20, 36), 12, FG)
         self.info.number_of_lines = 2
-        self.add_subview(self.info)
+        self.sv.add_subview(self.info)
         self.wave = ui.ImageView(frame=(10, 96, W - 20, 70), background_color=PANEL)
-        self.add_subview(self.wave)
+        self.sv.add_subview(self.wave)
         self.start = Fader('START', -1, 0.0, frame=(10, 172, W - 20, 34))
         self.length = Fader('LENGTH', -1, 1.0, frame=(10, 208, W - 20, 34))
         for fd in (self.start, self.length):
             fd.s.action = self.trim_moved
-            self.add_subview(fd)
-        self.rev = ui.Switch(frame=(10, 252, 60, 32)); self.add_subview(self.rev)
-        self.add_subview(label('REVERSE', (70, 252, 80, 32), 11))
-        self.nrm = ui.Switch(frame=(150, 252, 60, 32), value=True); self.add_subview(self.nrm)
-        self.add_subview(label('NORMALISE', (210, 252, 90, 32), 11))
-        self.lng = ui.Switch(frame=(10, 290, 60, 32)); self.lng.action = self.trim_moved; self.add_subview(self.lng)
-        self.add_subview(label('LONG (11 kHz: twice the time, duller)', (70, 290, W - 80, 32), 11))
-        self.add_subview(button('▶ HEAR IT', (10, 330, W - 20, 36), self.hear))
-        self.add_subview(label('SLOT', (10, 374, 60, 16), 10))
+            self.sv.add_subview(fd)
+        self.rev = ui.Switch(frame=(10, 252, 60, 32)); self.sv.add_subview(self.rev)
+        self.sv.add_subview(label('REVERSE', (70, 252, 80, 32), 11))
+        self.nrm = ui.Switch(frame=(150, 252, 60, 32), value=True); self.sv.add_subview(self.nrm)
+        self.sv.add_subview(label('NORMALISE', (210, 252, 90, 32), 11))
+        self.lng = ui.Switch(frame=(10, 290, 60, 32)); self.lng.action = self.trim_moved; self.sv.add_subview(self.lng)
+        self.sv.add_subview(label('LONG (11 kHz: twice the time, duller)', (70, 290, W - 80, 32), 11))
+        self.sv.add_subview(button('▶ HEAR IT', (10, 330, W - 20, 36), self.hear))
+        self.sv.add_subview(label('SLOT', (10, 374, 60, 16), 10))
         self.slot = ui.SegmentedControl(frame=(10, 390, W - 20, 30), segments=[str(i + 1) for i in range(8)])
         self.slot2 = ui.SegmentedControl(frame=(10, 424, W - 20, 30), segments=[str(i + 9) for i in range(8)])
         self.slot.selected_index, self.slot2.selected_index = 0, -1
         self.slot.action = lambda s: setattr(self.slot2, 'selected_index', -1)
         self.slot2.action = lambda s: setattr(self.slot, 'selected_index', -1)
-        self.add_subview(self.slot); self.add_subview(self.slot2)
+        self.sv.add_subview(self.slot); self.sv.add_subview(self.slot2)
         self.name = ui.TextField(frame=(10, 462, W - 20, 34), placeholder='NAME (8 letters)', background_color=PANEL,
                                  text_color=FG, autocapitalization_type=ui.AUTOCAPITALIZE_ALL)
-        self.add_subview(self.name)
+        self.sv.add_subview(self.name)
         self.sendb = button('SEND TO THE FM-1', (10, 506, W - 20, 50), self.send, HOT)
-        self.add_subview(self.sendb)
-        self.add_subview(button('DELETE THIS SLOT', (10, 564, W - 20, 34), self.delete))
+        self.sv.add_subview(self.sendb)
+        self.sv.add_subview(button('DELETE THIS SLOT', (10, 564, W - 20, 34), self.delete))
         self.prog = label('', (10, 604, W - 20, 40), 11, FG)
         self.prog.number_of_lines = 2
-        self.add_subview(self.prog)
-        self.add_subview(label('Stop the music on the FM-1 first. A sound takes a minute or so over Bluetooth. '
+        self.sv.add_subview(self.prog)
+        self.sv.add_subview(label('Stop the music on the FM-1 first. A sound takes a minute or so over Bluetooth. '
                                'Then on a track: ENGINE SAMPLER, SAMPLE = the slot.', (10, 646, W - 20, 50), 10))
-        self.subviews[-1].number_of_lines = 3
-        self.content_size = (W, 710)
+        self.sv.subviews[-1].number_of_lines = 3
+        self.sv.content_size = (W, 710)
 
     # -- the sound
     def load(self, samples, rate, nm):
