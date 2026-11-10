@@ -1820,32 +1820,39 @@ int main(void)
         memset(&sc, 0, sizeof sc);
     }
     {   /* LOUDNESS: blocks at -14 LUFS read -14 (MOMENTARY, SHORT, INTEGRATED); quieter ones under the gate leave
-         * INTEGRATED; PEAK; STEREO's correlation +1 for mono, -1 out of phase */
+         * INTEGRATED; PEAK; STEREO's correlation +1 for mono, -1 out of phase; the integer log against libm */
         uint32_t b2;
-        float e14 = 4410.0f * 0.0466659f;                  /* (10^((-14 + 0.691) / 10), the power a sample) */
+        uint32_t e14 = (uint32_t)(4410.0 * 0.0466659 * 262144.0);   /* (10^((-14 + 0.691) / 10) a sample, Q18) */
+        int32_t worst = 0;
+        for (b2 = 1; b2 < 4000000u; b2 = b2 * 3u + 1u) {
+            int32_t d = cos_cdb(b2) - (int32_t)lrint(1000.0 * log10((double)b2));
+            if (d < 0) d = -d;
+            if (d > worst) worst = d;
+        }
+        CHECK(worst <= 2, "cos_cdb: 10 log10 to 0.02 dB (%d)", worst);
         cos_lu_reset();
         for (b2 = 0; b2 < 40u; b2++) {
             mt_blk_t *q = &mt_ring[mt_n & 31u];
-            q->kw = (uint64_t)(e14 * 1073741824.0); q->ll = q->rr = 100ull << 30; q->lr = 100ll << 30; q->pk = 16384;
+            q->kw = e14; q->ll = q->rr = 100000u; q->lr = 100000; q->pk = 16384;
             mt_n++;
             if (b2 % 8u == 7u) cos_lu_poll();
         }
         cos_lu_poll();
-        CHECK(fabsf(lu.m + 14.0f) < 0.2f && fabsf(lu.s + 14.0f) < 0.2f && fabsf(lu.i + 14.0f) < 0.4f,
-              "LOUDNESS: -14 LUFS (%.2f %.2f %.2f)", (double)lu.m, (double)lu.s, (double)lu.i);
-        CHECK(fabsf(lu.corr - 1.0f) < 0.02f && lu.width < 0.01f, "STEREO: mono, correlation +1 (%.2f)", (double)lu.corr);
-        CHECK(fabsf(cos_db(lu.pk * lu.pk) + 6.02f) < 0.1f, "PEAK: -6 dBFS (%.2f)", (double)cos_db(lu.pk * lu.pk));
+        CHECK(abs(lu.m + 1400) < 20 && abs(lu.s + 1400) < 20 && abs(lu.i + 1400) < 40,
+              "LOUDNESS: -14 LUFS (%d %d %d)", lu.m, lu.s, lu.i);
+        CHECK(lu.corr > 980 && lu.width < 1, "STEREO: mono, correlation +1 (%d, width %d)", lu.corr, lu.width);
+        CHECK(abs(lu.pk + 602) < 10, "PEAK: -6 dBFS (%d)", lu.pk);
         for (b2 = 0; b2 < 40u; b2++) {                     /* (40 dB quieter: under the relative gate) */
             mt_blk_t *q = &mt_ring[mt_n & 31u];
-            q->kw = (uint64_t)(e14 * 0.0001 * 1073741824.0); q->ll = q->rr = 100ull << 30; q->lr = -(100ll << 30); q->pk = 300;
+            q->kw = e14 / 10000u; q->ll = q->rr = 100000u; q->lr = -100000; q->pk = 300;
             mt_n++;
             if (b2 % 8u == 7u) cos_lu_poll();
         }
         cos_lu_poll();
-        CHECK(lu.m < -50.0f && fabsf(lu.i + 14.0f) < 0.6f, "the quiet part gated out of INTEGRATED (%.2f %.2f)", (double)lu.m, (double)lu.i);
-        CHECK(lu.corr < -0.98f, "STEREO: out of phase, -1 (%.2f)", (double)lu.corr);
+        CHECK(lu.m < -5000 && abs(lu.i + 1400) < 60, "the quiet part gated out of INTEGRATED (%d %d)", lu.m, lu.i);
+        CHECK(lu.corr < -980 && lu.width > 98, "STEREO: out of phase, -1 (%d)", lu.corr);
         cos_cput(CC_LUR, 1);
-        CHECK(lu.i < -100.0f && lu.pk == 0.0f, "RESET: from now");
+        CHECK(lu.i < -10000 && lu.pk < -10000, "RESET: from now");
     }
     {   /* the keyboards drawn (KEY, DRONE) as the FM-1's keys: from F, a black one where the panel has one */
         uint32_t ok = 1, j, bl;

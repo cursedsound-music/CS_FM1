@@ -18,14 +18,14 @@ static int16_t scope_r[SCOPE_N], scope_lo[SCOPE_N], scope_ls[SCOPE_N];
 static uint32_t scope_lw;
 static int32_t scope_lp[2][2], scope_acc[2];
 typedef struct {
-    uint64_t kw;                                        /* the K-weighted power, L and R summed (Q30 a sample) */
-    uint64_t ll, rr;                                    /* L L, R R (Q30) */
-    int64_t lr;                                         /* L R */
-    int32_t pk;                                         /* the sample peak (Q15, either side) */
+    uint32_t kw;                                        /* the K-weighted power, L and R summed (Q18 a sample: Q30 >> 12) */
+    uint32_t ll, rr;                                    /* L L, R R (Q18) */
+    int32_t lr;                                         /* L R (Q18) */
+    uint16_t pk;                                        /* the sample peak (Q15, either side) */
 } mt_blk_t;
 static mt_blk_t mt_ring[32];
 static volatile uint32_t mt_n;
-static mt_blk_t mt_acc;
+static struct { uint64_t kw, ll, rr; int64_t lr; int32_t pk; } mt_acc;   /* (the block summing, Q30) */
 static uint32_t mt_cnt;
 static int32_t mt_x[2][4], mt_y[2][4];                  /* each side's two biquads' x1 x2, y1 y2 (Q23) */
 #define MT_Q(v) ((int32_t)((v) * 268435456.0 + ((v) < 0 ? -0.5 : 0.5)))   /* Q28 */
@@ -74,7 +74,9 @@ static __attribute__((noinline)) void mt_block(const int32_t *out, uint32_t n)
         if (al > mt_acc.pk) mt_acc.pk = al;
         if (ar > mt_acc.pk) mt_acc.pk = ar;
         if (++mt_cnt == 4410u) {
-            mt_ring[mt_n & 31u] = mt_acc;
+            mt_blk_t *b = &mt_ring[mt_n & 31u];
+            b->kw = (uint32_t)(mt_acc.kw >> 12); b->ll = (uint32_t)(mt_acc.ll >> 12); b->rr = (uint32_t)(mt_acc.rr >> 12);
+            b->lr = (int32_t)(mt_acc.lr >> 12); b->pk = (uint16_t)mt_acc.pk;
             mt_n++;
             mt_acc.kw = mt_acc.ll = mt_acc.rr = 0;
             mt_acc.lr = 0;

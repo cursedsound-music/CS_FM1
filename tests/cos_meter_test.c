@@ -21,7 +21,7 @@ static double lufs_of(double fl, double fr, double al, double ar, int blocks)   
         }
         mt_block(buf, 4410);
     }
-    for (b = 1; b <= 4; b++) e += (double)mt_ring[(mt_n - b) & 31u].kw / 1073741824.0;
+    for (b = 1; b <= 4; b++) e += (double)mt_ring[(mt_n - b) & 31u].kw * 4096.0 / 1073741824.0;
     return -0.691 + 10 * log10(e / (4 * 4410.0));
 }
 int main(void)
@@ -40,7 +40,7 @@ int main(void)
     {
         const mt_blk_t *b = &mt_ring[(mt_n - 1u) & 31u];
         CHECK(b->pk >= 3270 && b->pk <= 3277, "the peak: 0.1 x 32767 (%d)", b->pk);
-        CHECK(b->lr > 0 && llabs(b->lr - (int64_t)b->ll) < (int64_t)(b->ll / 1000u), "L R = L L for mono");
+        CHECK(b->lr > 0 && llabs((int64_t)b->lr - (int64_t)b->ll) <= (int64_t)(b->ll / 1000u) + 1, "L R = L L for mono");
     }
     v = lufs_of(1000, 1000, 0.5, -0.5, 6);
     {
