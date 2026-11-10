@@ -3162,7 +3162,7 @@ dials:
 /* the splash (ui_draw.c draw_splash / splash_write under COS_SLIM; main.c's boot loop calls it every ~4 ms for
  * SPL_WRITE + SPL_HOLD ms): black, a few still stars, the name 2x, the version, a 16-block bar filling like a pattern
  * (the block being filled red), READY. Drawn whole once, then only the bar's strip when a block fills */
-#define COS_VERSION "0.9.8"
+#define COS_VERSION "0.9.9"
 static void cos_px2(int32_t x, int32_t y, const char *s, uint16_t c)      /* (the face 2 x 2) */
 {
     int32_t r, b, b0;

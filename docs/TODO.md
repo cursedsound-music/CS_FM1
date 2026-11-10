@@ -45,6 +45,9 @@ Planned work. Done items move to the commit log.
 - ~~Words from the phone~~ (0.9.5): SysEx TEXT into the VOICE track's lyric.
 - Recording what another app plays on the iPhone: iOS doesn't allow it (Files or the mic instead).
 
+- ~~The volume knob after the comp, the limiter and the meters~~ (0.9.9): MASTER always last (USB LEVEL FIXED for
+  good): the headphones and the speaker only; the meters, the limiter and USB at the full level.
+
 ## VOICE (GG, 2026-11-10)
 
 - ~~More robotic: the Portal (GLaDOS) voice~~ (0.9.4): EDIT > WORDS > STYLE ROBOT, GLADOS.

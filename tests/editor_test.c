@@ -944,7 +944,7 @@ static int menu_protocol(void)
     }
     bad += check("MENU_SET: every setting applied as the menu does (palette, EQ, USB LEVEL, CLICK, COUNT-IN at once, RESTORE LAST, SCALE LEDS, SCREEN OFF), read back", ok);
     ok = menu_set(3, 0) == 3 && !(ui_prefs & PREF_ANIM_OFF) && (ui_prefs & PREF_LARGE) && menu_set(10, 0) == 3 &&
-         !fx_usb_fixed && menu_set(1, 0) == 3 && ui_style == ST_FLAT;
+         !(ui_prefs & PREF_USB_FIXED) && fx_usb_fixed && menu_set(1, 0)   /* (cursed-os 0.9.9: MASTER always last) */ == 3 && ui_style == ST_FLAT;
     bad += check("MENU_SET: a flag back to its default leaves the other flags", ok);
 
     /* clamping: the reply carries the device's value */

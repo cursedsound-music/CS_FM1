@@ -234,7 +234,7 @@ static void menu_put(uint32_t row, uint32_t v)
             ui_rec_prefs = (uint8_t)(v ? ui_rec_prefs | f->bit >> 8 : ui_rec_prefs & ~(f->bit >> 8));
         else
             ui_prefs = (uint8_t)(v ? ui_prefs | f->bit : ui_prefs & ~f->bit);
-        fx_usb_fixed = (ui_prefs & PREF_USB_FIXED) != 0u;   /* (at once; every frame too: ui_input) */
+        fx_usb_fixed = 1;                              /* (cursed-os 0.9.9: MASTER always last; ui_input) */
         return;
     }
     switch (row) {
@@ -250,7 +250,7 @@ static void menu_put(uint32_t row, uint32_t v)
     case MI_USB:                                   /* (at once; every frame too: ui_input) */
         ui_prefs = (uint8_t)(v ? ui_prefs | PREF_USB_FIXED : ui_prefs & ~PREF_USB_FIXED);
         usb_lvl = (uint8_t)(v ? (v - 1u) % 5u : 0u);
-        fx_usb_fixed = v != 0u;
+        fx_usb_fixed = 1;                              /* (cursed-os 0.9.9: MASTER always last) */
         fx_usb_gain = USB_GAIN[usb_lvl];
         break;
     case MI_SERIAL:                                /* (0.7.1) applied when the menu closes (usb_serial_apply) */

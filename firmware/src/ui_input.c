@@ -2271,7 +2271,9 @@ static __attribute__((noinline)) void ui_house(void)
         if (eng_gone(trk[k].eng_req))
             set_engine_of(&trk[k], ENGI_PHYS_TO);
     perf_latch_on = fx_latch & 1u;                      /* (MENU > FX LATCH; a settings load sets it too) */
-    fx_usb_fixed = (ui_prefs & PREF_USB_FIXED) != 0u;   /* (MENU > USB LEVEL: fx.c, audio.c) */
+    fx_usb_fixed = 1;                                   /* (cursed-os 0.9.9) MASTER always last: the comp, the limiter, the
+                                                         * meters and USB get the full level; the knob is the headphones' and
+                                                         * the speaker's alone (MENU > USB LEVEL: only its -6 .. -24 dB now) */
     fx_usb_gain = USB_GAIN[fx_usb_fixed ? usb_lvl % 5u : 0u];   /* (0.7.0) .. and its attenuation (usb.c uac_tap) */
     ui_polls();                                         /* (cursedsound) FM6's patch, MIDI OUT's setting, PROGRAM CHANGE, CLICK */
     if (!ui.menu)

@@ -2580,7 +2580,7 @@ static int test_menu_tabs(void)
     turn(EN_ALGO, 1); turn(EN_SELECT, 1);             /* AUDIO: USB LEVEL */
     ok &= ui.menu_sel == MI_USB;
     turn(EN_K4, 1); ok &= (ui_prefs & PREF_USB_FIXED) && fx_usb_fixed;
-    turn(EN_K2, -1); ok &= !(ui_prefs & PREF_USB_FIXED) && !fx_usb_fixed;
+    turn(EN_K2, -1); ok &= !(ui_prefs & PREF_USB_FIXED) && fx_usb_fixed;
     bad += check("MENU: any of KNOB 1..4 changes the selected row's value in any tab, the menu stays", ok && ui.menu == 1);
 
     /* OCT+ / OCT-: the next / previous value on every kind of row (as the knobs: stopping at the ends; COLOR wraps) */
@@ -9228,14 +9228,14 @@ static int test_usb_level(void)
     int bad = 0, ok;
     ui_power_on();
     frame();
-    ok = !fx_usb_fixed && str_eq(MI_NAME[MI_USB], "USB LEVEL") && str_eq(menu_vname(MI_USB, 0), "MASTER") && menu_n(MI_USB) == 6u;
+    ok = fx_usb_fixed && str_eq(MI_NAME[MI_USB], "USB LEVEL") && str_eq(menu_vname(MI_USB, 0), "MASTER") && menu_n(MI_USB) == 6u;
     hold(B_HOME);
     ui.menu_sel = MI_USB;
     ui.force = 1; ui_draw();
     turn(EN_K1, 1); ok &= (ui_prefs & PREF_USB_FIXED) && fx_usb_fixed;      /* right: FIXED */
-    turn(EN_K1, -1); ok &= !(ui_prefs & PREF_USB_FIXED) && !fx_usb_fixed;   /* left: MASTER */
+    turn(EN_K1, -1); ok &= !(ui_prefs & PREF_USB_FIXED) && fx_usb_fixed;   /* left: MASTER */
     press(B_OCTUP); ok &= (ui_prefs & PREF_USB_FIXED) && fx_usb_fixed && ui.menu;
-    press(B_OCTDN); ok &= !(ui_prefs & PREF_USB_FIXED) && !fx_usb_fixed && ui.menu;
+    press(B_OCTDN); ok &= !(ui_prefs & PREF_USB_FIXED) && fx_usb_fixed && ui.menu;
     press(B_OCTUP);
     ok &= fx_usb_gain == 4096;
     turn(EN_K1, 1); ok &= fx_usb_fixed && usb_lvl == 1u && fx_usb_gain == 2048 && str_eq(menu_vname(MI_USB, menu_get(MI_USB)), "-6 dB");   /* (0.7.0) */
@@ -9252,7 +9252,7 @@ static int test_usb_level(void)
         p.magic = 0x50455233u;
         ok &= settings_import(&p, (int)(sizeof p - sizeof p.favorites)) == 2 && !(ui_prefs & ~PREF_ACCEL_OFF);
         frame();
-        ok &= !fx_usb_fixed;
+        ok &= fx_usb_fixed;   /* (cursed-os 0.9.9: MASTER always last) */
     }
     bad += check("MENU > USB LEVEL: MASTER by default, KNOB 1 / OCT+ FIXED, left / OCT- MASTER, -6..-24 dB past FIXED, saved, the audio follows", ok);
     ui_prefs = 0;
