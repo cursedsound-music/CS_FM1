@@ -14,12 +14,15 @@
 static uint32_t sk_seed;
 static uint32_t rnd(uint32_t n) { sk_seed ^= sk_seed << 13; sk_seed ^= sk_seed >> 17; sk_seed ^= sk_seed << 5; return n ? sk_seed % n : 0u; }
 
+static void sk_wdt(void) { fm1_ms++; host_ticks += 1000u; }   /* (a busy loop on the device, PANEL's setup waiting for
+                                                                 * a press: time runs, as SysTick's would: it gives up) */
 int main(int argc, char **argv)
 {
     uint32_t minutes = argc > 1 ? (uint32_t)atoi(argv[1]) : 60u, f, frames, held = 0, notes = 0, pages = 0;
     static int32_t o[2u * CTL];
     sk_seed = argc > 2 ? (uint32_t)atoi(argv[2]) | 1u : 0x9E3779B9u;
     ui_power_on();
+    host_wdt_hook = sk_wdt;
     cz.flip = 1;                                        /* (cursed-os's UI) */
     {                                                   /* (0.9.5) the sampler's memory: three sounds of random bytes
                                                          * (any byte is ADPCM), one short, one long, one across sectors */
