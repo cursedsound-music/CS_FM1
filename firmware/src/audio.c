@@ -27,6 +27,11 @@ static uint32_t audio_last_half = 2u, audio_lost;    /* (0.8.9) halves never ren
 #define SCOPE_N 512u
 static int16_t scope_buf[SCOPE_N];
 static uint32_t scope_w;
+static int16_t scope_lo[SCOPE_N];                       /* (cursed-os) the same at a quarter of its rate (5.5 kHz: 93 ms),
+                                                         * low-passed first (two poles at ~1.4 kHz, then an average of
+                                                         * four): GLO > SPECTRUM's lows, the SCOPE's long views */
+static uint32_t scope_lw;
+static int32_t scope_lp[2], scope_acc;
 
 static void audio_block(int32_t *out, uint32_t n)       /* mix (fx.c), then Q15 -> 24 bit */
 {
@@ -48,8 +53,18 @@ static void audio_block(int32_t *out, uint32_t n)       /* mix (fx.c), then Q15 
 #endif
     if (fx_usb_fixed)                                   /* USB LEVEL FIXED: USB took the full level, the DAC */
         usb_fixed_dac(out, n);                          /* (speaker, headphones) gets MASTER's (fx.c) */
-    for (i = 1; i < n; i += 2u)                         /* the HOME scope: the music, before the click */
-        scope_buf[scope_w++ & (SCOPE_N - 1u)] = (int16_t)out[2u * i];
+    for (i = 1; i < n; i += 2u) {                       /* the HOME scope: the music, before the click (cursed-os: mono,
+                                                         * the two samples' average, so less folds down) */
+        int32_t m = (out[2u * i - 2u] + out[2u * i - 1u] + out[2u * i] + out[2u * i + 1u]) >> 2;
+        scope_buf[scope_w++ & (SCOPE_N - 1u)] = (int16_t)clamp(m, -32768, 32767);
+        scope_lp[0] += (m - scope_lp[0]) >> 2;
+        scope_lp[1] += (scope_lp[0] - scope_lp[1]) >> 2;
+        scope_acc += scope_lp[1];
+        if (!(scope_w & 3u)) {
+            scope_lo[scope_lw++ & (SCOPE_N - 1u)] = (int16_t)clamp(scope_acc >> 2, -32768, 32767);
+            scope_acc = 0;
+        }
+    }
     click_render(out, n);                               /* the metronome (click.c): the DAC only, not USB */
     for (i = 0; i < n; i++) {
         out[2u * i] *= 1 << OUT_SHIFT;

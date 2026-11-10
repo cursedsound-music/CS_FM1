@@ -1779,6 +1779,27 @@ int main(void)
         perf_latched = lat0;
         cz.fx_down = 1; cos_leds(); cz.fx_down = 0; cos_leds();
     }
+    {   /* GLO > SPECTRUM: a 110 Hz sine lights its band, a 4.6 kHz one its; SCOPE: the wave from a rising crossing */
+        uint32_t i2, k2, top, f2;
+        static const uint32_t FQ[2] = {110u, 4576u};
+        for (f2 = 0; f2 < 2u; f2++) {
+            for (i2 = 0; i2 < SCOPE_N; i2++) {
+                scope_buf[i2] = (int16_t)(12000.0 * sin(6.2831853 * FQ[f2] * i2 / 22050.0));
+                scope_lo[i2] = (int16_t)(12000.0 * sin(6.2831853 * FQ[f2] * i2 / 5512.5));
+            }
+            scope_w = scope_lw = SCOPE_N;
+            memset(sc.lv, 0, sizeof sc.lv);
+            cos_spec_prep();
+            for (k2 = 0, top = 0; k2 < 32u; k2++) if (sc.lv[k2] > sc.lv[top]) top = k2;
+            CHECK(SP_F[top] == FQ[f2] && sc.lv[top] >= 98u && sc.lv[top] <= 108u, "SPECTRUM: %u Hz in its band (%u Hz, %u)", FQ[f2], SP_F[top], sc.lv[top]);
+            CHECK(sc.lv[(top + 6u) % 32u] + 30u < sc.lv[top], "two octaves off: far lower (%u)", sc.lv[(top + 6u) % 32u]);
+        }
+        sc_time = 1; sc_trig = 1; sc_gain = 1;
+        cos_scope_prep(56);
+        CHECK(sc.y[0] <= 1 && sc.y[0] >= -1 && sc.y[3] < 0, "SCOPE: from a rising crossing (%d, %d)", sc.y[0], sc.y[3]);
+        memset(scope_buf, 0, sizeof scope_buf); memset(scope_lo, 0, sizeof scope_lo);
+        memset(&sc, 0, sizeof sc);
+    }
     {   /* the keyboards drawn (KEY, DRONE) as the FM-1's keys: from F, a black one where the panel has one */
         uint32_t ok = 1, j, bl;
         for (k = 0; k < 27u; k++) {
