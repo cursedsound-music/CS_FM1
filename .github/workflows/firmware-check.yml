@@ -18,6 +18,10 @@ on:
         description: "Crash addresses to name (hex, spaces between: the crash screen's PC, RETS): the function each falls in, the code around it"
         default: ""
         required: false
+      dis:
+        description: "A function to print whole (its code, disassembled)"
+        default: ""
+        required: false
       compare:
         description: "Also compile this commit and print every recorded sound function whose size differs from it"
         default: ""
@@ -106,10 +110,12 @@ jobs:
             for T in llvm-symbolizer llvm-addr2line; do
               [ -x "$JIELI_TOOLCHAIN/pi32v2/bin/$T" ] && "$JIELI_TOOLCHAIN/pi32v2/bin/$T" -e build/felucca.elf -f -i 0x$A && break
             done || true
-            for D in "$JIELI_TOOLCHAIN/pi32v2/bin/llvm-objdump" "$OD"; do
-              [ -x "$D" ] && "$D" -d -l --start-address=$S --stop-address=$E build/felucca.elf 2>/dev/null | grep -E '^ *[0-9a-f]+:|^/|:[0-9]+$' | head -40 && break
-            done || true
           done
+          if [ -n "${{ inputs.dis }}" ]; then                 # (the whole function, its source lines when the build has them)
+            for D in "$JIELI_TOOLCHAIN/pi32v2/bin/llvm-objdump" "$OD"; do
+              [ -x "$D" ] && { "$D" -d -l -S --disassemble-symbols=${{ inputs.dis }} build/felucca.elf 2>&1 | head -6000; break; }
+            done || true
+          fi
           ls "$JIELI_TOOLCHAIN/pi32v2/bin" | tr '\n' ' '; echo
       - name: compare the sound's code with another commit
         if: always() && inputs.compare != ''
