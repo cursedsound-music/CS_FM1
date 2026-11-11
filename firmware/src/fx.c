@@ -127,7 +127,11 @@ _Static_assert(sizeof rev_comb / 2u >= SP_LEN && sizeof rev_u.sp / 4u >= 4u * (S
  * and bloom), the second stage's gain rising with the drive (clean .. crunch .. lead); then a cabinet: the two-pole
  * low-pass at a speaker's corner (TONE moves it ~2.5 .. 6 kHz) and a resonance at ~1.8 kHz (a state-variable band
  * added: the presence a 12" cone has). State: dist_dc (the coupling), dist_cab_l / _b (the cabinet) */
-enum { DT_SOFT, DT_HARD, DT_FOLD, DT_CRUSH, DT_RECT, DT_AMP };
+/* (cursed-os 0.11.0) TUBE and RAT, after the LXR drum machine's master distortion (Erica Synths, GPL-3.0-only:
+ * Distortion.c), in integers: TUBE a triode's (ECC83) curve, leaning one way (even harmonics), its rest offset and the
+ * DC its lean leaves taken out; RAT the pedal's op-amp: a ~480 Hz pole before a gain up to ~x2300, a slew limit, a
+ * clamp, then a silicon diode pair's curve (1N914). Their curves: xr_tables.h */
+enum { DT_SOFT, DT_HARD, DT_FOLD, DT_CRUSH, DT_RECT, DT_AMP, DT_TUBE, DT_RAT };
 #define AMP_B1 7000                                     /* the stages' biases (Q15 into tanh) */
 #define AMP_B2 (-3500)
 static __attribute__((noinline)) int32_t dist_shape(track_t *t, uint32_t type, int32_t x, int32_t g, int32_t d)
@@ -154,6 +158,26 @@ static __attribute__((noinline)) int32_t dist_shape(track_t *t, uint32_t type, i
         a = x < 0 ? -x : x;
         t->dist_dc += (a - t->dist_dc) >> 9;             /* (its mean: the DC the rectifier adds) */
         return softclip((((a - t->dist_dc) >> 2) * g) >> 10);
+    case DT_TUBE: {
+        uint32_t ix;
+        int32_t y0;
+        a = clamp(v + (v >> 1), -32768, 32767) + 32768;  /* (x1.5 the drive: into the curve's knee) */
+        ix = (uint32_t)a >> 9;
+        y0 = XR_TUBE[ix] + (((XR_TUBE[ix < 128u ? ix + 1u : 128u] - XR_TUBE[ix]) * (a & 511)) >> 9) - XR_TUBE[64];
+        t->dist_dc += (y0 - t->dist_dc) >> 9;            /* (the mean its lean leaves: out) */
+        return ((y0 - t->dist_dc) * 3) >> 1;
+    }
+    case DT_RAT: {
+        uint32_t ix;
+        int32_t s, dl;
+        t->dist_hold += mulq15(clamp(x, -131072, 131071) - t->dist_hold, 2251);   /* (the op-amp's pole, ~480 Hz) */
+        s = clamp((t->dist_hold >> 2) * (1 + (d * d >> 3)), -137626, 137626);   /* (gain to ~x2000; the rails, 4.2) */
+        dl = clamp(s - t->dist_dc, -222700, 222700);     /* (the slew limit: 6.8 a sample) */
+        t->dist_dc += dl;
+        a = clamp(t->dist_dc, -32768, 32767) + 32768;
+        ix = (uint32_t)a >> 8;
+        return XR_DIODE[ix] + (((XR_DIODE[ix < 256u ? ix + 1u : 256u] - XR_DIODE[ix]) * (a & 255)) >> 8);
+    }
     case DT_AMP:
         a = softclip(clamp(v + (v >> 1), -400000, 400000) + AMP_B1) - softclip(AMP_B1);   /* stage 1: x1.5 the drive */
         t->dist_dc += (a - t->dist_dc) >> 6;             /* the coupling capacitor: ~110 Hz high-pass */
@@ -206,8 +230,12 @@ static void track_dist(track_t *t, int32_t *b, uint32_t n)
     g = 4096 + d * d * 2;                                /* Q12: 1x .. ~9x, gentle at first */
     k = clamp(32000 - d * 95 + t->p[P_DTONE] * 300, 2500, 32767);   /* tone: transparent at low drive .. ~3 kHz, Q15 */
     mk = type == DT_HARD || type == DT_FOLD || type == DT_CRUSH ? 30000 - d * 60 : 30000 - d * 120;   /* make-up */
-    if (type > DT_AMP)
+    if (type > DT_RAT)
         type = DT_SOFT;
+    if ((type == DT_TUBE || type == DT_RAT) && !w0)
+        t->dist_dc = t->dist_hold = 0;
+    if (type == DT_RAT)
+        mk = 30000 - d * 40;
     if (type == DT_AMP) {                               /* the cabinet's corner: ~4 kHz, TONE 2.5 .. 6 kHz; its make-up */
         k = clamp(14500 + t->p[P_DTONE] * 90, 9000, 20000);
         mk = 24000 - d * 70;

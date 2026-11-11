@@ -54,6 +54,17 @@ int main(int argc, char **argv)
             if (r == 224u && trk_live) cos_drum_flip(rnd(8u));   /* (0.10.0) a drum sound in / out (HOME + white 1..8) */
             if (r == 225u) cos_back(rnd(4u) == 0u);              /* (0.10.3) LIVE: BACK TO NORMAL, now and then THIS IS NORMAL */
             if (r == 226u) cos_cput(rnd(2u) ? CC_LVREV : CC_LVDLY, (int32_t)rnd(128u));
+            if (r == 227u && rnd(8u) == 0u) {            /* (0.11.0) a track to FMDRUM, any values; a KICK's TRANSIENT;
+                                                         * DIST TUBE / RAT */
+                track_t *t = &trk[rnd(NTRK)];
+                uint32_t q;
+                if (rnd(2u)) set_engine_of(t, ENGI_FMDRUM);
+                for (q = 0; q < 8u; q++) t->p[P_E0 + q] = (int16_t)rnd(128u);
+                t->p[P_DXIMG] = (int16_t)rnd(12u);
+                t->p[P_MORPH] = (int16_t)rnd(128u);
+                t->p[P_DTYPE] = (int16_t)(6u + rnd(2u));
+                t->p[P_DIST] = (int16_t)rnd(128u);
+            }
             if (r == 223u && !rmt_fready) {
                 uint32_t k, n = 3u + rnd(300u);
                 rmt_f[0] = 0x7Du; rmt_f[1] = 0x63u;

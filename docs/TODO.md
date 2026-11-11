@@ -58,6 +58,13 @@ Planned work. Done items move to the commit log.
   later.
 - ~~Own LFO shapes from the phone~~ (0.10.2): USER1..4, 32 points, U32's record. Left: LFO 2 and the autopan with them?
 
+## A drum synth's voices (GG, 2026-11-11)
+
+- ~~Engines and effects after the LXR drum machine~~ (0.11.0): FMDRUM (engine 9: DRUM / SNARE / CYMBAL / HAT by FM, a
+  pitch sweep, noise; 10 presets), the TRANSIENT layer on FMDRUM and KICK (SNAP and eight attacks synthesised here:
+  xr_tables.h; the LXR's own samples are recordings, not taken), DIST TUBE (ECC83) and RAT (op-amp + 1N914) from its
+  curves. Left: a hi-hat choke between two FMDRUM tracks? FMDRUM lanes inside the DRUM kit?
+
 ## Drums live (GG, 2026-11-10)
 
 - ~~A kick of its own~~ (0.10.0): engine 4 KICK (DRUM-X's kick, its own KIND), T2 at power-on; the kit's kick lane

@@ -108,6 +108,8 @@
 #define PROJ_NP_V4 69u                         /* P_COUNT of format 4 (P_E0 61) */
 #define PROJ_LT 4u                             /* the tracks of every format before FUNC */
 #define PROJ_PHYS 2u                           /* project_t.phys: PHYS without DUST and DRUM (see the top) */
+#define PROJ_FMD 3u                            /* (cursed-os 0.11.0) .. and engine 9 is FMDRUM (PHYS's number): below
+                                                * it, a track of engine 9 is PHYS's (retired: ANALOG, proj_phys_gone) */
 #define PROJ_NAME_LEN 12u                      /* the name: FUN7 bytes PROJ_NAME_OFF.. (the reserved tail's end) */
 typedef struct {                               /* one track */
     int16_t p[P_COUNT];
@@ -676,7 +678,7 @@ static void proj_phys_gone(project_t *q)
     uint32_t k, i, n, hit = 0;
     for (k = 0; k < NTRK; k++) {
         proj_trk_t *d = &q->t[k];
-        if (!eng_gone(d->engine))
+        if (!eng_gone(d->engine) && !(d->engine == ENGI_PHYS && q->phys < PROJ_FMD))
             continue;
         if (analog_from_trio(d->engine, &d->p[P_E0])) { /* (JIANT 0.4) TRIO: ANALOG's nearest, its envelope kept */
             d->engine = ENGI_PHYS_TO;
@@ -695,6 +697,10 @@ static void proj_phys_gone(project_t *q)
         if (d->preset < PROJ_DEF_KEEP)
             d->preset = 0;
         hit |= 1u << k;
+    }
+    if (q->phys < PROJ_FMD) {                           /* (0.11.0: its 9s seen to; from here a 9 is FMDRUM) */
+        q->phys = PROJ_FMD;
+        q->sum = proj_sum(q);
     }
     if (!hit)
         return;
@@ -1875,7 +1881,7 @@ static void project_capture(project_t *p)
     p->g[G_DJF] = mom_base(MOM_G, G_DJF, motion_djf_value());                   /* (0.9.1) the knob's, not what its automation set */
     p->sel = song.sel;
     p->parts = NPART;
-    p->phys = PROJ_PHYS;
+    p->phys = PROJ_FMD;                                 /* (0.11.0: a 9 is FMDRUM) */
     p->chain = chain_config;
     for (i = 0; i < NTRK; i++) {
         for (uint32_t j = 0; j < P_COUNT; j++) p->t[i].p[j] = motion_base_value(&trk[i], j);

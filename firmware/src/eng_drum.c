@@ -574,9 +574,18 @@ static void drum_render(track_t *t, voice_t *v, int32_t *out, uint32_t n, const 
     const dx_lane_t *patch = kick ? kick_patch(t) : &dx_kit[(uint32_t)v->s[0] & (DV_NLANE-1u)];
     L->x.lg = (uint8_t)(((uint32_t)v->s[0] & (DV_NLANE - 1u)) | (v->gate ? 0x80u : 0u));   /* (cursed-os: its AHDSR's) */
     if(dx_acoustic) { dx_acoustic_patch(&acoustic_patch,patch,(uint32_t)v->s[0],v->vel);patch=&acoustic_patch; }
-    dx_run(patch, &L->x, kick ? 64 + lfo_shp : p[P_E0] + dx_mot_v + L->rm + lfo_shp,
-           L->st * 16 + L->rt + L->bc + (p[P_E1] - 64) * 3 + t->pfx_pit + lfo_pit,
-           p[P_E3] - 64 + DXO_DEC[L->dm & 3u], p[P_E2] - 64 + DXO_TON[L->dm & 3u], p[P_E4] - 64, p[P_E6], p[P_E5], y, n);
+    {
+        int32_t tk = kick ? clamp(p[P_DXIMG], 0, TRN_N - 1) : 0, tl = clamp(p[P_MORPH], 0, 127), sn = 0;
+        if (tk == TRN_SNAP) {                            /* (0.11.0) KICK's TRANSIENT (eng_fmdrum.c): SNAP on the pitch, */
+            sn = trn_snap(v->s[6], tl);                  /* a block at a time (~1.5 ms) */
+            v->s[6] = (v->s[6] * 5650) >> 15;
+        }
+        dx_run(patch, &L->x, kick ? 64 + lfo_shp : p[P_E0] + dx_mot_v + L->rm + lfo_shp,
+               L->st * 16 + L->rt + L->bc + (p[P_E1] - 64) * 3 + t->pfx_pit + lfo_pit + sn,
+               p[P_E3] - 64 + DXO_DEC[L->dm & 3u], p[P_E2] - 64 + DXO_TON[L->dm & 3u], p[P_E4] - 64, p[P_E6], p[P_E5], y, n);
+        if (tk >= 2)                                     /* .. or a sound added to the hit */
+            trn_add(y, n, tk, tl >> 1, &v->s[7]);
+    }
     {                                                    /* PUNCH: the boost before the knee (driven into it, as
                                                           * Drum Buss), the tail's cut on the amplitude ramp */
         int32_t pu = pnch_eff;

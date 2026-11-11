@@ -50,7 +50,8 @@ static const char *const N_PFXRES[] = {"1/8", "1/16", "1/32"};     /* (0.6.99) F
 /* seq.c kb_map; 1 = SNAP (stored projects: the former ON); 3 = SEQ: SNAP, and the sequencer's notes snap too as
  * they play (seq.c seq_step; the steps keep what was written). Append-only: older projects hold 0..2 */
 static const char *const N_QUANT[] = {"OFF", "SNAP", "WHITE", "SEQ"};
-static const char *const N_DTYPE[] = {"SOFT", "HARD", "FOLD", "CRUSH", "RECT", "AMP"};   /* (JIANT) fx.c DT_*; 0.7.8 AMP */
+static const char *const N_DTYPE[] = {"SOFT", "HARD", "FOLD", "CRUSH", "RECT", "AMP", "TUBE", "RAT"};   /* (JIANT) fx.c DT_*;
+                                                         * 0.7.8 AMP; cursed-os 0.11.0 TUBE RAT (xr_tables.h) */
 static const char *const N_FTYPE[] = {"LP", "HP", "BP", "COMB", "COMB-", "MS20"};   /* (JIANT 0.5) P_FTYPE: eng_analog.c FT_*
                                                          * (0.9.9-snd1: COMB- the negative comb, MS20) */
 static const char *const N_VOICE[] = {"POLY", "MONO", "LEG", "UNI"};   /* V_POLY .. V_UNISON */
@@ -301,6 +302,9 @@ static const param_desc_t *track_desc(const track_t *t, uint32_t id)
 {
     if (id == P_VSTYLE && ENGINES[eng_idx(t->eng_req)] == &ENG_FORMANT)
         return &VSTYLE_DESC;
+    if ((id == P_DXIMG || id == P_MORPH) && ENG_TRN(ENGINES[eng_idx(t->eng_req)]))   /* (cursed-os 0.11.0) FMDRUM, KICK:
+                                                         * the TRANSIENT (eng_fmdrum.c) */
+        return &TRN_DESC[id == P_MORPH];
     if (id == MOT_DJF)                                /* (0.9.1) a DJ FILTER record (motion.c): the global's */
         return &GP[G_DJF];
     if ((id == P_VLANG || id == P_VLYR) && ENGINES[eng_idx(t->eng_req)] == &ENG_FORMANT)

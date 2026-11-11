@@ -83,8 +83,13 @@ static const cpg_t CZP_SRC[] = {{"SRC 1", CK_TRK, {P_E0, P_E1, P_E2, P_E3}}, {"S
                                {"VOICE", CK_TRK, {P_VOICE, P_GLIDE, P_DETUNE, ID_OCT}},
                                {"CHORD", CK_TRK, {P_CHRD, P_CVOI, P_CSTR, X}},   /* (a key plays a chord: seq.c chord_build) */
                                CZ_MOD(1), CZ_MOD(2), CZ_MOD(3), CZ_MOD(4)};
+#define CZ_TRN {"TRANSIENT", CK_TRK, {P_DXIMG, P_MORPH, X, X}}   /* (0.11.0) FMDRUM's, KICK's (eng_fmdrum.c) */
 static const cpg_t CZP_SRCK[] = {{"KICK", CK_TRK, {P_E0, P_E1, P_E2, P_E3}}, {"KICK 2", CK_TRK, {P_E4, P_E5, P_E6, P_E7}},
-                                CZ_FILT, CZ_MOD(1), CZ_MOD(2), CZ_MOD(3), CZ_MOD(4)};   /* (0.10.0) a KICK: hits, no VOICE / CHORD */
+                                CZ_TRN, CZ_FILT, CZ_MOD(1), CZ_MOD(2), CZ_MOD(3), CZ_MOD(4)};   /* (0.10.0) a KICK: hits, no VOICE / CHORD */
+static const cpg_t CZP_SRCF[] = {{"FMDRUM", CK_TRK, {P_E0, P_E1, P_E2, P_E3}}, {"FMDRUM 2", CK_TRK, {P_E4, P_E5, P_E6, P_E7}},
+                                CZ_TRN, CZ_FILT,
+                                {"VOICE", CK_TRK, {P_VOICE, P_GLIDE, P_DETUNE, ID_OCT}},
+                                CZ_MOD(1), CZ_MOD(2), CZ_MOD(3), CZ_MOD(4)};   /* (0.11.0) FMDRUM */
 static const cpg_t CZP_SRCN[] = {{"SRC 1", CK_TRK, {P_E0, P_E1, P_E2, P_E3}}, {"SRC 2", CK_TRK, {P_E4, P_E5, P_E6, P_E7}},
                                 {"FILTER", CK_TRK, {P_FTYPE, P_E4, P_E5, P_ED_FLT}},   /* (ANALOG: its CUT RES, E4 E5) */
                                 {"VOICE", CK_TRK, {P_VOICE, P_GLIDE, P_DETUNE, ID_OCT}},
@@ -259,6 +264,7 @@ static void cos_pages(uint32_t m, const cpg_t **p, uint32_t *n)
     }
     if (m == CM_SRC && trk_engp(TSEL) == &ENG_ACID) { *p = CZP_SRCA; *n = NELEM(CZP_SRCA); return; }   /* (+ DEVIL) */
     if (m == CM_SRC && trk_engp(TSEL) == &ENG_KICK) { *p = CZP_SRCK; *n = NELEM(CZP_SRCK); return; }   /* (0.10.0) */
+    if (m == CM_SRC && trk_engp(TSEL) == &ENG_FMDRUM) { *p = CZP_SRCF; *n = NELEM(CZP_SRCF); return; }   /* (0.11.0) */
     *p = vo ? CZP_SRCV : m == CM_AMP && trk_engp(TSEL) == &ENG_ANALOG ? CZP_AMPA :
          m == CM_SRC && trk_engp(TSEL) == &ENG_ANALOG ? CZP_SRCN : P[m % CM_N];
     *n = N[m % CM_N] + (uint32_t)vo;                                      /* (VOICE: WORDS too) */
@@ -3477,7 +3483,7 @@ dials:
 /* the splash (ui_draw.c draw_splash / splash_write under COS_SLIM; main.c's boot loop calls it every ~4 ms for
  * SPL_WRITE + SPL_HOLD ms): black, a few still stars, the name 2x, the version, a 16-block bar filling like a pattern
  * (the block being filled red), READY. Drawn whole once, then only the bar's strip when a block fills */
-#define COS_VERSION "0.10.4"
+#define COS_VERSION "0.11.0"
 static void cos_px2(int32_t x, int32_t y, const char *s, uint16_t c)      /* (the face 2 x 2) */
 {
     int32_t r, b, b0;

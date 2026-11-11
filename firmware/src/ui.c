@@ -1535,6 +1535,10 @@ static void apply_preset_to(track_t *t, uint32_t pi)
         t->p[P_VLANG] = (int16_t)(e->presets[pi].xp & 3u);
         t->p[P_VLYR] = (int16_t)(e->presets[pi].xp >> 2);
     }
+    if (ENG_TRN(e)) {                                 /* (cursed-os 0.11.0) FMDRUM, KICK: the TRANSIENT (eng_fmdrum.c) */
+        t->p[P_DXIMG] = (int16_t)(e->presets[pi].xp & 15u);
+        t->p[P_MORPH] = TRN_LV(e->presets[pi].xp);
+    }
     {   /* the sends */
         static const uint8_t FX_DEF[4] = {0, 24, 28, 36};
         const preset_t *pr = &e->presets[pi];

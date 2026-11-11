@@ -22,7 +22,7 @@
 #define NENGINES 16              /* the stores' engine numbers 0..15 (cursed-os: 15 ACID) (engines.c ENGINES[], append-only; 0.8.3: 14 ANIMAL;
                                   * 0.9.9-snd5: STRING and ADD in the retired GRAIN's 8 and SLICE's 13) */
 #define ENGI_DIGITAL 1u          /* reserved without FELUCCA_FM4: never selectable (eng_ok), its sounds load as FM6 */
-#define NENG_SHOWN (NENGINES - !FELUCCA_FM4 - 2)   /* (cursed-os 0.10.0: KICK is 4, SAMPLER 0.9.5..0.9.9) the engines one can pick: PRESETS, the EDIT layer, the editor,
+#define NENG_SHOWN (NENGINES - !FELUCCA_FM4 - 1)   /* (cursed-os 0.10.0: KICK is 4, SAMPLER 0.9.5..0.9.9) the engines one can pick: PRESETS, the EDIT layer, the editor,
                                                 * in the display order of engines.c ENGINE_ORDER (PHYS 9, and in
                                                 * JIANT SAMPLE 4, GRAIN 8, SLICE 13: retired) */
 /* (JIANT 0.6.71) the second core (hal/fm1_multicore.h; fx.c mix_block hands it some synth tracks). MC_CPU(): the core
@@ -246,7 +246,8 @@ static void params_by_count(int16_t *out, const int16_t *in, uint32_t np, const 
 
 /* engine indices the stores name (engines.c ENGINES[]: append-only) */
 #define ENGI_ANALOG 0u           /* (JIANT 0.5: named for its FILTER page) */
-#define ENGI_PHYS 9u
+#define ENGI_PHYS 9u              /* (retired in TONIC; cursed-os 0.11.0: FMDRUM's number, ENGI_FMDRUM) */
+#define ENGI_FMDRUM 9u           /* (cursed-os 0.11.0) eng_fmdrum.c: FM drums, cymbals and hats (a project marks it: project.c PROJ_FMD) */
 #define ENGI_DRUM 10u
 #define ENGI_GRAIN 8u
 #define ENGI_SLICE 13u
@@ -268,7 +269,8 @@ static void params_by_count(int16_t *out, const int16_t *in, uint32_t np, const 
  * set as DRUM first: drum_from_perc) */
 static inline int eng_gone(uint32_t e)
 {
-    return e == ENGI_PHYS || e == ENGI_TRIO;   /* (cursed-os: SAMPLE's 4 is KICK; 0.9.9-snd5: GRAIN's 8 and
+    return e == ENGI_TRIO;                     /* (cursed-os: SAMPLE's 4 is KICK; 0.11.0: PHYS's 9 is FMDRUM, a PHYS
+                                                 * track of an older project still ANALOG: project.c proj_phys_gone; 0.9.9-snd5: GRAIN's 8 and
                                                  * SLICE's 13 are STRING and ADD) */
 }
 /* (JIANT 0.4) a sound stored before 0.4 -> today's E values, in place: LOFI (3) {.., SWP, VIB, ARP, TONE} -> {.., CUT

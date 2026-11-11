@@ -11,7 +11,8 @@
  *   - one voice: a hit cuts the last (a kick is mono)
  * Parameters (E0..E7): KIND, TUNE, TONE, DECAY, CLICK (the kit's NOISE), SWEEP (FM ENV), FOLD, DRIVE: TUNE .. DRIVE
  * are DRUM's own (dx_run's offsets, drum_bus's DRV), so a kit's knobs and a kick's do the same. No MORPH: a kick
- * plays its patch's A side, moved by the LFO's SHAPE (64: the middle) */
+ * plays its patch's A side, moved by the LFO's SHAPE (64: the middle). (0.11.0) KICK 3: the TRANSIENT (eng_fmdrum.c: P_DXIMG
+ * the kind, P_MORPH its level; eng_drum.c drum_render adds it; s[6] SNAP's envelope, s[7] the sound's place) */
 static const char *const KICK_N[] = {"DRUM-X", "909", "808", "LOFI", "INDUS", "ACOUST", "DUB", "TECHNO", "BREAKS",
                                      "DEEP", "PUNCH", "RUMBLE", 0};
 #define KICK_NKIT 9u                                      /* (the first nine: DX_KITS' kicks, in their order) */
@@ -45,6 +46,8 @@ static void kick_note_on(track_t *t, voice_t *v)
     L->mg = DXG_FADE;
     L->age = 0;
     v->s[0] = DV_KICK;
+    v->s[6] = 32767;                                     /* (0.11.0) the TRANSIENT: SNAP's envelope, the sound's place */
+    v->s[7] = 0;
     v->env_out = v->vel * 258;                           /* (as drum_note_on: the hit at its level, the ADSR held) */
     v->env = 1 << 24;
     duck_hit = 1;                                        /* (DUCK: the kick's) */
@@ -60,13 +63,13 @@ static int32_t kick_keys(const track_t *t, uint32_t k)
 
 /* {KIND, TUNE, TONE, DECAY, CLICK, SWEEP, FOLD, DRIVE} */
 static const preset_t KICK_PRESETS[] = {
-    {"TECHNO", {7, 64, 64, 64, 64, 0, 0, 20}, {0, 100, 127, 100}, 0, TAG(DRUM), FX(0, 0, 0, 0), PAT(0)},
+    {"TECHNO", {7, 64, 64, 64, 64, 0, 0, 20}, {0, 100, 127, 100}, 0, TAG(DRUM), FX(0, 0, 0, 0), PAT(0), TRN(2, 40)},
     {"909", {1, 64, 64, 64, 64, 0, 0, 10}, {0, 100, 127, 100}, 0, TAG(DRUM), FX(0, 0, 0, 0), PAT(0)},
     {"808 LONG", {2, 64, 60, 84, 60, 0, 0, 0}, {0, 100, 127, 100}, 0, TAG(DRUM), FX(0, 0, 0, 0), PAT(0)},
     {"DEEP", {9, 62, 56, 72, 56, 0, 0, 10}, {0, 100, 127, 100}, 0, TAG(DRUM), FX(0, 0, 0, 0), PAT(0)},
-    {"PUNCH", {10, 64, 72, 56, 70, 10, 0, 40}, {0, 100, 127, 100}, 0, TAG(DRUM), FX(0, 0, 0, 0), PAT(0)},
+    {"PUNCH", {10, 64, 72, 56, 70, 10, 0, 40}, {0, 100, 127, 100}, 0, TAG(DRUM), FX(0, 0, 0, 0), PAT(0), TRN(1, 70)},
     {"RUMBLE", {11, 60, 58, 84, 60, 0, 0, 50}, {0, 100, 127, 100}, 0, TAG(DRUM), FX(0, 0, 0, 0), PAT(0)},
-    {"INDUSTRIAL", {4, 66, 84, 64, 70, 20, 20, 60}, {0, 100, 127, 100}, 0, TAG(DRUM), FX(0, 0, 0, 0), PAT(0)},
+    {"INDUSTRIAL", {4, 66, 84, 64, 70, 20, 20, 60}, {0, 100, 127, 100}, 0, TAG(DRUM), FX(0, 0, 0, 0), PAT(0), TRN(9, 60)},
     {"DUB", {6, 60, 52, 76, 56, 0, 0, 0}, {0, 100, 127, 100}, 0, TAG(DRUM), FX(0, 0, 0, 0), PAT(0)},
 };
 

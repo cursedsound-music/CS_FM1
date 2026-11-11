@@ -442,7 +442,7 @@ int main(void)
         q.sum = proj_sum(&q);
         to_v4(&v4, &q);
         memcpy(&buf, &v4, sizeof v4);
-        ok = proj_import(&q2, &buf, (int)sizeof v4) && proj_ok(&q2) && q2.phys == PROJ_PHYS &&
+        ok = proj_import(&q2, &buf, (int)sizeof v4) && proj_ok(&q2) && q2.phys == PROJ_FMD &&
              q2.t[0].engine == ENGI_DRUM && q2.t[0].preset == 0 && str_eq(ENGINES[ENGI_DRUM]->name, "DRUM") &&
              q2.t[0].p[P_E0] == 64 && q2.t[0].p[P_E4] == 64 && q2.t[0].p[P_E6] == 0 && q2.t[0].p[P_E7] == 0;
         for (i = 1; i < 6u; i++)
@@ -473,7 +473,7 @@ int main(void)
         q.sum = proj_sum(&q);
         to_v4(&v4, &q);
         memcpy(&buf, &v4, sizeof v4);
-        ok = proj_import(&q2, &buf, (int)sizeof v4) && q2.phys == PROJ_PHYS && q2.t[1].engine == ENGI_PHYS_TO &&
+        ok = proj_import(&q2, &buf, (int)sizeof v4) && q2.phys == PROJ_FMD && q2.t[1].engine == ENGI_PHYS_TO &&
              q2.t[1].p[P_E0] == ENGINES[ENGI_PHYS_TO]->presets[0].e[0];
         bad += check("FUN4 phys 0: PHYS DUST -> ANALOG (PHYS retired)", ok);
     }

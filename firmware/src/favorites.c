@@ -22,14 +22,32 @@ static __attribute__((noinline)) void fav_rows_new(void)
 #ifndef ENGI_ACID
 #define ENGI_ACID 15u                                       /* (core.h's; a test without it) */
 #endif
+#ifndef ENGI_KICK
+#define ENGI_KICK 4u
+#endif
+#ifndef ENGI_FMDRUM
+#define ENGI_FMDRUM 9u
+#endif
 /* (cursed-os) KICK (4; 0.9.5 SAMPLER) in TRIO's (6, retired; its bytes 0..7: its presets were < 64, so 0; 22..31 Bluetooth's) */
 static uint32_t fav_row(uint32_t engine) { return engine == ENGI_ACID ? 4u : engine == ENGI_SAMPLE ? 6u : engine; }
+/* (cursed-os 0.11.0) the byte of a factory star: FMDRUM (9: CRASH_LOG's row, cpu_safe.c) in row 6's bytes 4..7, after
+ * KICK's 0..3 (each at most 32 presets there; the row's bytes 8.. are settings) */
+static uint8_t *fav_byte(uint32_t engine, uint32_t preset)
+{
+    if (engine == ENGI_FMDRUM)
+        return preset < 32u ? &favorites.factory[6][4u + preset / 8u] : 0;
+    if (engine == ENGI_KICK && preset >= 32u)
+        return 0;
+    return &favorites.factory[fav_row(engine)][preset / 8u];
+}
 static int favorite_has(uint32_t engine, uint32_t preset)
 {
+    const uint8_t *b;
     if (engine == NENGINES)
         return preset < UP_SLOTS && ((favorites.user >> preset) & 1u);
-    return engine < NENGINES && engine < 16u && preset < 256u &&
-        ((favorites.factory[fav_row(engine)][preset / 8u] >> (preset % 8u)) & 1u);
+    if (!(engine < NENGINES && engine < 16u && preset < 256u) || !(b = fav_byte(engine, preset)))
+        return 0;
+    return (*b >> (preset % 8u)) & 1u;
 }
 static int favorite_set(uint32_t engine, uint32_t preset, int on)
 {
@@ -40,7 +58,9 @@ static int favorite_set(uint32_t engine, uint32_t preset, int on)
         if (on) favorites.user |= 1u << preset;
         else favorites.user &= ~(1u << preset);
     } else {
-        uint8_t *b = &favorites.factory[fav_row(engine)][preset / 8u];
+        uint8_t *b = fav_byte(engine, preset);
+        if (!b)
+            return 0;
         if (on) *b |= (uint8_t)(1u << (preset % 8u));
         else *b &= (uint8_t)~(1u << (preset % 8u));
     }
