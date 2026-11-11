@@ -1410,6 +1410,66 @@ static __attribute__((noinline)) void cos_step_flag(uint32_t f)
     cos_say(on == 2u ? "A REST: NO NOTE" : f == SF_ACCENT ? (on ? "ACCENT ON" : "ACCENT OFF") : (on ? "SLIDE ON" : "SLIDE OFF"));
 }
 
+/* (0.12.4) a step's LENGTH (GG: "how can I make it longer and shorter"): steps held + black 3 shorter, black 4 longer.
+ * In 16ths of a step, the step's own gate (step_t ctime's LEN, seq.c seq_step: 1/16 .. 15/16), then whole steps: the
+ * steps after it TIEs (only over rests and ties: a note there stops it). 0: none set, the track's GATE. The value: n
+ * sixteenths (1..15) or 16 * steps (32, 48, .. 256: 2 .. 16 steps) */
+static const uint8_t COS_SLEN[] = {1, 2, 3, 4, 6, 8, 10, 12, 15};
+static uint32_t cos_slen_get(const track_t *t, uint32_t i, uint32_t len)
+{
+    uint32_t k = 1;
+    while (k < len && k < 16u && t->step[(i + k) % len].time == ST_TIE) k++;
+    if (k > 1u) return 16u * k;
+    return CT_LEN(&t->step[i % NSTEP]);
+}
+/* step i to v (as cos_slen_get's); 0 if a note in the way cut it short */
+static int cos_slen_set(track_t *t, uint32_t i, uint32_t v, uint32_t len)
+{
+    step_t *s = &t->step[i % NSTEP];
+    uint32_t k, want = v >= 32u ? v / 16u : 1u, ok = 1;
+    for (k = 1; k < len && k < 16u && t->step[(i + k) % len].time == ST_TIE; k++)
+        step_clear(&t->step[(i + k) % len]);             /* (its ties, gone: laid again below) */
+    for (k = 1; k < want && k < len; k++) {
+        step_t *n = &t->step[(i + k) % len];
+        if (n->time == ST_NOTE && n->n) { ok = 0; break; }   /* (a note there: as far as it) */
+        step_clear(n);
+        n->time = ST_TIE;
+    }
+    s->ctime = (uint8_t)((s->ctime & ~0x78u) | (v >= 32u ? 0u : (v & 15u) << 3));   /* (tied: the last step's GATE ends it) */
+    return (int)ok;
+}
+static __attribute__((noinline)) void cos_step_len(int up)
+{
+    track_t *t = TSEL;
+    uint64_t h = cos_held();
+    uint32_t i, len = (uint32_t)clamp(t->p[P_SLEN], 1, NSTEP), v = ~0u, ok = 1;
+    char b[24];
+    for (i = 0; i < NSTEP; i++) {
+        step_t *s = &t->step[i];
+        if (!((h >> i) & 1u) || s->time != ST_NOTE || !s->n) continue;
+        if (v == ~0u) {                                  /* (the first held note decides, the rest follow it) */
+            uint32_t c = cos_slen_get(t, i, len), j;
+            if (!c) c = (uint32_t)clamp(t->p[P_SGATE], 1, 127) / 8u;   /* (none set: from the track's GATE) */
+            if (c >= 16u) v = up ? (c / 16u < 16u ? c + 16u : c) : (c > 32u ? c - 16u : COS_SLEN[NELEM(COS_SLEN) - 1u]);
+            else if (up) {
+                for (j = 0; j < NELEM(COS_SLEN) && COS_SLEN[j] <= c; j++) {}
+                v = j < NELEM(COS_SLEN) ? COS_SLEN[j] : 32u;
+            } else {
+                for (j = NELEM(COS_SLEN); j > 0u && COS_SLEN[j - 1u] >= c; j--) {}
+                v = j ? COS_SLEN[j - 1u] : COS_SLEN[0];
+            }
+        }
+        ok &= (uint32_t)cos_slen_set(t, i, v, len);
+    }
+    cz.lk_used = 1;
+    if (v == ~0u) { cos_say("A REST: NO NOTE"); return; }
+    str_cpy(b, "LENGTH ", 8);
+    if (v >= 32u) { fmt_int(b + 7, (int32_t)(v / 16u)); str_cpy(b + str_len(b), " STEPS", 8); }
+    else { fmt_int(b + 7, (int32_t)v); str_cpy(b + str_len(b), "/16", 4); }
+    if (!ok) str_cpy(b, "A NOTE IN THE WAY", 18);
+    cos_say(b);
+}
+
 /* ACID's track: the first one on the ACID engine (the 303); none: the last live one that is neither a kit nor VOICE
  * becomes ACID's TB CLASSIC (an UNDO point first; REC on GEN undoes it) */
 static __attribute__((noinline)) uint32_t cos_acid_trk(uint32_t *made)
@@ -2134,6 +2194,7 @@ static __attribute__((noinline)) void cos_input(void)
                 if (cos_page()->kind == CK_EU) eu_put(EK_K4, (int32_t)j + 1);   /* (EUCLID: that lane's own) */
             }
             else if (!cos_kit() && cos_held() && j < 2u) cos_step_flag(j ? SF_SLIDE : SF_ACCENT);   /* (B1 ACCENT, B2 SLIDE) */
+            else if (!cos_kit() && cos_held() && (j == 2u || j == 3u)) cos_step_len(j == 3u);   /* (0.12.4: B3 SHORTER, B4 LONGER) */
         } else if (cz.mode == CM_GEN && cos_kit() && j < NLANE) {
             eu_put(EK_K4, (int32_t)j + 1);                /* (EUCLID: a lane picked) */
         }
@@ -2818,8 +2879,11 @@ static void cos_foot(void)
         int32_t x = 2 + (int32_t)i * 15, y = 224;
         uint16_t edge = st >= len ? C_BG : (i & 3u) ? C_DARK : C_DIM;
         cv_frame(x, y, 13, 13, edge);
-        if (v == 1u) cv_rect(x + 1, y + 1, 11, 11, C_MID);   /* (a trig grey, an accent white: red is the playhead's) */
-        else if (v == 2u) cv_rect(x + 1, y + 1, 11, 11, C_FG);
+        if (v == 1u || v == 2u) {                        /* (a trig grey, an accent white: red is the playhead's; 0.12.4: a
+                                                         * step with its own LENGTH under 1, as wide as it) */
+            uint32_t sl = lane == NLANE && !drum_track(t) ? CT_LEN(&t->step[st % NSTEP]) : 0u;
+            cv_rect(x + 1, y + 1, sl ? 1 + (int32_t)sl * 10 / 15 : 11, 11, v == 1u ? C_MID : C_FG);
+        }
         else if (v == 3u) cv_rect(x + 1, y + 5, 11, 3, C_DIM);
         if (st == now) cv_rect(x, y - 3, 13, 2, C_RED);
         if (cz.si && cz.mode == CM_TRIG && st == cz.si_pos) { cv_frame(x - 1, y - 1, 15, 15, C_RED); cv_frame(x, y, 13, 13, C_RED); }
@@ -2933,10 +2997,20 @@ static void cos_lk_box(void)                            /* (steps held: which, a
         cv_rect(28, 58, 184, 76, C_BG);
         cv_frame(28, 58, 184, 76, C_RED);
         cos_txc(120, 64, CZ_TALL, b, C_FG);
-        cos_tx(44, 90, "B1 ACCENT", nt && (s->flags & SF_ACCENT) ? C_RED : C_DIM);
-        cos_tx(132, 90, "B2 SLIDE", nt && (s->flags & SF_SLIDE) ? C_RED : C_DIM);
-        cos_txc(120, 106, CZ_LBL, "PRESETS: THE NOTE", C_MID);
-        cos_txc(120, 120, CZ_LBL, "KNOB LOCK  REC CLEAR", C_DIM);
+        cos_tx(44, 86, "B1 ACCENT", nt && (s->flags & SF_ACCENT) ? C_RED : C_DIM);
+        cos_tx(132, 86, "B2 SLIDE", nt && (s->flags & SF_SLIDE) ? C_RED : C_DIM);
+        {                                                /* (0.12.4) B3 / B4: its LENGTH */
+            uint32_t v = nt ? cos_slen_get(TSEL, st, (uint32_t)clamp(TSEL->p[P_SLEN], 1, NSTEP)) : 0u;
+            char lb[24];
+            str_cpy(lb, "B3- LEN ", 9);
+            if (!v) str_cpy(lb + 8, "GATE", 5);
+            else if (v >= 32u) { fmt_int(lb + 8, (int32_t)(v / 16u)); str_cpy(lb + str_len(lb), " STEPS", 7); }
+            else { fmt_int(lb + 8, (int32_t)v); str_cpy(lb + str_len(lb), "/16", 4); }
+            str_cpy(lb + str_len(lb), " +B4", 5);
+            cos_txc(120, 99, CZ_LBL, lb, v ? C_RED : C_DIM);
+        }
+        cos_txc(120, 110, CZ_LBL, "PRESETS: THE NOTE", C_MID);
+        cos_txc(120, 121, CZ_LBL, "KNOB LOCK  REC CLEAR", C_DIM);
         return;
     }
     cv_rect(28, 62, 184, 52, C_BG);
@@ -3589,7 +3663,7 @@ dials:
 /* the splash (ui_draw.c draw_splash / splash_write under COS_SLIM; main.c's boot loop calls it every ~4 ms for
  * SPL_WRITE + SPL_HOLD ms): black, a few still stars, the name 2x, the version, a 16-block bar filling like a pattern
  * (the block being filled red), READY. Drawn whole once, then only the bar's strip when a block fills */
-#define COS_VERSION "0.12.3"
+#define COS_VERSION "0.12.4"
 static void cos_px2(int32_t x, int32_t y, const char *s, uint16_t c)      /* (the face 2 x 2) */
 {
     int32_t r, b, b0;
