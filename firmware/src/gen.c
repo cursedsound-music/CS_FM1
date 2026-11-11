@@ -429,7 +429,33 @@ static void gen_drums_idm(track_t *t, uint32_t len)
         if (!(h & 1u) && gch(30)) step_set_chance(s, (uint32_t)grr(45, 85));
     }
 }
+/* (cursed-os 0.14.1) PERC (eng_drum.c dx_k0p: a KICK track plays the kick): the kit's first lane a percussion line, not
+ * the kick the genre wrote there (gs.kick keeps those for the bass): off the kick's quarters, one of six figures */
+static void gperc0(track_t *t, uint32_t len)
+{
+    static const uint16_t FIG[6] = {0x4444u, 0x4848u, 0x8484u, 0x2492u, 0x4A4Au, 0x9248u};   /* (bit p: sixteenth p) */
+    uint32_t h = 0x2545F491u, f, i;
+    if (!dx_k0p) return;
+    for (i = 0; i < len; i++)                           /* (its own dice, from what was thrown: the generator's draws
+                                                         * stay as they were, every other part the same) */
+        h = (h ^ (uint32_t)t->step[i].hit ^ (uint32_t)t->step[i].vel << 8) * 0x01000193u;
+    f = FIG[(h >> 8) % 6u];
+    for (i = 0; i < len; i++) {
+        step_t *s = &t->step[i];
+        s->hit &= (uint8_t)~1u;
+        s->acc &= (uint8_t)~1u;
+        if (s->time == ST_NOTE && !s->hit && !s->n) gclear(s);
+        h = h * 1664525u + 1013904223u;
+        if ((f >> (i % 16u)) & 1u && (i % 16u) % 4u && (h >> 24) < 218u) gdrum_hit(t, i, 0u, 78 + (int32_t)((h >> 16) % 27u), 0);
+    }
+}
+static void gen_drums_x(track_t *t, uint32_t len);
 static void gen_drums(track_t *t, uint32_t len)
+{
+    gen_drums_x(t, len);
+    gperc0(t, len);
+}
+static void gen_drums_x(track_t *t, uint32_t len)
 {
     const ggenre_t *g = gs.g;
     uint8_t map[8];                                     /* (0.9.7) lane numbers (gen_drum_maps.h; 0: none) */

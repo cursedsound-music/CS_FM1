@@ -66,7 +66,21 @@ static const uint8_t DXG_LANE[DV_NLANE] = {DXG_KICK, DXG_SNARE, DXG_SNARE, DXG_H
 #define DXM_ALL 0xFF0Fu
 static volatile uint16_t dx_mute;                       /* DXG_* groups | DXM_LANE lanes */
 static void dx_mute_set(uint32_t m) { dx_mute = (uint16_t)(m & DXM_ALL); }
-static int dx_lane_muted(uint32_t l) { return (DXG_LANE[l & 7u] & dx_mute) || (dx_mute & DXM_LANE(l & 7u)); }
+/* (cursed-os 0.14.1, GG: "i dont need 2 kick drums") PERC: with a KICK track playing the kick, the kit's first sound
+ * (lane 0) is a percussion of its own: PERC by name, in the toms' and rims' group (the KICK KILL leaves it), no DUCK, its own mute (HOME + white 9), no kick's CHANCE; GEN plays a percussion on it (gen.c
+ * gperc0). cos.c sets it each frame (a live KICK track) */
+static volatile uint8_t dx_k0p;
+static uint8_t dx_k0_new;                               /* (ui.c power_sound_of: cos.c loads the PERC's first sound) */
+static int dx_lane_muted(uint32_t l)
+{
+    uint32_t g = (l & 7u) == DV_KICK && dx_k0p ? DXG_PERC : DXG_LANE[l & 7u];
+    return (g & dx_mute) || (dx_mute & DXM_LANE(l & 7u));
+}
+static int dx_kick_muted(void)                          /* the KICK track's: the KICK KILL (and the kit's kick sound off,
+                                                         * as ever, without a PERC) */
+{
+    return (dx_mute & DXG_KICK) || (!dx_k0p && (dx_mute & DXM_LANE(DV_KICK)));
+}
 
 static int16_t clip_eff, pnch_eff;   /* G_CLIP / G_PUNCH as the master plays them (mod.c macro_master) */
 /* The drum bus (JIANT, MENU-less: FX > MASTER). PUNCH (G_PUNCH 0..100, no detector: each hit's own age), made to
@@ -160,14 +174,14 @@ static const char *drum_lane_name(const track_t *t, uint32_t l)
 {
     static const char *const N[NLANE] = {"KICK", "SNARE", "CLAP", "HATCL", "HATOP", "TOM", "RIM", "BELL"};
     (void)t;
-    return N[l & (NLANE - 1u)];
+    return !(l & (NLANE - 1u)) && dx_k0p ? "PERC" : N[l & (NLANE - 1u)];   /* (0.14.1) */
 }
 /* .. in two letters, the drum machine way (the grid's lane column) */
 static const char *drum_lane_abbr(const track_t *t, uint32_t l)
 {
     static const char *const N[NLANE] = {"BD", "SD", "CP", "CH", "OH", "TM", "RS", "CB"};
     (void)t;
-    return N[l & (NLANE - 1u)];
+    return !(l & (NLANE - 1u)) && dx_k0p ? "PC" : N[l & (NLANE - 1u)];
 }
 
 /* the lanes step s strikes: its hits, and its notes on their lanes (a NOTE step only) */
@@ -278,9 +292,11 @@ static void dx_kit_own(dx_lane_t *k, uint8_t *lay)
         lay[l] = sw ? dx_slk_hlay[l] : dx_lay[l];
     }
 }
-static void dx_slk_forget(void)                         /* (a kit loaded over them: the new one its own) */
+static void dx_slk_forget(void)                         /* (a kit loaded over them: the new one its own; 0.14.1: no
+                                                         * PERC to load over it either, a set's own first sound) */
 {
     dx_slk_on = 0;
+    dx_k0_new = 0;
 }
 static void drum_note_on(track_t *t, voice_t *v)
 {
@@ -326,7 +342,7 @@ static void drum_note_on(track_t *t, voice_t *v)
         dx_mot_rng=dx_mot_rng*1664525u+1013904223u;
         L->rt=(int8_t)clamp((int32_t)L->rt+((int32_t)(dx_mot_rng>>28)%3-1)*(int32_t)dx_acoustic/127,-127,127);
     }
-    if (lane == DV_KICK)
+    if (lane == DV_KICK && !dx_k0p)                      /* (0.14.1: PERC no DUCK) */
         duck_hit = 1;
     dx_slk_hit(lane);                                    /* (0.14.0) its sound lock, or its own back */
     dx_trigger(&L->x);
@@ -390,6 +406,9 @@ static volatile uint8_t lv_snd[2];                    /* 0 DELAY, 1 REVERB */
  * project's 'DC', seq.c seq_step) */
 static volatile uint8_t drm_roll, drm_lpn, drm_rate = 1, drm_ramp, drm_vel = 110;
 static uint8_t dx_skip[8];
+/* (cursed-os 0.14.1, GG: "something more useful" on EDIT > SOUND) each drum's PAN, -64 (left) .. 63, on IMAGE's: the
+ * project's 'DP', a kit's (kits.c) */
+static int8_t dx_pan[8];
 /* (JIANT 0.7.8) a core's own (mod.c's mod_c the same way): the two cores render two parts at once (fx.c mix_block), and
  * with one set the other core's part cleared dx_xon and the sides mid-render: the image on and off block by block (a
  * grit at the block rate, like a downsampling) and clicks on the side a sound leaned to. A core renders its parts one
@@ -442,7 +461,8 @@ static int32_t drum_feed(const track_t *t, uint32_t l, uint32_t b)
 {
     static const uint8_t TP[3] = {P_CHOR, P_DLY, P_REV};
     uint32_t own = dx_de[l & 7u][DE_SCH + b];
-    int32_t a = own ? (int32_t)own - 1 : clamp(t->p[TP[b]], 0, 127);
+    int32_t a = (own ? (int32_t)own - 1 : 0) + clamp(t->p[TP[b]], 0, 127);   /* (0.14.1, GG: "off by default"): its own on
+                                                         * top of the kit's (FX > SEND), each 0 at first: no more KIT */
     a = (a * 129) >> 8;                                  /* (127: 64) */
     if (DXS_BUS(dx_snd[l & 7u]) == b + 1u)
         a += DXS_AMT(dx_snd[l & 7u]);
@@ -452,12 +472,14 @@ static int32_t drum_feed(const track_t *t, uint32_t l, uint32_t b)
 /* a DRUM part's render starts (voice.c track_render): the pans of the block, the buffers that will be fed cleared */
 static __attribute__((noinline)) void drum_side_begin(const track_t *t, uint32_t n)
 {
-    int32_t img = clamp(t->p[P_DXIMG], 0, 127), k = img ? dx_img_k(t) : 0;
-    uint32_t l, i, on = 0;
+    int32_t img = clamp(t->p[P_DXIMG], 0, 127), k;
+    uint32_t l, i, on = 0, pn = 0;
     dx_core_t *dc = &DXC;                                /* (0.7.9: this core's, read once) */
     int8_t *pc = dx_pcur[(uint32_t)(t - trk) % NTRK];
+    for (l = 0; l < DV_NLANE; l++) pn |= (uint32_t)(uint8_t)dx_pan[l];
+    k = img || pn ? dx_img_k(t) : 0;
     for (l = 0; l < DV_NLANE; l++) {
-        int32_t p = img ? dx_img_pan(l, img) * k >> 8 : 0, p0 = pc[l];
+        int32_t p = clamp((img ? dx_img_pan(l, img) : 0) + dx_pan[l], -64, 64) * k >> 8, p0 = pc[l];   /* (0.14.1: its PAN) */
         p = p0 + clamp(p - p0, -DX_PSLEW, DX_PSLEW);
         pc[l] = (int8_t)p;
         dc->lpan0[l] = (int8_t)p0;
@@ -575,7 +597,7 @@ static void drum_render(track_t *t, voice_t *v, int32_t *out, uint32_t n, const 
     vmod_t ml;                                           /* (only its amplitude ramp is read: voice_amp) */
     if (!L)
         return;
-    if (dx_lane_muted((uint32_t)v->s[0]) || L->mg < DXG_FADE) {   /* its group muted:
+    if ((t->engine == ENGI_KICK ? dx_kick_muted() : dx_lane_muted((uint32_t)v->s[0])) || L->mg < DXG_FADE) {   /* its group muted:
                                                           * fading (to the end, if unmuted meanwhile), then ended */
         uint32_t g0 = L->mg;
         if (!g0) {

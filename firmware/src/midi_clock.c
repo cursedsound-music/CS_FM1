@@ -6,6 +6,7 @@ static struct {
     uint32_t pos, rendered, last_ms, start_ms, rem, interval_ms;
     uint32_t pulse_samples, interp_q8, tempo_ms;
     uint8_t mode, have_pulse, tempo_valid, tempo_n;
+    uint32_t tempo_q;                              /* (cursed-os 0.14.1) the beat, samples x 16, smoothed */
 } midi_clock;
 
 static __attribute__((noinline)) void midi_clock_transport(uint32_t status, uint32_t ms)
@@ -37,13 +38,22 @@ static __attribute__((noinline)) void midi_clock_pulse(uint32_t ms)
         midi_clock.tempo_valid = 1;
         midi_clock.tempo_ms = ms;
         midi_clock.tempo_n = 0;
-    } else if (++midi_clock.tempo_n == 6u) {
+    } else if (++midi_clock.tempo_n == 24u) {
         uint32_t dt = ms - midi_clock.tempo_ms;
         midi_clock.tempo_ms = ms;
         midi_clock.tempo_n = 0;
-        /* Six clocks are a quarter of a beat. Reject gaps and corrupt bursts. */
-        if (dt >= 62u && dt <= 375u) {
-            uint32_t old_beat = beat_samples(), new_beat = (uint32_t)FS * dt / 250u;
+        /* (cursed-os 0.14.1, GG: Ableton at 135, the FM-1 134.7 .. 135 all the time) A whole beat (24 clocks), not a
+         * quarter: a millisecond's error 0.2 %, not 0.9 %; smoothed (a quarter of the way a beat), a jump of 2 % or more
+         * taken at once. The tempo (delay times, the steps' lengths) no longer wobbles with USB's timing. Reject gaps
+         * and corrupt bursts */
+        if (dt >= 250u && dt <= 1500u) {
+            uint32_t old_beat = beat_samples(), new_beat, m = (uint32_t)FS * dt / 1000u * 16u + ((uint32_t)FS * dt % 1000u) * 16u / 1000u;
+            if (!midi_clock.tempo_q || m > midi_clock.tempo_q + midi_clock.tempo_q / 50u || m + midi_clock.tempo_q / 50u < midi_clock.tempo_q)
+                midi_clock.tempo_q = m;
+            else
+                midi_clock.tempo_q = (uint32_t)((int32_t)midi_clock.tempo_q + ((int32_t)m - (int32_t)midi_clock.tempo_q) / 4);
+            new_beat = (midi_clock.tempo_q + 8u) >> 4;
+            dt = (new_beat * 1000u + (uint32_t)FS / 2u) / (uint32_t)FS;   /* (the beat smoothed, ms: the BPM shown) */
             if (song.playing && new_beat != old_beat) {
                 uint32_t i, ratio = (new_beat << 12) / old_beat;
                 /* Preserve each track's fractional step phase when the master
@@ -58,7 +68,7 @@ static __attribute__((noinline)) void midi_clock_pulse(uint32_t ms)
                     clk_pos = (uint32_t)(((uint64_t)clk_pos * ratio + 2048u) >> 12);
             }
             midi_beat_samples = new_beat;
-            song.g[G_BPM] = (int16_t)clamp((int32_t)((15000u + dt / 2u) / dt), 40, 240);
+            song.g[G_BPM] = (int16_t)clamp((int32_t)((60000u + dt / 2u) / dt), 40, 240);
         }
     }
     if (song.playing) {

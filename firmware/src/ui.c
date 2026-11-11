@@ -1540,10 +1540,11 @@ static void apply_preset_to(track_t *t, uint32_t pi)
         t->p[P_MORPH] = TRN_LV(e->presets[pi].xp);
         t->p[P_WRDEP] = 0;                              /* (0.13.0) T.PITCH: as recorded */
     }
-    {   /* the sends */
+    {   /* the sends; (cursed-os 0.14.1, GG: "the default should always be clean sounds") its DIST, the CHORUS DELAY
+         * REVERB sends left as the track has them: a sound loads dry, the sends are the player's */
         static const uint8_t FX_DEF[4] = {0, 24, 28, 36};
         const preset_t *pr = &e->presets[pi];
-        for (i = 0; i < 4u; i++)
+        for (i = 0; i < (COS_SLIM ? 1u : 4u); i++)
             t->p[P_DIST + i] = (int16_t)(pr->fx[i] ? pr->fx[i] - 1 : FX_DEF[i]);
     }
     fm6_track_loaded(t);                              /* FM6: the preset's patch (its SLOT) */
@@ -1635,7 +1636,10 @@ static void power_sound_of(track_t *t, uint32_t i)
         t->p[P_DIST + k] = 0;
     if (TRK_DEF[i % NPART][0] == ENGI_DRUM && TRK_DEF[(i + 1u) % NPART][0] == ENGI_KICK)
     {
-        t->p[P_LN0] = 0;                              /* (cursed-os 0.10.0) the kit without its kick: the KICK track's */
+        t->p[P_LN0] = 90;                             /* (cursed-os 0.10.0) the kit without its kick: the KICK track's;
+                                                         * (0.14.1, GG) its first sound a PERC instead: a RIDE (cos.c
+                                                         * cos_k0_poll, the first frame) */
+        dx_k0_new = 1;
         dx_ui_lane = 1;                               /* (.. and its EDIT on the SNARE: the kick's sound is the KICK's) */
     }
 }

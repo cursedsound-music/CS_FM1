@@ -49,8 +49,9 @@ enum { CC_OUTCH, CC_MOUT, CC_CLOCK, CC_SLOT, CC_TRKS, CC_LOAD, CC_COMP, CC_CATK,
        CC_RRATE, CC_RRAMP, CC_RVEL, CC_DCH0, CC_DCH7 = CC_DCH0 + 7,   /* (0.13.0) LFO > DRUMS' */
        CC_KSLOT,                                         /* (0.13.0) SAVE > KITS' slot */
        CC_CTLM, CC_CTLCH, CC_EXT,                        /* (0.13.0) GLO > MIDI 2: the knobs as a controller; SOUND */
-       CC_TCOND, CC_TSLD, CC_TSND };                     /* (0.14.0) TRIG > COND: the held steps' CONDITION, SLIDE, SOUND */
-_Static_assert(CC_TSND < 0xFBu && CC_DCH7 < 0xFBu, "the CK_COS ids fit a page's byte (0xFB..0xFF: BFINE, MUTE Q, BPM, OCTAVE, none)");
+       CC_TCOND, CC_TSLD, CC_TSND,                       /* (0.14.0) TRIG > COND: the held steps' CONDITION, SLIDE, SOUND */
+       CC_DPAN, CC_DCHN };                               /* (0.14.1) EDIT > SOUND on a kit: the drum's PAN, CHANCE */
+_Static_assert(CC_DCHN < 0xFBu && CC_DCH7 < 0xFBu, "the CK_COS ids fit a page's byte (0xFB..0xFF: BFINE, MUTE Q, BPM, OCTAVE, none)");
 _Static_assert(X2_N <= 16u, "CC_X2 .. CC_X2E: room for every trk_x2 field");
 #define ID_MUTEQ 0xFCu                          /* (HOME 2's: MUTE Q, cos_knob) */
 #define ID_BFINE 0xFBu                          /* (0.10.1) PERFORM's K2: the tempo's hundredths, .00 .. .99 */
@@ -124,7 +125,8 @@ static const cpg_t CZP_SRCV[] = {{"SRC 1", CK_TRK, {P_E0, P_E1, P_E2, P_E3}}, {"
  * MORPH ends moved together; its AHDSR and sends), the eight sounds' levels, then the kit's (KIT, KIT 2: the engine's
  * E1 .. E8), the matrix */
 static const cpg_t CZP_SRCD[] = {{"DRUM", CK_COS, {CC_DSEL, CC_KICK + DXP_PITCH, CC_KICK + DXP_PMOD, CC_DLV}},
-                                {"SOUND", CK_COS, {CC_DSEL, CC_DSRC, CC_DWAV, CC_DFLT}},   /* (0.12.1) any drum sound into it */
+                                {"SOUND", CK_COS, {CC_DSEL, CC_DSRC, CC_DPAN, CC_DCHN}},   /* (0.12.1) any drum sound into it;
+                                                         * (0.14.1, GG) its PAN and CHANCE, not TONE's WAVE, FILTER again */
                                 {"TONE", CK_COS, {CC_KICK + DXP_NOISE, CC_KICK + DXP_COLOR, CC_DWAV, CC_DFLT}},
                                 {"TONE 2", CK_COS, {CC_DBT, CC_DDRV, CC_DLAY, CC_DFB}},
                                 {"ENV", CK_COS, {CC_DE0 + DE_ATK, CC_KICK + DXP_DECAY, CC_DE0 + DE_SUS, CC_DE0 + DE_REL}},
@@ -214,7 +216,7 @@ static const uint8_t BK[11] = {1, 3, 5, 8, 10, 13, 15, 17, 20, 22, 25};         
 /* the keys drawn on screen (KEY, DRONE), from F as the FM-1's own: F F# G G# A A# B C C# D D# E, 1 a black one (was C's
  * pattern from F: the black keys a place off, A shown where E is on a C keyboard; tests/cos_test.c checks it against BK) */
 static const uint8_t COS_BLF[12] = {0, 1, 0, 1, 0, 1, 0, 0, 1, 0, 1, 0};
-static const char *const COS_LN[NLANE] = {"BD", "SD", "CP", "CH", "OH", "TM", "RS", "CB"};
+static const char *COS_LN[NLANE] = {"BD", "SD", "CP", "CH", "OH", "TM", "RS", "CB"};   /* (0.14.1: [0] PC with a PERC: cos_k0_poll) */
 
 static struct {
     uint8_t flip, mode, tab[CM_N], bank, lane, hot, combo, ready;   /* flip: HOME + GLO turned it from COS_DEFAULT */
@@ -468,9 +470,10 @@ static void cos_key_ask(uint32_t key)
     cz.key_bar = bar_n;
 }
 static int cos_dsrc_get(uint32_t i, dx_lane_t *L, uint8_t *lay);
+static void cos_k0_poll(void);
 static void cos_key_poll(void)
 {
-    dx_src_get = cos_dsrc_get;                          /* (0.14.0) the sound locks' sounds (eng_drum.c dx_slk_hit) */
+    cos_k0_poll();                                      /* (0.14.1) the PERC */
     if (cz.key_next && (!song.playing || bar_n != cz.key_bar))
         cos_key_apply(cz.key_next - 1u);
 }
@@ -486,8 +489,8 @@ static uint32_t cos_lsync_pos(uint32_t idx) { return idx >= 12u ? 14u - (idx % 1
 /* (cursed-os) a drum of the kit, the one picked (dx_ui_lane: DRUM's KNOB 1, or its key struck on EDIT): which one, its
  * LEVEL, the oscillator's WAVE, the noise's FILTER, BEND's TYPE, DRIVE, LAYER, FEEDBK, SNAP (the noise's envelope a
  * quarter of the sound's), its AHDSR and sends (dx_de, DX_DE_D) */
-static const char *const COS_DRUM[] = {"KICK", "SNARE", "CLAP", "HAT CL", "HAT OP", "TOM", "RIM", "BELL", 0};
-static const char *const COS_DRUM5[] = {"KICK", "SNARE", "CLAP", "HH CL", "HH OP", "TOM", "RIM", "BELL", 0};   /* (a knob's
+static const char *COS_DRUM[] = {"KICK", "SNARE", "CLAP", "HAT CL", "HAT OP", "TOM", "RIM", "BELL", 0};
+static const char *COS_DRUM5[] = {"KICK", "SNARE", "CLAP", "HH CL", "HH OP", "TOM", "RIM", "BELL", 0};   /* (a knob's
                                                          * value: five letters at most, param_format) */
 /* (0.12.1) SOUND > SOURCE: any drum sound the firmware has, loaded into the drum picked (then its own to shape): 1..72
  * every factory kit's eight (by sound, then kit: the snares of all nine together), 73..75 KICK's own (DEEP PUNCH RUMBLE),
@@ -557,6 +560,19 @@ static void cos_dsrc_load(uint32_t l, uint32_t i)
         dx_lay[l & 7u] = lay;
     }
 }
+static int cos_kick_trk(void);
+static void cos_k0_poll(void)                            /* (each frame) */
+{
+    uint32_t p = cos_kick_trk() >= 0;
+    dx_src_get = cos_dsrc_get;                          /* (0.14.0) the sound locks' sounds (eng_drum.c dx_slk_hit) */
+    dx_k0p = (uint8_t)p;                                /* (0.14.1) a KICK track plays the kick: the kit's first a PERC */
+    COS_LN[0] = p ? "PC" : "BD";
+    COS_DRUM[0] = COS_DRUM5[0] = p ? "PERC" : "KICK";
+    if (dx_k0_new) {                                    /* (a new set: the PERC a RIDE; ui.c power_sound_of) */
+        dx_k0_new = 0;
+        cos_dsrc_load(0, DSRC_FMD + 5u);
+    }
+}
 /* the drum still the source last loaded (not edited since, nor a kit loaded over it) */
 static int cos_dsrc_same(uint32_t l)
 {
@@ -621,7 +637,7 @@ static __attribute__((noinline)) const param_desc_t *cos_ddesc(uint32_t id, int1
     case CC_DSNP: *c = (int16_t)((m >> 4) & 1u); return &D[7];
     default: {
         uint32_t k = (id - CC_DE0) % DE_N, x = dx_de[l][k];
-        *c = (int16_t)(k >= DE_SCH ? (int32_t)x - 1 : (int32_t)x);
+        *c = (int16_t)(k >= DE_SCH ? (x ? (int32_t)x - 1 : 0) : (int32_t)x);   /* (0.14.1: 0 OFF, as the stored 0 now) */
         return &DX_DE_D[k];
     }
     }
@@ -661,7 +677,7 @@ static __attribute__((noinline)) void cos_dput(uint32_t id, int32_t v)
     case CC_DFB: dx_lay[l] = (uint8_t)((dx_lay[l] & 0x0Fu) | (uint32_t)clamp(v, 0, 15) << 4); break;
     default: {
         uint32_t k = (id - CC_DE0) % DE_N;
-        dx_de[l][k] = (uint8_t)(k >= DE_SCH ? clamp(v, -1, 127) + 1 : clamp(v, 0, 127));
+        dx_de[l][k] = (uint8_t)(k >= DE_SCH ? (v > 0 ? clamp(v, 0, 127) + 1 : 0) : clamp(v, 0, 127));
         break;
     }
     }
@@ -768,6 +784,13 @@ static const param_desc_t *cos_cdesc(uint32_t id, int16_t **vp)
         return &DEX;
     }
     if (id == CC_TCOND || id == CC_TSLD || id == CC_TSND) return cos_cnd_desc(id, vp);   /* (0.14.0) TRIG > COND */
+    if (id == CC_DPAN || id == CC_DCHN) {               /* (0.14.1) EDIT > SOUND: the drum's PAN, CHANCE */
+        static const param_desc_t DP2[2] = {{"PAN", F_INT, -64, 63, 0, 0, 0}, {"CHANCE", F_INT, 0, 100, 100, 0, "%"}};
+        uint32_t l = dx_ui_lane & 7u;
+        cz.cc_v[3] = (int16_t)(id == CC_DPAN ? dx_pan[l] : 100 - (int32_t)dx_skip[l]);
+        *vp = &cz.cc_v[3];
+        return &DP2[id == CC_DCHN];
+    }
     if (id == CC_CTLM || id == CC_CTLCH) {               /* (0.13.0) GLO > MIDI 2: KNOBS, CTRL CH (settings row 15, 1 and 2) */
         static const char *const KN[] = {"FM-1", "+MIDI", "MIDI", 0};
         static const param_desc_t DKN[2] = {{"KNOBS", F_ENUM, 0, 2, 0, KN, 0}, {"CTRL CH", F_INT, 1, 16, 7, 0, 0}};
@@ -1068,6 +1091,10 @@ static void cos_cput(uint32_t id, int32_t v)
         uint8_t m = (uint8_t)(favorites.factory[15][3] & ((1u << NTRK) - 1u));
         favorites.factory[15][3] = (uint8_t)(v ? m | 1u << t : m & ~(1u << t));
         settings_save();
+    } else if (id == CC_DPAN) {
+        dx_pan[dx_ui_lane & 7u] = (int8_t)clamp(v, -64, 63);
+    } else if (id == CC_DCHN) {
+        dx_skip[dx_ui_lane & 7u] = (uint8_t)(100 - clamp(v, 0, 100));
     } else if (id == CC_TCOND || id == CC_TSLD || id == CC_TSND) {
         cos_cnd_put(id, v);                              /* (0.14.0) TRIG > COND: the held steps' */
     } else if (id == CC_CTLM) {
@@ -1362,6 +1389,8 @@ static uint32_t cos_ext10(void)
                                                          * a reading's own error is up to ~1.5 % at 180 BPM) */
     else cz_ext_q = (uint32_t)((int32_t)cz_ext_q + (((int32_t)(t << 4) - (int32_t)cz_ext_q) >> 5));
     t = (cz_ext_q + 8u) >> 4;
+    if ((t + 2u) % 10u <= 4u) t = (t + 2u) / 10u * 10u;   /* (0.14.1: within 0.2 of a whole BPM, the whole: Ableton's 135
+                                                         * reads 135.0, not 134.9) */
     if (!cz_ext_shown || t >= cz_ext_shown + 3u || t + 3u <= cz_ext_shown) cz_ext_shown = t;
     return cz_ext_shown;
 }
@@ -1733,7 +1762,7 @@ static void cos_back_poll(void)                          /* (each frame) the kno
         cos_say("BACK TO NORMAL");
     }
 }
-static const char *const DRUM_SND_N[8] = {"KICK", "SNARE", "CLAP", "HAT", "OPEN HAT", "TOM", "RIM", "BELL"};
+static const char *const DRUM_SND_N[9] = {"KICK", "SNARE", "CLAP", "HAT", "OPEN HAT", "TOM", "RIM", "BELL", "PERC"};
 static int cos_kick_trk(void)                            /* the first live KICK track, -1 none */
 {
     uint32_t k;
@@ -1741,16 +1770,24 @@ static int cos_kick_trk(void)                            /* the first live KICK 
         if (trk_eng(&trk[k]) == ENGI_KICK) return (int)k;
     return -1;
 }
-static int cos_drum_out(uint32_t s)                      /* the sound out (muted), as it will be once a pending flip goes in */
+static int cos_drum_out(uint32_t s)                      /* the sound out (muted), as it will be once a pending flip goes in;
+                                                         * (0.14.1) 8: the PERC, the kit's first */
 {
     int kt = s ? -1 : cos_kick_trk();
+    if (s == 8u) s = 0;
     if (kt >= 0) return (trk[kt].p[P_MUTE] != 0) != (((live_qmute >> kt) & 1u) != 0u);
     return ((dx_mute & DXM_LANE(s & 7u)) != 0u) != (((live_qlane >> (s & 7u)) & 1u) != 0u);
 }
 static void cos_drum_flip(uint32_t s)
 {
-    int kt = (s &= 7u) ? -1 : cos_kick_trk(), out = !cos_drum_out(s);
+    uint32_t nm = s > 8u ? 0u : s;
+    int kt, out;
     char b[24];
+    if (s == 8u && !dx_k0p) return;                      /* (0.14.1: PERC, with a KICK track) */
+    out = !cos_drum_out(s);
+    kt = s == 8u || (s & 7u) ? -1 : cos_kick_trk();
+    s &= 7u;
+    if (nm == 8u) s = 0;
     cos_snap();
     if (kt >= 0) {
         if (!cos_mq) trk[kt].p[P_MUTE] = (int16_t)!trk[kt].p[P_MUTE];
@@ -1760,12 +1797,12 @@ static void cos_drum_flip(uint32_t s)
     } else {
         fm1_irq_off(); live_qlane ^= (uint8_t)(1u << s); fm1_irq_on();
     }
-    str_cpy(b, DRUM_SND_N[s], sizeof b);
+    str_cpy(b, DRUM_SND_N[nm], sizeof b);
     str_cpy(b + str_len(b), out ? " OUT" : " IN", 5);
     if (cos_mq && song.playing) str_cpy(b + str_len(b), cos_mq == 1u ? " BEAT" : " BAR", 6);
     cos_say(b);
 }
-static void cos_drum_set(uint32_t s, int out) { if (cos_drum_out(s & 7u) != !!out) cos_drum_flip(s); }
+static void cos_drum_set(uint32_t s, int out) { if (cos_drum_out(s > 8u ? 0u : s) != !!out) cos_drum_flip(s); }
 /* (0.10.0) a KICK track's pattern: KICK_PAT's n into steps 1..16 (the kick's C, the first beat accented), LEN 16 */
 static void cos_kick_pat(track_t *t, uint32_t n)
 {
@@ -2383,6 +2420,7 @@ static __attribute__((noinline)) void cos_input(void)
             if (cos_home_held()) cz.home_used = 1;
             if (w == 15u && cos_home_held()) cos_tap(fm1_ms);   /* (HOME + white 16: TAP TEMPO) */
             else if (w < 8u && (cos_home_held() || cos_on_live())) cos_drum_flip(w);   /* (0.10.3: LIVE without HOME) */
+            else if (w == 8u && cos_home_held() && dx_k0p) cos_drum_flip(8u);   /* (0.14.1) HOME + white 9: the PERC */
             else if (w < trk_live) track_select(w);
             else if (w == 12u || w == 13u) mph_key(w - 12u, cos_home_held());   /* (MORPH's A, B: cos_morph.c) */
             else if (w == 14u) {                         /* (LOOP: the track picked back in phase on the beat; HOME held:
@@ -3252,9 +3290,8 @@ static void cos_lk_box(void)                            /* (steps held: which, a
     cv_frame(28, 62, 184, 52, C_RED);
     cos_txc(120, 70, CZ_TALL, b, C_FG);
     if (cos_on_cnd()) {                                  /* (0.14.0) COND: SOUND is the lane's (the black keys pick it) */
-        static const char *const D[8] = {"KICK", "SNARE", "CLAP", "HATCL", "HATOP", "TOM", "RIM", "BELL"};
         str_cpy(b, "SOUND ON ", 10);
-        str_cpy(b + 9, D[cz.lane % NLANE], 7);
+        str_cpy(b + 9, drum_lane_name(TSEL, cz.lane % NLANE), 7);
         cos_txc(120, 92, CZ_LBL, b, C_MID);
         cos_txc(120, 103, CZ_LBL, "BLACK KEYS: THE DRUM", C_DIM);
     } else
@@ -3285,6 +3322,8 @@ static void cos_body_trig1(void)
     const track_t *t = TSEL;
     uint32_t len = (uint32_t)clamp(t->p[P_SLEN], 1, NSTEP), i, l, now = song.playing ? t->seq_idx % len : ~0u;
     if (cos_kit()) {
+        for (i = 4; i < 16u; i += 4u)                    /* (0.14.1, GG: "a 16th grid") the beats apart: a line between */
+            cv_rect(26 + (int32_t)i * 13 - 2, 36, 1, NLANE * 14, C_DARK);
         for (l = 0; l < NLANE; l++) {
             int32_t y = 38 + (int32_t)l * 14;
             if (l == cz.lane) cv_rect(0, y - 2, 240, 13, C_DARK);
@@ -3295,6 +3334,7 @@ static void cos_body_trig1(void)
                 if (v && t->step[st % NSTEP].probability >= TC_BASE) cv_frame(x, y, 10, 9, v == 2u ? C_FG : C_MID);   /* (0.14.0:
                                                          * a CONDITION: hollow) */
                 else if (v) cv_rect(x, y, 10, 9, v == 2u ? C_FG : C_MID);
+                else if (st < len && !(i % 4u)) cv_rect(x + 3, y + 3, 4, 4, C_DIM);   /* (a beat's sixteenth: larger) */
                 else cv_rect(x + 4, y + 4, 2, 2, st < len ? C_DIM : C_BG);
                 if (v && cos_snd_of(t, st % NSTEP, l)) cv_rect(x + 7, y + 1, 2, 2, C_RED);   /* (a sound lock: a red dot) */
                 if (st == now) cv_rect(x, y + 10, 10, 1, C_RED);
@@ -3310,6 +3350,14 @@ static void cos_body_trig1(void)
         }
         if (hi < lo) { lo = 36; hi = 48; }
         if (hi - lo < 12) hi = lo + 12;
+        for (i = 0; i < 16u; i++) {                      /* (0.14.1, GG: "a 16th grid") a column a sixteenth: the beats
+                                                         * a line, the others dotted; past LEN none */
+            int32_t x = 2 + (int32_t)i * 15, yy;
+            if (cz.bank * 16u + i >= len) break;
+            if (!(i % 4u)) cv_rect(x - 1, cz_rtop - 4, 1, 154 - cz_rtop, C_DARK);
+            else for (yy = cz_rtop - 4; yy < 150; yy += 8) cv_rect(x - 1, yy, 1, 1, C_DARK);
+            cv_rect(x + 4, 148, 4, i % 4u ? 1 : 3, i % 4u ? C_DIM : C_MID);   /* (a tick under it) */
+        }
         for (i = 0; i < 16u; i++) {
             uint32_t st = cz.bank * 16u + i, g = 1;
             const step_t *s = &t->step[st % NSTEP];
@@ -3922,7 +3970,7 @@ dials:
 /* the splash (ui_draw.c draw_splash / splash_write under COS_SLIM; main.c's boot loop calls it every ~4 ms for
  * SPL_WRITE + SPL_HOLD ms): black, a few still stars, the name 2x, the version, a 16-block bar filling like a pattern
  * (the block being filled red), READY. Drawn whole once, then only the bar's strip when a block fills */
-#define COS_VERSION "0.14.0"
+#define COS_VERSION "0.14.1"
 static void cos_px2(int32_t x, int32_t y, const char *s, uint16_t c)      /* (the face 2 x 2) */
 {
     int32_t r, b, b0;

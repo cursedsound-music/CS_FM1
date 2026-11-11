@@ -75,7 +75,7 @@ static void mo_send(uint32_t st, uint32_t d1, uint32_t d2)
 static int mo_plays(const track_t *t, uint32_t note)   /* trk_note_on would sound it (voice.c: the same tests) */
 {
     return trk_index(t) < trk_live && !t->p[P_MUTE] && !((trk_hush >> trk_index(t)) & 1u) &&
-           !(t->engine == ENGI_DRUM && drum_muted(note)) && !(t->engine == ENGI_KICK && dx_lane_muted(DV_KICK));
+           !(t->engine == ENGI_DRUM && drum_muted(note)) && !(t->engine == ENGI_KICK && dx_kick_muted());
 }
 /* (0.9.9 ctl64) the block being handled (events_block: its samples) and the sample within it an event falls on (core.h
  * ev_off; voice.c starts or releases the voice there). Set around the note-ons and -offs fired inside the block, 0
@@ -2322,7 +2322,8 @@ static __attribute__((noinline)) void seq_step(track_t *t, const step_t *s, uint
         m++;
     }
     for (i = 0; i < NLANE && !arp; i++)
-        if (((s->hit >> i) & 1u) && (!dx_skip[i] || rng() % 100u >= dx_skip[i])) {   /* (0.13.0: its CHANCE) */
+        if (((s->hit >> i) & 1u) && (!dx_skip[i] || (!i && dx_k0p) || rng() % 100u >= dx_skip[i])) {   /* (0.13.0: its CHANCE;
+                                                         * 0.14.1: the KICK's not the PERC's) */
             nn[m] = DRUM_LANE_NOTE[i];
             vv[m] = (uint8_t)((s->acc >> i) & 1u ? 127u : vel);
             sk |= ((skip >> (8u + i)) & 1u) << m;

@@ -1566,8 +1566,9 @@ int main(void)
         song.g[G_BPM] = 128; bpm_frac = 0; song.g[G_DUCK] = 0; rmb_v[0] = 0; rmb_v[3] = 0;
         bs2 = beat_samples();
         for (run = 0; run < 3u; run++) {
-            if (run == 1u) { dx_de[0][DE_SDL] = 1; dx_de[0][DE_SRV] = 1; }   /* the kick's own sends: 0, dry */
-            if (run == 2u) { dx_de[0][DE_SDL] = 0; dx_de[0][DE_SRV] = 128; trk[0].p[P_DLY] = 0; }   /* KIT (0), own 127 */
+            if (run == 1u) { dx_de[0][DE_SDL] = 1; dx_de[0][DE_SRV] = 1; trk[0].p[P_DLY] = trk[0].p[P_REV] = 0; }   /* (0.14.1)
+                                                         * the kit's 0, the kick's own 0: dry */
+            if (run == 2u) { dx_de[0][DE_SDL] = 0; dx_de[0][DE_SRV] = 128; }   /* its own REVERB 127 alone */
             transport_req = 1; ui_input();
             for (b2 = 0; b2 < 4u * bs2 / CTL; b2++) {
                 memset(o, 0, sizeof o);
@@ -1585,8 +1586,8 @@ int main(void)
                (long long)ed[1], (long long)ed[2], (long long)er[0], (long long)er[1], (long long)er[2], (long long)ex[0],
                (long long)ex[1]);
         CHECK(ed[0] > 0 && er[0] > 0, "the kit's FX > SEND: the kick in the delay and the reverb");
-        CHECK(ed[1] == 0 && er[1] == 0 && ex[1] > ex[0] / 4, "the kick's own SENDS 0: dry, still heard");
-        CHECK(ed[2] == 0 && er[2] > er[0] / 2, "KIT with the kit's DELAY 0: none; its own REVERB 127: in");
+        CHECK(ed[1] == 0 && er[1] == 0 && ex[1] > ex[0] / 4, "the kit's and the kick's own SENDS 0: dry, still heard");
+        CHECK(ed[2] == 0 && er[2] > er[0] / 2, "the kit's 0, its own REVERB 127: in, no delay");
         memset(dx_de, 0, sizeof dx_de);
         trk[0].p[P_DLY] = trk[0].p[P_REV] = 0;
         {   /* a step's GATE reaches the drum: SUSTAIN while the step lasts, then its RELEASE */
@@ -1659,13 +1660,13 @@ int main(void)
             cos_cput(CC_DWAV, 2); cos_cput(CC_DFLT, 2); cos_cput(CC_DDRV, 1); cos_cput(CC_DSNP, 0);
             CHECK((dx_kit[1].mode & 3u) == 2u && ((dx_kit[1].mode >> 2) & 3u) == 2u && (dx_kit[1].mode & DX_DRIVE) &&
                   !(dx_kit[1].mode & 0x10u), "WAVE METAL, FILTER HP, DRIVE ON, SNAP OFF on the SNARE");
-            cos_cput(CC_DE0 + DE_SRV, 90); cos_cput(CC_DE0 + DE_SDL, -1);
-            CHECK(dx_de[1][DE_SRV] == 91 && dx_de[1][DE_SDL] == 0, "REVERB 90 its own; DELAY KIT");
+            cos_cput(CC_DE0 + DE_SRV, 90); cos_cput(CC_DE0 + DE_SDL, 0);
+            CHECK(dx_de[1][DE_SRV] == 91 && dx_de[1][DE_SDL] == 0, "REVERB 90 its own; DELAY 0 (OFF)");
             {
                 char w[8]; const char *u;
                 const param_desc_t *dd = cos_cdesc(CC_DE0 + DE_SDL, &vp);
                 param_format(dd, *vp, w, &u);
-                CHECK(str_eq(w, "KIT"), "DELAY reads KIT (%s)", w);
+                CHECK(str_eq(w, "OFF"), "DELAY reads OFF (0.14.1: no KIT) (%s)", w);
                 dd = cos_cdesc(CC_DE0 + DE_ATK, &vp);
                 param_format(dd, *vp, w, &u);
                 CHECK(str_eq(w, "OFF"), "ATTACK at 0 reads OFF (%s)", w);

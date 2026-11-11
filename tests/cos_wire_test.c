@@ -123,6 +123,7 @@ static const char *why_quiet(uint32_t m, const cpg_t *p, uint32_t k)
     uint32_t id = p->id[k];
     if (p->kind == CK_COS) {
         if (id == CC_SLOT) return "SAVE: the slot a press saves to";
+        if (id >= CC_DE0 + DE_SCH && id <= CC_DE0 + DE_SRV) return "SRC > SEND: a drum's own, on top of the kit's FX > SEND (0.14.1; full here: no more to add)";
         if (id == CC_NAME) return "SAVE: the name the next save takes";
         if (id == CC_USLOT) return "SAVE > SOUNDS: the user preset slot OCT+ saves to, OCT- loads (0.10.2)";
         if (id == CC_IDLE) return "SYSTEM: when the IDLE screen comes up";
@@ -302,6 +303,8 @@ static void one(uint32_t tr, uint32_t m, uint32_t t, uint32_t k, int list)
     p = cos_page();
     d = cos_knob(p, k, &vp);
     if (!d || !vp || d->max == d->min) return;
+    if (p->kind == CK_COS && (p->id[k] == CC_TCOND || p->id[k] == CC_TSLD || p->id[k] == CC_TSND))
+        return;                                         /* (0.14.0 TRIG > COND: the held steps' only; tests/cond_test.c) */
     snprintf(nm, sizeof nm, "%s > %s K%u %s (T%u %s)", CM_NAME[m], p->tab, k + 1u, d->label, tr + 1u, trk_engp(TSEL)->name);
     v0 = *vp;
     for (j = 0; j < 6u && !ok; j++) {

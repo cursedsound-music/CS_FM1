@@ -1088,7 +1088,7 @@ static void voice_begin(track_t *t, voice_t *v, uint32_t note, uint32_t vel, int
     v->pn_dbend = t->dbend;
     v->pn_dbt = t->dbt;
     v->pn_tch = (uint8_t)(dx_in_tch ? dx_in_tch : t->dtch);
-    if ((e == &ENG_DRUM && drum_lane(note) == DV_KICK) || e == &ENG_KICK)
+    if ((e == &ENG_DRUM && drum_lane(note) == DV_KICK && !dx_k0p) || e == &ENG_KICK)   /* (0.14.1: PERC no DUCK) */
         duck_hit = 1;                                   /* (DUCK: the kick's, as drum_note_on tells it; this block's) */
     v->active = 1;
     v->gate = 1;
@@ -1249,7 +1249,7 @@ static void trk_note_on(track_t *t, uint32_t note, uint32_t vel)
     }
     if (t->p[P_MUTE] || ((trk_hush >> ((uint32_t)(t - trk) % NTRK)) & 1u) ||
         (t->engine == ENGI_DRUM && drum_muted(note)) ||   /* (DRUM: its group mutes) */
-        (t->engine == ENGI_KICK && dx_lane_muted(DV_KICK)))   /* (0.10.0: KICK, the KICK KILL) */
+        (t->engine == ENGI_KICK && dx_kick_muted()))     /* (0.10.0: KICK, the KICK KILL) */
         return;
     if (pfx_note(t, note, vel))                         /* the punch-in effects (pfx.c): a repeat holds the track */
         return;

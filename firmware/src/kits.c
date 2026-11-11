@@ -16,13 +16,15 @@ typedef struct {
     uint8_t lay[8], snd[8], lvl[8], skip[8];
     uint8_t de[8][DE_N];
     uint8_t tone, hands, glue, rsv[1];
+    int8_t pan[8];                                      /* (0.14.1) each drum's PAN (eng_drum.c dx_pan) */
 } kit_rec_t;
+#define KIT_RSIZE0 192u                                 /* (0.13.0's record, before PAN: kit_bank widens it) */
 typedef struct {
     uint32_t magic;
     uint16_t rsize, n;
     kit_rec_t r[KIT_N];
 } kit_bank_t;
-_Static_assert(sizeof(kit_rec_t) <= 192u, "a kit's record");
+_Static_assert(sizeof(kit_rec_t) == KIT_RSIZE0 + 8u, "a kit's record: 0.13.0's and the PANs");
 static uint16_t kit_used;                               /* (the bank's slots in use; kit_scan) */
 static char kit_nm[KIT_N][10] __attribute__((section(".lowbuf")));   /* (their names, for SAVE > KITS) */
 #if FELUCCA_FLASH
@@ -31,6 +33,18 @@ static kit_bank_t *kit_bank(void)                       /* the bank in st_buf (a
 {
     st_hdr_t h;
     kit_bank_t *b = (kit_bank_t *)(void *)st_buf;
+    if (st_current(OBJ_KITS, &h) >= 0 && b->magic == KIT_MAGIC && b->rsize == KIT_RSIZE0 && b->n == KIT_N &&
+        h.len == 8u + KIT_N * KIT_RSIZE0) {             /* (0.14.1) 0.13.0's bank: each record widened (from the last:
+                                                         * each lands past where it was), no PAN */
+        uint8_t *r = (uint8_t *)b->r;
+        uint32_t k, j;
+        for (k = KIT_N; k-- > 0u;) {
+            for (j = KIT_RSIZE0; j-- > 0u;) r[k * sizeof(kit_rec_t) + j] = r[k * KIT_RSIZE0 + j];
+            for (j = KIT_RSIZE0; j < sizeof(kit_rec_t); j++) r[k * sizeof(kit_rec_t) + j] = 0;
+        }
+        b->rsize = sizeof(kit_rec_t);
+        return b;
+    }
     if (st_current(OBJ_KITS, &h) < 0 || h.len != sizeof *b || b->magic != KIT_MAGIC || b->rsize != sizeof(kit_rec_t)) {
         memset(b, 0, sizeof *b);
         b->magic = KIT_MAGIC;
@@ -80,6 +94,7 @@ static int kit_save(uint32_t k, const char *name)
     memcpy(r->skip, dx_skip, 8);
     memcpy(r->de, dx_de, sizeof r->de);
     for (i = 0; i < 8u; i++) r->lvl[i] = (uint8_t)(t ? clamp(t->p[P_LN0 + i], 0, 127) : 100);
+    memcpy(r->pan, dx_pan, 8);
     r->tone = dx_tone;
     r->hands = dx_hands;
     r->glue = dx_glue;
@@ -102,6 +117,7 @@ static int kit_load(uint32_t k)
     memcpy(dx_snd, r->snd, 8);
     memcpy(dx_skip, r->skip, 8);
     memcpy(dx_de, r->de, sizeof dx_de);
+    memcpy(dx_pan, r->pan, 8);
     dx_tone = r->tone;
     dx_hands = r->hands & 15u;
     dx_glue = r->glue;

@@ -59,7 +59,7 @@ int main(void)
     CHECK(trk_eng(&trk[0]) == ENGI_DRUM && trk_eng(&trk[1]) == ENGI_KICK && trk_eng(&trk[2]) == ENGI_ACID &&
           trk_eng(&trk[5]) == ENGI_VOICE, "the layout: DRUM KICK ACID .. VOICE (%u %u %u %u)",
           trk_eng(&trk[0]), trk_eng(&trk[1]), trk_eng(&trk[2]), trk_eng(&trk[5]));
-    CHECK(trk[0].p[P_LN0] == 0 && trk[0].p[P_LN0 + 1] > 0, "the kit's kick lane at 0, its snare not (%d %d)", trk[0].p[P_LN0], trk[0].p[P_LN0 + 1]);
+    CHECK(trk[0].p[P_LN0] == 90 && trk[0].p[P_LN0 + 1] > 0 && dx_k0p, "the kit's first a PERC at 90 (0.14.1; the kick's at 0 before), its snare (%d %d)", trk[0].p[P_LN0], trk[0].p[P_LN0 + 1]);
     {
         char b[8];
         cos_trk_label(&trk[1], b);
@@ -67,7 +67,7 @@ int main(void)
     }
     solo(0);
     e = hit(0, 36, 0);
-    CHECK(e < 1e6, "the kit's C (its kick) silent: %.0f", e);
+    CHECK(e > 1e8, "the kit's C: the PERC sounds (0.14.1; the kick silent before): %.3g", e);
     e = hit(0, 38, 0);
     CHECK(e > 1e9, "the kit's snare sounds: %.3g", e);
     solo(1);
