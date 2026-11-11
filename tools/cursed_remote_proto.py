@@ -36,6 +36,12 @@ def bpm_exact(bpm):
             + cc(CC_BPMX, t >> 7) + cc(CC_BPMX + 1, t & 127))
 
 
+def lfo_frame(shape, points):
+    """the LFO's USER shape 0..3 (32 points, -127..127): frame 02 (cursed-os 0.10.2)"""
+    pts = [max(0, min(127, 64 + int(round(v / 2.0)))) for v in list(points)[:32]]
+    return frame(0x02, [shape & 3] + pts + [64] * (32 - len(pts)))
+
+
 def frame(cmd, payload):
     return bytes([0xF0, 0x7D, 0x63, cmd]) + bytes(payload) + b"\xF7"
 

@@ -56,8 +56,9 @@ int main(int argc, char **argv)
                 uint32_t k, n = 3u + rnd(300u);
                 rmt_f[0] = 0x7Du; rmt_f[1] = 0x63u;
                 for (k = 2; k < n; k++) rmt_f[k] = (uint8_t)rnd(128u);
-                if (rnd(2u)) rmt_f[2] = (uint8_t)(rnd(2u) ? 0x01u : 0x10u + rnd(4u));   /* (TEXT; the sampler's, gone: NAK) */
-                rmt_fn = (uint16_t)n;
+                if (rnd(2u)) rmt_f[2] = (uint8_t)(rnd(3u) == 0u ? 0x02u : rnd(2u) ? 0x01u : 0x10u + rnd(4u));   /* (0.10.2: 02 LFO) */
+                if (rmt_f[2] == 0x02u && rnd(2u)) { n = 36u; rmt_f[3] = (uint8_t)rnd(4u); }   /* (TEXT; the sampler's, gone: NAK) */
+                rmt_fn = (uint16_t)n;   /* (n: set above, or 36 for a whole LFO frame) */
                 rmt_fready = 1;
             }
         } else if (r == 222u && rnd(20u) == 0u) {       /* a long pause: hands off, the IDLE screen comes up */

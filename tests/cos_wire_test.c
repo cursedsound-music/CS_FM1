@@ -124,6 +124,7 @@ static const char *why_quiet(uint32_t m, const cpg_t *p, uint32_t k)
     if (p->kind == CK_COS) {
         if (id == CC_SLOT) return "SAVE: the slot a press saves to";
         if (id == CC_NAME) return "SAVE: the name the next save takes";
+        if (id == CC_USLOT) return "SAVE > SOUNDS: the user preset slot OCT+ saves to, OCT- loads (0.10.2)";
         if (id == CC_IDLE) return "SYSTEM: when the IDLE screen comes up";
         if (id >= CC_SCT && id <= CC_LUR) return "GLO > SCOPE .. LOUDNESS: how they show and measure the sound";
         if (id == CC_LOCAL) return "GLO > MIDI > LOCAL: the keys only (OFF: they send, nothing here); this test plays the steps";

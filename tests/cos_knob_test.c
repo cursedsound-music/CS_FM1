@@ -137,8 +137,15 @@ int main(void)
         host_enc[panel.enc[EN_SELECT]] = 1; cos_input();
         CHECK(cz.tab[CM_FX] == t0, "SELECT clockwise: the next page");
         s0 = song.sel;
-        host_enc[panel.enc[EN_ALGO]] = 1; cos_input();
-        CHECK(song.sel == s0 + 1u, "ALGORITHM clockwise: the next track (%u -> %u)", s0, song.sel);
+        {   /* (0.10.2) ALGO: the engine; EDIT held + ALGO: the track */
+            uint32_t e0 = TSEL->eng_req;
+            host_enc[panel.enc[EN_ALGO]] = 1; cos_input();
+            CHECK(song.sel == s0 && TSEL->eng_req != e0, "ALGORITHM clockwise: the next engine (%u -> %u)", e0, TSEL->eng_req);
+            cz.ed_down = 1;
+            host_enc[panel.enc[EN_ALGO]] = 1; cos_input();
+            cz.ed_down = 0;
+            CHECK(song.sel == s0 + 1u, "EDIT + ALGORITHM clockwise: the next track (%u -> %u)", s0, song.sel);
+        }
         cz.mode = CM_SRC;
         p0 = preset_pos(&tot);
         host_enc[panel.enc[EN_PRESET]] = 1; cos_input();

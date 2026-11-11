@@ -68,6 +68,43 @@ static up_bank_t up_bank[UP_SLOTS / UP_PER_BANK] __attribute__((section(".lowbuf
 
 static up_rec_t *up_rec(uint32_t k) { return &up_bank[k / UP_PER_BANK].r[k % UP_PER_BANK]; }
 
+/* (cursed-os 0.10.2) the LFO's USER 1..4 shapes (the phone draws them: cos_remote.c frame 02): 32 points each, -127..127,
+ * in the last user preset slot's record (U32), marked 'L' (not a sound: up_valid refuses it, lists skip it; a bank load
+ * keeps it as it is). RAM at once (the ISR reads it: voice.c lfo_shape), flash when the transport stops */
+static int up_put(uint32_t k, const up_rec_t *r);
+#define UP_LFO_SLOT (UP_SLOTS - 1u)
+#define UP_LFO_MARK LFO_UMARK
+_Static_assert(__builtin_offsetof(up_rec_t, packed) == LFO_UOFS, "the LFO shapes' offset (voice.c lfo_shape)");
+static uint8_t lfo_user_dirty;
+static void lfo_user_set(uint32_t u, const int8_t *v)
+{
+    up_rec_t *r = up_rec(UP_LFO_SLOT);
+    lfo_user_rec = (const uint8_t *)r;
+    if (u >= LFO_NUSER) return;
+    if (r->used != UP_LFO_MARK) {                       /* (the slot: a sound there is given up; U32 is the shapes') */
+        uint32_t k;
+        fm1_irq_off();
+        memset(r, 0, sizeof *r);
+        r->used = UP_LFO_MARK;
+        r->ver = 1;
+        for (k = 0; k < LFO_NUSER * LFO_UPTS; k++)     /* (the others: a sine till drawn) */
+            r->packed[k] = (uint8_t)(int8_t)(osc_sine((k % LFO_UPTS) << 27) / 258);
+        fm1_irq_on();
+        for (k = 0; k < NTRK; k++)
+            if (trk[k].user == UP_LFO_SLOT + 1u) trk[k].user = 0;
+    }
+    memcpy(r->packed + u * LFO_UPTS, v, LFO_UPTS);
+    lfo_user_dirty = 1;
+}
+static void lfo_user_poll(void)                         /* (cos_remote_poll: each frame) the shapes to flash, stopped */
+{
+    if (lfo_user_dirty && !transport_busy()) {
+        up_rec_t r = *up_rec(UP_LFO_SLOT);
+        lfo_user_dirty = 0;
+        (void)up_put(UP_LFO_SLOT, &r);
+    }
+}
+
 static int up_valid(const up_rec_t *r)
 {
     if (!(r->used == UP_USED && r->ver >= 1u && r->ver <= UP_VER_GRID && r->engine < NENGINES &&
@@ -266,6 +303,7 @@ static void up_boot(void)                      /* persist_boot: the banks from f
     for (b = 0; b < UP_SLOTS / UP_PER_BANK; b++)
         up_bank_check(b, flash_ok ? st_load(OBJ_UPRESET0 + b, &up_bank[b], sizeof up_bank[b]) : -1);
 #endif
+    lfo_user_rec = (const uint8_t *)up_rec(UP_LFO_SLOT);   /* (cursed-os 0.10.2) the LFO's USER shapes, if U32 holds them */
     upf_boot();                                  /* (after the banks: it may move the retired FM6 bank's patches) */
     fvb_boot();                                  /* FM6's voice bank: a staged one finished, its voices */
 #ifdef FELUCCA_FAVORITES

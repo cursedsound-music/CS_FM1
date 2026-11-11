@@ -18,6 +18,8 @@ static uint32_t vage;                                   /* voice ages: one clock
 /* an LFO's shape w at phase ph, Q15; rnd / prev: its S&H value now and the one before (SMOOTH glides between them).
  * (cursed-os) after JIANT's five: RAMP (down), PULSE (a quarter high), SMOOTH (S&H glided), STEPS (four), EXP (a
  * plucked decay each cycle), BOUNCE (a ball's hops) */
+static const uint8_t *lfo_user_rec;                    /* (cursed-os 0.10.2) U32's record (upreset.c sets it): the phone's
+                                                         * shapes when marked 'L' (LFO_UMARK), from byte LFO_UOFS */
 static __attribute__((noinline)) int32_t lfo_shape(uint32_t w, uint32_t ph, uint32_t rnd, uint32_t prev)   /* (out of line:
                                                          * the RAM code's room; the image is small enough now to reach it) */
 {
@@ -48,6 +50,16 @@ static __attribute__((noinline)) int32_t lfo_shape(uint32_t w, uint32_t ph, uint
     case 10: {
         int32_t s = osc_sine(ph >> 1);
         return (s < 0 ? -s : s) * 2 - 32767;
+    }
+    case 11: case 12: case 13: case 14: {               /* (cursed-os 0.10.2) USER 1..4: 32 points, straight between */
+        const uint8_t *r = lfo_user_rec;
+        if (r && r[0] == LFO_UMARK) {
+            const int8_t *a = (const int8_t *)r + LFO_UOFS + (w - 11u) * LFO_UPTS;
+            uint32_t i = ph >> 27;
+            int32_t x = a[i] * 258, y = a[(i + 1u) & 31u] * 258, f = (int32_t)((ph >> 12) & 0x7FFFu);
+            return x + (((y - x) * f) >> 15);
+        }
+        return osc_sine(ph);
     }
     default:
         return osc_sine(ph);

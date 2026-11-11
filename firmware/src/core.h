@@ -58,7 +58,11 @@ static uint8_t vo_off_c[2];
 /* (ctl64) a VOICE note's random draw (eng_formant.c formant_note_on), made when the note is asked for (voice.c
  * voice_begin, on core 0), not when its voice starts in the render (either core) */
 static uint32_t vs_rnd;
-#define UP_SLOTS 32u             /* user presets (upreset.c) */
+#define UP_SLOTS 32u             /* user presets (upreset.c; cursed-os 0.10.2: U32 the LFO's USER shapes) */
+#define LFO_NUSER 4u             /* (cursed-os 0.10.2) the LFO's USER 1..4 shapes, 32 points each (upreset.c) */
+#define LFO_UPTS 32u
+#define LFO_UMARK 0x4Cu          /* (.. U32's record marked 'L', the points from byte 16: upreset.c up_rec_t packed) */
+#define LFO_UOFS 16u
 #define NELEM(a) (sizeof(a) / sizeof((a)[0]))
 
 /* (JIANT 0.9.9-stab) the 32 x 32 -> 64-bit multiplies of the audio path, out of line. On the FM-1 (pi32v2 at 360 MHz) a

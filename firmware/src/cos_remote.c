@@ -16,6 +16,7 @@
  * Channel 16's PROGRAM CHANGE stays a section / a project (midi_control.c).
  *
  * SysEx frames F0 7D 63 <command> .. F7 (7D: non-commercial; 63 'c'), one at a time (midi_control.c rmt_f):
+ *   02 LFO   (0.10.2) <shape 0..3> <32 points, 0..127, 64 the middle>: the LFO's USER 1..4 (upreset.c), at once
  *   01 TEXT  <track 0..5, or 7F: the first VOICE track> <the words, ASCII 32..126, up to 63>: the track's lyric (LYRIC
  *            TEXT, LANG EN if it was off): it sings them from its next note
  *   (10..1F: the sampler's, 0.9.5..0.9.9: gone with it, NAK 1)
@@ -117,12 +118,26 @@ static __attribute__((noinline)) uint32_t rmt_text(const uint8_t *a, uint32_t n)
     cos_say("WORDS FROM THE PHONE");
     return RN_NONE;
 }
+/* (0.10.2) LFO: a USER shape drawn on the phone */
+static void lfo_user_set(uint32_t u, const int8_t *v);   /* (upreset.c) */
+static void lfo_user_poll(void);
+static __attribute__((noinline)) uint32_t rmt_lfo(const uint8_t *a, uint32_t n)
+{
+    int8_t v[LFO_UPTS];
+    uint32_t i;
+    if (n != 1u + LFO_UPTS || a[0] >= LFO_NUSER) return RN_BAD;
+    for (i = 0; i < LFO_UPTS; i++) v[i] = (int8_t)clamp(((int32_t)a[1u + i] - 64) * 2, -127, 127);
+    lfo_user_set(a[0], v);
+    cos_say(a[0] == 0u ? "LFO USER1 DRAWN" : a[0] == 1u ? "LFO USER2 DRAWN" : a[0] == 2u ? "LFO USER3 DRAWN" : "LFO USER4 DRAWN");
+    return RN_NONE;
+}
 /* a frame (after F0 7D 63; without F7) */
 static __attribute__((noinline)) void rmt_frame(const uint8_t *f, uint32_t n)
 {
     uint32_t rc, seq = n >= 2u ? f[1] : 0u;
     if (!n) return;
     if (f[0] == 0x01u) rc = rmt_text(f + 1, n - 1u);
+    else if (f[0] == 0x02u) rc = rmt_lfo(f + 1, n - 1u);
     else rc = RN_BAD;
     if (f[0] == 0x01u) seq = 0;
     if (rc) rmt_reply(RMT_NAK, rc);
@@ -132,6 +147,7 @@ static __attribute__((noinline)) void rmt_frame(const uint8_t *f, uint32_t n)
 static __attribute__((noinline)) void cos_remote_poll(void)
 {
     uint32_t k;
+    lfo_user_poll();                                     /* (0.10.2) the drawn shapes to flash once stopped */
     for (k = 0; k < 16u && rmt_cc_r != rmt_cc_w; k++) {
         uint32_t e;
         RING_PUBLISH();

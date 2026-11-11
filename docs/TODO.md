@@ -45,6 +45,13 @@ Planned work. Done items move to the commit log.
 - Ideas for flash room (GG to pick, 2026-11-10): wavetables from the phone for a WAVETABLE engine; granular textures
   from a short sound; a one-shot kit of own hits; a VOICE phrase library.
 
+## Sounds (GG, 2026-11-11)
+
+- ~~Engines and presets on two knobs~~ (0.10.2): ALGO the engine, PRESETS inside it; EDIT + ALGO the track.
+- ~~Own presets~~ (0.10.2): SAVE > SOUNDS (U01..U31, OCT+ save, OCT- load, REC x2 erase); from the phone: naming,
+  later.
+- ~~Own LFO shapes from the phone~~ (0.10.2): USER1..4, 32 points, U32's record. Left: LFO 2 and the autopan with them?
+
 ## Drums live (GG, 2026-11-10)
 
 - ~~A kick of its own~~ (0.10.0): engine 4 KICK (DRUM-X's kick, its own KIND), T2 at power-on; the kit's kick lane

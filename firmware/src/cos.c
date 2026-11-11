@@ -42,7 +42,7 @@ enum { CM_HOME, CM_TRIG, CM_SRC, CM_AMP, CM_DRONE, CM_FX, CM_GEN, CM_MIX, CM_KEY
 enum { CK_NONE, CK_TRK, CK_GLO, CK_AC, CK_EU, CK_COS, CK_DB };
 enum { CC_OUTCH, CC_MOUT, CC_CLOCK, CC_SLOT, CC_TRKS, CC_LOAD, CC_COMP, CC_CATK, CC_CREL, CC_LIM, CC_PF0, CC_PF3 = CC_PF0 + 3,
        CC_X2, CC_X2E = CC_X2 + 15, CC_OCT, CC_KICK, CC_KICKE = CC_KICK + 4, CC_LN0, CC_LNE = CC_LN0 + 7, CC_KDRV, CC_BT,
-       CC_L1SYNC, CC_L1RATE, CC_L1WAVE, CC_L1MODE, CC_L1PH, CC_L1FADE, CC_L2SYNC, CC_L2RATE, CC_BPM, CC_BFINE,
+       CC_L1SYNC, CC_L1RATE, CC_L1WAVE, CC_L1MODE, CC_L1PH, CC_L1FADE, CC_L2SYNC, CC_L2RATE, CC_BPM, CC_BFINE, CC_USLOT,
        CC_CIN, CC_CTHR, CC_CRAT, CC_CMK, CC_CKNEE, CC_CSC, CC_CMIX, CC_LIN, CC_LREL, CC_LVL, CC_MUTEQ, CC_PCCH, CC_PCOUT, CC_VJCH, CC_EQL, CC_EQM, CC_EQH, CC_MAC0, CC_MAC3 = CC_MAC0 + 3, CC_RB0, CC_RB3 = CC_RB0 + 3, CC_MOPOS, CC_MOBARS, CC_LVLEN, CC_LVRATE, CC_LVDN, CC_LVSH, CC_MCCH, CC_MCCC, CC_MCDIR, CC_MCMAP, CC_MC0, CC_MC3 = CC_MC0 + 3, CC_MOCC,
        CC_NAME, CC_IDLE, CC_SCT, CC_SCG, CC_SCTR, CC_SPV, CC_SPR, CC_SPS, CC_SCM, CC_SPSRC, CC_SCZ, CC_LUT, CC_LUR, CC_LOCAL, CC_KPAT, CC_SCALE, CC_QUANT, CC_DJF, CC_DSEL, CC_DLV, CC_DWAV, CC_DFLT, CC_DBT, CC_DDRV, CC_DLAY, CC_DFB, CC_DSNP, CC_DE0, CC_DEE = CC_DE0 + DE_N - 1 };
 _Static_assert(CC_DEE < 0xFEu, "the CK_COS ids fit a page's byte (0xFE, 0xFF: OCTAVE, none)");
@@ -177,7 +177,8 @@ static const cpg_t CZP_MIX[] = {{"MIX", CK_TRK, {P_LEVEL, P_PAN, P_GLIDE, P_MUTE
 static const cpg_t CZP_KEY[] = {{"KEY", CK_COS, {CC_SCALE, CC_QUANT, X, X}}};   /* (the root: the keys; the song's scale,
                                                          * whichever track is picked: cos_mel) */
 static const cpg_t CZP_PERF[] = {{"FX PAD", CK_COS, {CC_PF0, CC_PF0 + 1u, CC_PF0 + 2u, CC_PF3}}};   /* (FX held) */
-static const cpg_t CZP_PROJ[] = {{"PROJECT", CK_COS, {CC_SLOT, CC_NAME, X, X}}};   /* (KNOB 1 the slot, every song's: 1A ..
+static const cpg_t CZP_PROJ[] = {{"PROJECT", CK_COS, {CC_SLOT, CC_NAME, X, X}},
+                                {"SOUNDS", CK_COS, {CC_USLOT, X, X, X}}};   /* (0.10.2) the user presets: KNOB 1 the slot */   /* (KNOB 1 the slot, every song's: 1A ..
                                                          * 8D; white keys 1..4 this song's, 9..16 the songs; KNOB 2 a name) */
 #undef X
 static const char *const CM_NAME[CM_N] = {"HOME", "TRIG", "SRC", "AMP", "DRONE", "FX", "GEN", "MIX", "KEY", "SAVE"};
@@ -215,6 +216,8 @@ static struct {
     uint32_t clr_t;                                     /* .. when (fm1_ms) */
     uint32_t set_ms;                                    /* a setting turned (MASTER): saved 2 s after, not every detent */
     uint8_t slot, pn_ok;                                /* SAVE: the slot picked (0..3); the names below read */
+    uint8_t uslot;                                      /* (0.10.2) SAVE > SOUNDS: the user preset picked (0..UP_SLOTS-2) */
+    uint32_t snd_ms;                                    /* .. OCT+ on a used one / REC: when asked (again within 3 s: done) */
     uint8_t idle_up, idle_eat, batt_low;                /* the IDLE screen up; its waking touch swallowed; LOW said */
     uint32_t act_ms, idle_t;                            /* the last touch; the IDLE frame's time (every strip the same) */
     uint16_t nm_n;                                      /* .. NAME's turns (each a name of its own: back is the same) */
@@ -234,10 +237,10 @@ static int cos_dead(const track_t *t, uint32_t id);      /* (below: a parameter 
 static void cos_pages(uint32_t m, const cpg_t **p, uint32_t *n)
 {
     static const cpg_t *const P[CM_N] = {CZP_HOME, CZP_TRIG, CZP_SRC, CZP_AMP, CZP_DRONE, CZP_FX, CZP_GENA, CZP_MIX, CZP_KEY, CZP_PROJ};
-    static const uint8_t N[CM_N] = {6, 4, 9, 9, 2, 9, 4, 14, 1, 1};   /* (each at most CZ_TABS: cos_tabs) */
+    static const uint8_t N[CM_N] = {6, 4, 9, 9, 2, 9, 4, 14, 1, 2};   /* (each at most CZ_TABS: cos_tabs) */
     _Static_assert(NELEM(CZP_HOME) == 6 && NELEM(CZP_TRIG) == 4 && NELEM(CZP_SRC) == 9 && NELEM(CZP_AMP) == 9 &&
                    NELEM(CZP_DRONE) == 2 && NELEM(CZP_FX) == 9 && NELEM(CZP_GENA) == 4 && NELEM(CZP_MIX) == 14 &&
-                   NELEM(CZP_KEY) == 1 && NELEM(CZP_PROJ) == 1 && NELEM(CZP_SRCD) <= CZ_TABS && NELEM(CZP_GENS) <= CZ_TABS &&
+                   NELEM(CZP_KEY) == 1 && NELEM(CZP_PROJ) == 2 && NELEM(CZP_SRCD) <= CZ_TABS && NELEM(CZP_GENS) <= CZ_TABS &&
                    NELEM(CZP_SRCV) == 10 && NELEM(CZP_AMPA) == 9 && NELEM(CZP_SRCN) == 9,
                    "N: the pages each mode has (0.9.2: a count past its list read past it)");
     int vo = m == CM_SRC && trk_engp(TSEL) == &ENG_FORMANT;
@@ -548,6 +551,12 @@ static const param_desc_t *cos_cdesc(uint32_t id, int16_t **vp)
     static const param_desc_t DT = {"TRACKS", F_INT, 4, NTRK, 5, 0, 0}, DL = {"LOAD", F_ENUM, 0, 2, 2, LD, 0};
     if (id == CC_SLOT) { cz.cc_v[3] = (int16_t)(song_cur * 4u + cz.slot + 1u); *vp = &cz.cc_v[3]; return &DS; }
     if (id == CC_NAME) { cz.cc_v[3] = (int16_t)cz.nm_n; *vp = &cz.cc_v[3]; return &DN; }
+    if (id == CC_USLOT) {                                /* (0.10.2) SAVE > SOUNDS: U01 .. U31 (U32: the LFO shapes') */
+        static const param_desc_t DU = {"SOUND", F_INT, 1, UP_SLOTS - 1u, 1, 0, 0};
+        cz.cc_v[3] = (int16_t)(cz.uslot + 1u);
+        *vp = &cz.cc_v[3];
+        return &DU;
+    }
     if (id >= CC_SCT && id <= CC_LUR) {                  /* (GLO > SCOPE .. LOUDNESS: how they show, not kept) */
         static const char *const TM[] = {"5MS", "11MS", "44MS", "87MS", 0}, *const GN[] = {"AUTO", "X1", "X2", "X4", "X8", 0};
         static const char *const VW[] = {"BARS", "FALL", 0}, *const RG[] = {"60DB", "48DB", "36DB", 0};
@@ -817,6 +826,9 @@ static void cos_cput(uint32_t id, int32_t v)
         }
         cz.slot = (uint8_t)(w % 4u);
         cos_proj_scan();
+    } else if (id == CC_USLOT) {
+        cz.uslot = (uint8_t)(clamp(v, 1, UP_SLOTS - 1) - 1);
+        cz.snd_ms = 0;
     } else if (id == CC_NAME) {
         cz.nm_n = (uint16_t)clamp(v, 0, 999);
         cos_name_pick();
@@ -1407,8 +1419,39 @@ static void cos_section(uint32_t s)
 {
     if (!section_jump(s) && cos_pc_out && cos_pc_ch) cos_pc_out_req = (uint8_t)(s % 4u + 1u);
 }
+/* (0.10.2) SAVE > SOUNDS: OCT+ the selected track's sound into the slot (a used one: OCT+ again within 3 s), OCT- the
+ * slot's sound into the track; REC twice: the slot erased. Flash: stopped only (up_put, STOP TO SAVE) */
+static int up_used(uint32_t k);
+static void up_ui_named(uint32_t op, uint32_t k, const char *name);
+static void sound_name(const track_t *t, char *b);
+static __attribute__((noinline)) void cos_snd_oct(int up)
+{
+    uint32_t k = cz.uslot % (UP_SLOTS - 1u);
+    if (!up) { up_ui_named(0, k, 0); cz.snd_ms = 0; return; }
+    if (up_used(k) && (!cz.snd_ms || fm1_ms - cz.snd_ms > 3000u)) {
+        cz.snd_ms = fm1_ms ? fm1_ms : 1u;
+        cos_say("OCT+ AGAIN: REPLACE");
+        return;
+    }
+    {
+        char n[24];
+        sound_name(TSEL, n);
+        n[12] = 0;
+        cz.snd_ms = 0;
+        up_ui_named(2, k, n);
+    }
+}
+static __attribute__((noinline)) void cos_snd_erase(void)
+{
+    uint32_t k = cz.uslot % (UP_SLOTS - 1u);
+    if (!up_used(k)) { cos_say("EMPTY SLOT"); return; }
+    if (!cz.snd_ms || fm1_ms - cz.snd_ms > 3000u) { cz.snd_ms = fm1_ms ? fm1_ms : 1u; cos_say("REC AGAIN: ERASE"); return; }
+    cz.snd_ms = 0;
+    up_ui_named(1, k, 0);
+}
 static __attribute__((noinline)) void cos_proj_oct(int up)
 {
+    if (cz.tab[CM_PROJ] == 1u) { cos_snd_oct(up); return; }
     if (up) cos_name_auto();                             /* (a music with no name: one drawn for it) */
     if (up && song.playing) section_store(cz.slot);      /* (playing: kept now, written once stopped) */
     else if (up) project_save(cz.slot);
@@ -1455,6 +1498,42 @@ static int cos_keys_ui(void)
 }
 
 /* the sound just loaded, on the top line: its name (engine: name when it fits) */
+/* (0.10.2) the sound list (ui.c preset_at: the engines' presets in ENGINE_ORDER, then the user presets) by engine:
+ * ALGO the next / last engine (its first sound), PRESETS the next / last sound of this one (a user preset counts as its
+ * engine's) */
+static uint32_t cos_snd_eng(uint32_t n)
+{
+    uint32_t k, e = preset_at(n, &k);
+    return e == NENGINES ? (k < UP_SLOTS ? up_engine(k) : NENGINES) : e;
+}
+static __attribute__((noinline)) void cos_engine_step(int32_t dir)
+{
+    uint32_t total, cur = preset_pos(&total), k, i, n = 0, e = NENGINES, e0 = TSEL->eng_req;
+    if (!total) return;
+    if (cur >= total) cur = 0;
+    for (i = 1; i <= total; i++) {
+        n = (cur + (dir > 0 ? i : total * 2u - i)) % total;
+        e = preset_at(n, &k);
+        if (e != NENGINES && e != e0) break;
+    }
+    if (i > total) { cos_say("ONE ENGINE"); return; }
+    for (i = 1; i < total; i++) {                        /* (back to the engine's first sound: each engine's in a row) */
+        uint32_t m = (n + total - 1u) % total;
+        if (preset_at(m, &k) != e) break;
+        n = m;
+    }
+    preset_go(n);
+}
+static __attribute__((noinline)) void cos_preset_in(int32_t dir)
+{
+    uint32_t total, cur = preset_pos(&total), i, n, e0 = TSEL->eng_req;
+    if (!total) return;
+    if (cur >= total) cur = dir > 0 ? total - 1u : 0u;
+    for (i = 1; i <= total; i++) {
+        n = (cur + (dir > 0 ? i : total * 2u - i)) % total;
+        if (cos_snd_eng(n) == e0) { preset_go(n); return; }
+    }
+}
 static __attribute__((noinline)) void cos_sound_say(void)
 {
     char b[40], n[24];
@@ -1625,6 +1704,7 @@ static __attribute__((noinline)) void cos_input(void)
         else if (b == B_REC && ((fm1_in.buttons >> panel.btn[B_SEQ]) & 1u)) { cz.sq_used = 1; cos_clear(); }   /* SEQ held +
                                                          * REC, twice */
         else if (b == B_REC && cz.mode == CM_DRONE) { cos_drone_clear(); cos_say("DRONE OFF"); }
+        else if (b == B_REC && cz.mode == CM_PROJ && cz.tab[CM_PROJ] == 1u) cos_snd_erase();   /* (0.10.2) SOUNDS: x2 erase */
         else if (b == B_REC && cz.mode == CM_PROJ) cos_proj_new();   /* (0.9.3) SAVE: REC twice = a new, empty project */
         else if (b == B_REC && cz.mode == CM_TRIG && cos_held()) {   /* a step held + REC: its locks go */
             uint64_t h = cos_held();
@@ -1752,9 +1832,17 @@ static __attribute__((noinline)) void cos_input(void)
         cz.tab[cz.mode] = (uint8_t)clamp((int32_t)cz.tab[cz.mode] + (s > 0 ? 1 : -1), 0, (int32_t)n - 1);
         cz.hot = 0;
     }
-    if ((s = panel_enc(EN_ALGO)) != 0) {
-        track_select((uint32_t)clamp((int32_t)song.sel + (s > 0 ? 1 : -1), 0, (int32_t)trk_live - 1));
-        cz.bank = 0;
+    if ((s = panel_enc(EN_ALGO)) != 0) {                 /* (0.10.2) ALGO: the track's ENGINE, one a click (its first
+                                                         * sound); EDIT held, or on SAVE: the track */
+        if (cz.ed_down || cz.mode == CM_PROJ) {
+            cz.ed_used |= cz.ed_down;
+            track_select((uint32_t)clamp((int32_t)song.sel + (s > 0 ? 1 : -1), 0, (int32_t)trk_live - 1));
+            cz.bank = 0;
+        } else {
+            cos_engine_step(s > 0 ? 1 : -1);
+            ui.msg_t = 0;
+            cos_sound_say();
+        }
     }
     if ((s = panel_enc(EN_PRESET)) != 0) {
         if (cz.ed_down) {                                /* EDIT held: the first sound of the next engine */
@@ -1769,8 +1857,9 @@ static __attribute__((noinline)) void cos_input(void)
         } else if (cz.mode == CM_TRIG && !cos_held()) {  /* TRIG: the bank of 16 */
             uint32_t n = cos_banks();
             cz.bank = (uint8_t)clamp((int32_t)cz.bank + (s > 0 ? 1 : -1), 0, (int32_t)n - 1);
-        } else if (cz.mode != CM_TRIG && cz.mode != CM_PROJ) {   /* the track's next sound, every engine's in turn */
-            preset_step(s > 0 ? 1 : -1);
+        } else if (cz.mode != CM_TRIG && cz.mode != CM_PROJ) {   /* (0.10.2) the track's next sound in its engine
+                                                         * (and the user presets made with it) */
+            cos_preset_in(s > 0 ? 1 : -1);
             ui.msg_t = 0;
             cos_sound_say();
         }
@@ -2977,10 +3066,42 @@ static void cos_body_gen(void)
     }
 }
 
+/* (0.10.2) SAVE > SOUNDS: six slots around the one picked: U07, its name, its engine */
+static void up_name(uint32_t k, char *b);
+static __attribute__((noinline)) void cos_body_snd(void)
+{
+    uint32_t r, k0 = cz.uslot > 2u ? cz.uslot - 2u : 0u;
+    char b[24];
+    if (k0 + 6u > UP_SLOTS - 1u) k0 = UP_SLOTS - 1u - 6u;
+    for (r = 0; r < 6u; r++) {
+        uint32_t k = k0 + r;
+        int32_t y = 36 + (int32_t)r * 14;
+        int pick = k == cz.uslot, used = up_used(k);
+        if (pick) cv_rect(0, y - 2, 240, 14, C_DARK);
+        b[0] = 'U'; b[1] = (char)('0' + (k + 1u) / 10u); b[2] = (char)('0' + (k + 1u) % 10u); b[3] = 0;
+        cos_tx(4, y, b, pick ? C_FG : C_MID);
+        if (used) {
+            up_name(k, b);
+            cos_tx(36, y, b, pick ? C_FG : C_MID);
+            cos_txr(236, y, ENGINES[up_engine(k) % NENGINES]->name, C_DIM);
+        } else cos_tx(36, y, "EMPTY", C_DIM);
+    }
+    {
+        char t[32] = "T1 ", n[24];
+        t[1] = (char)('1' + song.sel % NTRK);
+        sound_name(TSEL, n);
+        n[14] = 0;
+        str_cpy(t + 3, n, sizeof t - 3);
+        cos_txc(120, 124, CZ_LBL, t, C_FG);
+    }
+    cos_txc(120, 140, CZ_LBL, cz.snd_ms && fm1_ms - cz.snd_ms < 3000u ? "AGAIN TO CONFIRM" :
+                              "OCT+ SAVE OCT- LOAD REC2 DEL", cz.snd_ms && fm1_ms - cz.snd_ms < 3000u ? C_RED : C_DIM);
+}
 static void cos_body_proj(void)
 {
     uint32_t i;
     char b[24];
+    if (cz.tab[CM_PROJ] == 1u) { cos_body_snd(); return; }
     for (i = 0; i < 4u; i++) {
         int32_t y = 34 + (int32_t)i * 20;
         int pick = i == cz.slot, used = cz.pn[i][0] != 0;
@@ -3261,7 +3382,7 @@ dials:
 /* the splash (ui_draw.c draw_splash / splash_write under COS_SLIM; main.c's boot loop calls it every ~4 ms for
  * SPL_WRITE + SPL_HOLD ms): black, a few still stars, the name 2x, the version, a 16-block bar filling like a pattern
  * (the block being filled red), READY. Drawn whole once, then only the bar's strip when a block fills */
-#define COS_VERSION "0.10.1"
+#define COS_VERSION "0.10.2"
 static void cos_px2(int32_t x, int32_t y, const char *s, uint16_t c)      /* (the face 2 x 2) */
 {
     int32_t r, b, b0;

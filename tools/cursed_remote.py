@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: GPL-3.0-only
 # Copyright (C) 2026 cursedsound
-"""CURSED REMOTE: the JIANT FM-1 (cursed-os 0.10.0+) from an iPhone, in Pythonista 3.
+"""CURSED REMOTE: the JIANT FM-1 (cursed-os 0.10.2+) from an iPhone, in Pythonista 3.
 
 Put this file and cursed_remote_proto.py in the same Pythonista folder and run this one.
 
@@ -12,10 +12,11 @@ Put this file and cursed_remote_proto.py in the same Pythonista folder and run t
   DRUMS    each drum sound in and out (KICK, SNARE, CLAP, HAT, OPEN HAT, TOM, RIM, BELL; cursed-os 0.10.0): lit = in,
            on the beat / bar as the FM-1's MUTE Q says
   VOICE    type words: the first VOICE track sings them from its next note
+  LFO      draw the LFO's USER1..4 shapes (cursed-os 0.10.2): the FM-1's LFO page, WAVE = USER1..4
 
 Works over USB MIDI too (a camera adapter / USB-C): pick the FM-1's USB port as the output.
 """
-import ctypes, os, queue, struct, sys, threading, time
+import ctypes, math, os, queue, struct, sys, threading, time
 from ctypes import c_void_p, c_uint32, c_int32, c_uint64, c_float, POINTER, byref
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -381,6 +382,111 @@ class DrumsPage(ui.View):
         return f
 
 
+class ShapeCanvas(ui.View):
+    """32 bars, drawn with a finger: up high, down low (the FM-1's LFO USER shape)"""
+    def __init__(self, page, **kw):
+        super().__init__(**kw)
+        self.page, self.background_color, self.corner_radius = page, PANEL, 8
+
+    def draw(self):
+        v = self.page.shapes[self.page.cur]
+        w, h = self.width / 32.0, self.height
+        ui.set_color('#333340')
+        ui.fill_rect(0, h / 2, self.width, 1)
+        ui.set_color(HOT)
+        for i, x in enumerate(v):
+            y = h / 2 - x / 127.0 * (h / 2 - 4)
+            ui.fill_rect(i * w + 1, min(y, h / 2), w - 2, max(2, abs(y - h / 2)))
+
+    def at(self, t):
+        x, y = t.location
+        i = max(0, min(31, int(x / self.width * 32)))
+        self.page.shapes[self.page.cur][i] = int(max(-127, min(127, (self.height / 2 - y) / (self.height / 2 - 4) * 127)))
+        self.set_needs_display()
+
+    def touch_began(self, t):
+        self.at(t)
+
+    def touch_moved(self, t):
+        self.at(t)
+
+    def touch_ended(self, t):
+        self.page.send()
+
+
+class LfoPage(ui.View):
+    """the LFO's USER 1..4 shapes: draw, it is sent when the finger lifts (cursed-os 0.10.2: frame 02)"""
+    FILE = os.path.join(os.path.expanduser('~/Documents'), 'cursed_lfo_shapes.json')
+
+    def __init__(self, app, **kw):
+        super().__init__(**kw)
+        import json
+        self.app, self.cur = app, 0
+        try:
+            with open(self.FILE) as f:
+                self.shapes = json.load(f)
+            assert len(self.shapes) == 4 and all(len(x) == 32 for x in self.shapes)
+        except Exception:
+            self.shapes = [[int(127 * math.sin(2 * math.pi * i / 32)) for i in range(32)] for _ in range(4)]
+        fw = W - 20
+        self.seg = ui.SegmentedControl(frame=(10, 8, fw, 32), segments=['USER1', 'USER2', 'USER3', 'USER4'])
+        self.seg.selected_index = 0
+        self.seg.action = self.pick
+        self.add_subview(self.seg)
+        self.cv = ShapeCanvas(self, frame=(10, 48, fw, 200))
+        self.add_subview(self.cv)
+        g = 6
+        w4 = (fw - 3 * g) / 4
+        for i, (t, fn) in enumerate([('SINE', lambda i: 127 * math.sin(2 * math.pi * i / 32)),
+                                     ('TRI', lambda i: 127 - abs(i - 16) * 254 / 16),
+                                     ('RAMP UP', lambda i: -127 + i * 254 / 31),
+                                     ('RAMP DN', lambda i: 127 - i * 254 / 31),
+                                     ('SQUARE', lambda i: 127 if i < 16 else -127),
+                                     ('STEPS', lambda i: [-127, -42, 42, 127][i // 8]),
+                                     ('RANDOM', None),
+                                     ('INVERT', 'inv')]):
+            r, c = divmod(i, 4)
+            self.add_subview(button(t, (10 + c * (w4 + g), 258 + r * 44, w4, 38), self.fill(fn)))
+        self.add_subview(label('On the FM-1: the LFO page, WAVE = USER1..4. It changes as you draw; it is kept '
+                               'once the music stops.', (10, 350, fw, 40), 10))
+        self.subviews[-1].number_of_lines = 3
+
+    def pick(self, s):
+        self.cur = self.seg.selected_index
+        self.cv.set_needs_display()
+
+    def fill(self, fn):
+        import random
+        def f(s):
+            v = self.shapes[self.cur]
+            for i in range(32):
+                if fn == 'inv':
+                    v[i] = -v[i]
+                elif fn is None:
+                    v[i] = random.randint(-127, 127)
+                else:
+                    v[i] = int(max(-127, min(127, fn(i))))
+            self.cv.set_needs_display()
+            self.send()
+        return f
+
+    @ui.in_background
+    def send(self):
+        import json
+        try:
+            with open(self.FILE, 'w') as f:
+                json.dump(self.shapes, f)
+        except Exception:
+            pass
+        drain()
+        midi.send(P.lfo_frame(self.cur, self.shapes[self.cur]))
+        r = wait_reply(1.0)
+        if not r:
+            self.app.say('no answer (cursed-os 0.10.2 or later?)')
+        elif r[0] != P.ACK_CC:
+            self.app.say('the FM-1 said no')
+
+
 class PadPage(ui.View):
     """the FX pad: an effect runs while its key is touched"""
     def __init__(self, **kw):
@@ -476,19 +582,19 @@ class App(ui.View):
         sw, sh = ui.get_screen_size()
         self.frame = (0, 0, min(sw, sh), max(sw, sh))
         self.tabs = ui.SegmentedControl(frame=(10, 8, W - 20, 32),
-                                        segments=['PLAY', 'DRUMS', 'FX', 'MIX', 'VOICE', 'LINK'], action=self.show)
+                                        segments=['PLAY', 'DRUMS', 'FX', 'MIX', 'VOICE', 'LFO', 'LINK'], action=self.show)
         self.tabs.tint_color = HOT
         self.add_subview(self.tabs)
         self.st = label('', (10, 42, W - 20, 18), 10)
         self.add_subview(self.st)
         f = (0, 62, W, self.height - 62)
-        self.pages = [PlayPage(frame=f), DrumsPage(frame=f), PadPage(frame=f), MixPage(frame=f), VoicePage(self, frame=f),
+        self.pages = [PlayPage(frame=f), DrumsPage(frame=f), PadPage(frame=f), MixPage(frame=f), VoicePage(self, frame=f), LfoPage(self, frame=f),
                       ConnectPage(self, frame=f)]
         for p in self.pages:
             p.flex = 'WH'
             p.background_color = BG
             self.add_subview(p)
-        self.tabs.selected_index = 5 if not midi.pick_fm1() else 0
+        self.tabs.selected_index = 6 if not midi.pick_fm1() else 0
         self.show(None)
         self.status()
 

@@ -2,7 +2,8 @@
  * Copyright (C) 2026 Leo Kuroshita (@kurogedelic), Hügelton Instruments */
 /* Parameter descriptors, formatting and the page table. */
 static const char *const N_LWAVE[] = {"SIN", "TRI", "SAW", "SQR", "S&H",
-                                      "RAMP", "PULSE", "SMOOTH", "STEPS", "EXP", "BOUNCE"};   /* (cursed-os: 5 ..; voice.c lfo_shape) */
+                                      "RAMP", "PULSE", "SMOOTH", "STEPS", "EXP", "BOUNCE",   /* (cursed-os: 5 ..; voice.c lfo_shape) */
+                                      "USER1", "USER2", "USER3", "USER4"};   /* (0.10.2: the phone's, upreset.c) */
 static const char *const N_APWAVE[] = {"SIN", "TRI", "SAW", "SQR", "S&H"};   /* (the AUTO-PAN's: fx.c, the first five) */
 /* (JIANT 0.6.51) the LFO's RATE below 0: in time with the tempo, -1 the slowest (next to the slowest free rate) */
 static const char *const N_LSYNC[15] = {"4BAR", "2BAR", "1BAR", "1/2", "1/4", "1/8D", "1/4T", "1/8", "1/8T", "1/16",
