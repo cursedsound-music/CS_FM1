@@ -13,6 +13,8 @@
 
 static int fails;
 #define CHECK(c, ...) do { if (!(c)) { fails++; printf("FAIL: "); printf(__VA_ARGS__); printf("\n"); } } while (0)
+#define LED_ON(k) ((fm1_led[led_pos[14u + (k)] >> 3] >> (led_pos[14u + (k)] & 7u)) & 1u)
+#define LED_BR(k) ((fm1_led_breath[led_pos[14u + (k)] >> 3] >> (led_pos[14u + (k)] & 7u)) & 1u)
 static void set_mq(uint32_t v) { favorites.factory[6][18] = (uint8_t)(v + 1u); cos_mq = (uint8_t)v; }   /* (MUTE Q: the settings' byte) */
 static void frame16(void) { host_ticks += 16000u; fm1_ms += 16u; ui_input(); ui_draw(); }
 static void key(uint32_t k) { host_notes = 1u << k; cos_input(); frame16(); }
@@ -124,6 +126,45 @@ int main(void)
         CHECK(lv_snd[1] == 127 && lv_snd[0] == 64, "CC 101 / 100: REVERB / DELAY (%d %d)", lv_snd[1], lv_snd[0]);
         rmt_cc_put(99, 127); cos_remote_poll();
         CHECK(!lv_snd[0] && !lv_snd[1], "CC 99: BACK TO NORMAL (%d %d)", lv_snd[0], lv_snd[1]);
+    }
+    {   /* (0.10.4) the keys' lights on LIVE: a track playing, its black key lit; a drum sound in, its white key lit; a
+         * flip waiting for the bar, its key breathing */
+        uint32_t k;
+        set_mq(0);
+        cz.mode = CM_HOME; cz.tab[CM_HOME] = 1;
+        for (k = 0; k < NTRK; k++) trk[k].p[P_MUTE] = 0;
+        trk[4].p[P_MUTE] = 1;
+        dx_mute_set(DXM_LANE(2));
+        cos_leds();                                      /* (its first call reads the (zero) map: then ours) */
+        {   /* (the host's key map is zero: the hardware's, as ui_test.c test_step_leds) */
+            static const int8_t MAP[6][FM1_NCOL] = {
+                {-1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1}, { 5, 11,  4, 10,  3,  9,  2,  8, -1, -1, -1},
+                {34, 35, 36, 37, 38, 40, 39, 13,  7,  6, 12}, {23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33},
+                { 0,  1, 15, 14, 17, 16, 19, 18, 20, 21, 22}, {-1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1}};
+            uint32_t id, p, r;
+            for (id = 0; id < 41u; id++) {
+                led_pos[id] = 0xFF;
+                for (p = 0; p < FM1_NCOL; p++)
+                    for (r = 1; r < 5u; r++)
+                        if (MAP[r][p] == (int8_t)id) led_pos[id] = (uint8_t)((p << 3) | r);
+            }
+        }
+        frame16(); cos_leds();
+        if (getenv("DBG")) { uint32_t q; for (q = 0; q < 8; q++) printf("pos %u: %x led %x\n", q, led_pos[14 + q], fm1_led[q]); printf("mode %u tab %u live %d anim %d\n", cz.mode, cz.tab[CM_HOME], cos_on_live(), host_anim); }
+        for (k = 0; k < 6u; k++)
+            CHECK(LED_ON(BK2[k]) == (k != 4u), "black %u: %s", k + 1u, k != 4u ? "lit (playing)" : "dark (muted)");
+        for (k = 0; k < 8u; k++)
+            CHECK(LED_ON(WK2[k]) == (k != 2u), "white %u: %s", k + 1u, k != 2u ? "lit (in)" : "dark (CLAP out)");
+        set_mq(2);
+        transport_req = 1; frame16();
+        cos_drum_flip(5);
+        key(BK2[1]);                                     /* (black 2: the KICK muted on the bar) */
+        cos_leds();
+        CHECK(LED_BR(WK2[5]) && !LED_ON(WK2[5]), "TOM's flip waiting: white 6 breathes");
+        CHECK(LED_BR(BK2[1]) && !LED_ON(BK2[1]), "T2's mute waiting: black 2 breathes");
+        transport_req = 2; frame16();
+        set_mq(0);
+        dx_mute_set(0);
     }
     printf("cos_back_test: %s (%d failures)\n", fails ? "FAILED" : "ok", fails);
     return fails != 0;

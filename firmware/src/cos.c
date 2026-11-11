@@ -3477,7 +3477,7 @@ dials:
 /* the splash (ui_draw.c draw_splash / splash_write under COS_SLIM; main.c's boot loop calls it every ~4 ms for
  * SPL_WRITE + SPL_HOLD ms): black, a few still stars, the name 2x, the version, a 16-block bar filling like a pattern
  * (the block being filled red), READY. Drawn whole once, then only the bar's strip when a block fills */
-#define COS_VERSION "0.10.3"
+#define COS_VERSION "0.10.4"
 static void cos_px2(int32_t x, int32_t y, const char *s, uint16_t c)      /* (the face 2 x 2) */
 {
     int32_t r, b, b0;
@@ -3579,7 +3579,7 @@ static int cos_scale_view(void)
 }
 static __attribute__((noinline)) void cos_leds(void)
 {
-    uint8_t nl[FM1_NCOL] = {0}, nd[FM1_NCOL] = {0}, nm[FM1_NCOL] = {0}, nh[FM1_NCOL] = {0};
+    uint8_t nl[FM1_NCOL] = {0}, nd[FM1_NCOL] = {0}, nm[FM1_NCOL] = {0}, nh[FM1_NCOL] = {0}, nb[FM1_NCOL] = {0};
     const track_t *t = TSEL;
     uint32_t k, len = (uint32_t)clamp(t->p[P_SLEN], 1, NSTEP), now = song.playing ? t->seq_idx % len : ~0u;
     static uint8_t ready COS_RAM;
@@ -3599,6 +3599,22 @@ static __attribute__((noinline)) void cos_leds(void)
         }
         for (k = 0; k < 11u; k++)
             led_put(nl, 14u + BK[k], cz.mode == CM_HOME ? k < trk_live && !trk[k].p[P_MUTE] : cos_kit() && k == cz.lane);
+        if (cz.mode == CM_HOME) {                        /* (0.10.4) a mute queued for the beat / bar: its key breathes
+                                                         * (lit now, dark next, or the other way round) */
+            for (k = 0; k < NTRK && k < trk_live; k++)
+                if ((live_qmute >> k) & 1u) { led_clear(nl, 14u + BK[k]); led_put(nb, 14u + BK[k], 1); }
+        }
+        if (cos_on_live()) {                             /* (0.10.4) LIVE: white 1..8 lit while the drum sound is in
+                                                         * (KICK: the KICK track playing), breathing when a flip waits */
+            int kt = cos_kick_trk();
+            for (k = 0; k < 8u; k++) {
+                int in = k || kt < 0 ? !(dx_mute & DXM_LANE(k)) : !trk[kt].p[P_MUTE];
+                int wait = k || kt < 0 ? (live_qlane >> k) & 1u : (live_qmute >> kt) & 1u;
+                led_put(nl, 14u + WK[k], in && !wait);
+                if (!in || wait) led_clear(nl, 14u + WK[k]);
+                if (wait) led_put(nb, 14u + WK[k], 1);
+            }
+        }
     } else if (cz.mode == CM_DRONE) {
         for (k = 0; k < 27u; k++) {
             uint32_t i, on = 0;
@@ -3619,8 +3635,8 @@ static __attribute__((noinline)) void cos_leds(void)
     if (song.playing) { led_clear(nd, panel.btn[B_PLAY]); nl[LED_PLAY_GREEN >> 3] |= (uint8_t)(1u << (LED_PLAY_GREEN & 7u)); }
     fm1_led_dim_level(0);
     for (k = 0; k < FM1_NCOL; k++) {
-        fm1_led_dim[k] = (uint8_t)(nd[k] & ~nl[k]);
-        fm1_led_breath[k] = 0;
+        fm1_led_dim[k] = (uint8_t)(nd[k] & ~nl[k] & ~nb[k]);   /* (a breathing key not held at the glow: 0.10.4) */
+        fm1_led_breath[k] = nb[k];
         fm1_led_hi[k] = (uint8_t)(nh[k] & ~nl[k]);
         fm1_led_mid[k] = (uint8_t)(nm[k] & ~nl[k] & ~nh[k]);
         fm1_led[k] = nl[k];
