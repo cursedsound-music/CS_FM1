@@ -1515,13 +1515,51 @@ static void cos_snap(void)
     cos_nrm.djf = song.g[G_DJF];
     cos_nrm.fb = song.g[G_DFDBK];
 }
+/* (0.12.5, GG: "the current tail shouldn't get lost ... like a normal send") BACK TO NORMAL lets the effects ring out:
+ * the global sends go back over ~100 ms (no more signal in, no click), but what is already in the delay and the reverb
+ * plays on; the delay's FEEDBACK glides back over two bars (at once, a high FEEDBACK let down cut the echoes short).
+ * A knob turned meanwhile takes over (its ramp ends). The DJ FILTER: at once (the drop) */
+static struct { uint8_t on, snd0[2], snd1[2]; int16_t fb0, fb1, fb_set, snd_set[2]; uint32_t t0, fb_ms; } cos_rmp;
 static void cos_back_knobs(void)                         /* the knobs to NORMAL (the main loop's) */
 {
+    uint32_t bpm = (uint32_t)clamp(song.g[G_BPM], 40, 300);
     if (song.g[G_DJF] != cos_nrm.djf) motion_djf_set(TSEL, cos_nrm.djf);
-    song.g[G_DFDBK] = cos_nrm.fb;
-    lv_snd[0] = cos_nrm.snd[0];
-    lv_snd[1] = cos_nrm.snd[1];
+    cos_rmp.on = 1;
+    cos_rmp.t0 = fm1_ms;
+    cos_rmp.fb0 = song.g[G_DFDBK];
+    cos_rmp.fb1 = cos_nrm.fb;
+    cos_rmp.fb_set = song.g[G_DFDBK];
+    cos_rmp.fb_ms = cos_rmp.fb0 > cos_rmp.fb1 && song.playing ? 2u * 4u * 60000u / bpm : 0u;   /* (two bars; down only:
+                                                         * a FEEDBACK lower than normal comes back up at once) */
+    cos_rmp.snd0[0] = lv_snd[0]; cos_rmp.snd0[1] = lv_snd[1];
+    cos_rmp.snd1[0] = cos_nrm.snd[0]; cos_rmp.snd1[1] = cos_nrm.snd[1];
+    cos_rmp.snd_set[0] = lv_snd[0]; cos_rmp.snd_set[1] = lv_snd[1];
     cos_nrm.ok = 0;
+}
+static void cos_rmp_poll(void)                           /* (each frame) BACK TO NORMAL's glides */
+{
+    uint32_t t = fm1_ms - cos_rmp.t0, i, on = 0;
+    if (!cos_rmp.on) return;
+    if (cos_rmp.fb_set >= 0) {
+        if (song.g[G_DFDBK] != cos_rmp.fb_set) cos_rmp.fb_set = -1;   /* (FEEDBACK turned: its own now) */
+        else {
+            int32_t v = t >= cos_rmp.fb_ms ? cos_rmp.fb1 : cos_rmp.fb0 + ((cos_rmp.fb1 - cos_rmp.fb0) * (int32_t)t) / (int32_t)cos_rmp.fb_ms;   /* (32 bits: 127 x 12 s) */
+            song.g[G_DFDBK] = (int16_t)v;
+            cos_rmp.fb_set = (int16_t)v;
+            on |= t < cos_rmp.fb_ms;
+        }
+    }
+    for (i = 0; i < 2u; i++) {
+        if (cos_rmp.snd_set[i] < 0) continue;
+        if (lv_snd[i] != (uint8_t)cos_rmp.snd_set[i]) { cos_rmp.snd_set[i] = -1; continue; }   /* (turned: its own) */
+        {
+            int32_t a = cos_rmp.snd0[i], b = cos_rmp.snd1[i], v = t >= 100u ? b : a + (b - a) * (int32_t)t / 100;
+            lv_snd[i] = (uint8_t)v;
+            cos_rmp.snd_set[i] = (int16_t)v;
+            on |= t < 100u;
+        }
+    }
+    cos_rmp.on = (uint8_t)on;
 }
 static __attribute__((noinline)) void cos_back(int up)
 {
@@ -1552,6 +1590,7 @@ static __attribute__((noinline)) void cos_back(int up)
 }
 static void cos_back_poll(void)                          /* (each frame) the knobs back when the ISR says it is time */
 {
+    cos_rmp_poll();
     if (live_qback == 2u) {
         live_qback = 0;
         cos_back_knobs();
@@ -3663,7 +3702,7 @@ dials:
 /* the splash (ui_draw.c draw_splash / splash_write under COS_SLIM; main.c's boot loop calls it every ~4 ms for
  * SPL_WRITE + SPL_HOLD ms): black, a few still stars, the name 2x, the version, a 16-block bar filling like a pattern
  * (the block being filled red), READY. Drawn whole once, then only the bar's strip when a block fills */
-#define COS_VERSION "0.12.4"
+#define COS_VERSION "0.12.5"
 static void cos_px2(int32_t x, int32_t y, const char *s, uint16_t c)      /* (the face 2 x 2) */
 {
     int32_t r, b, b0;

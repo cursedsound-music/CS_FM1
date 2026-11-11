@@ -38,6 +38,7 @@ static double lv_wet(uint32_t k)
     return e;
 }
 
+static void settle(void) { uint32_t i; for (i = 0; i < 12u; i++) frame16(); }   /* (0.12.5: BACK's glides, ~200 ms) */
 int main(void)
 {
     static const uint8_t WK2[16] = {0, 2, 4, 6, 7, 9, 11, 12, 14, 16, 18, 19, 21, 23, 24, 26};
@@ -64,6 +65,7 @@ int main(void)
         CHECK(lv_snd[1] == 90 && lv_snd[0] == 40 && song.g[G_DFDBK] == 100, "the sends and FEEDBACK moved");
         CHECK(cos_nrm.ok && cos_nrm.djf == djf0 && cos_nrm.snd[1] == 0 && !(cos_nrm.lane & 2u), "NORMAL: before the first move");
         btn(B_OCTDN);
+        settle();
         CHECK(!(dx_mute & DXM_LANE(1)) && !trk[3].p[P_MUTE] && !lv_snd[0] && !lv_snd[1] && song.g[G_DFDBK] == fb0 &&
               song.g[G_DJF] == djf0 && !cos_nrm.ok, "OCT-: all back (%x %d %d %d %d)", dx_mute, trk[3].p[P_MUTE], lv_snd[1], song.g[G_DFDBK], song.g[G_DJF]);
         btn(B_OCTDN);
@@ -74,6 +76,7 @@ int main(void)
         btn(B_OCTUP);
         cos_cput(CC_LVREV, 100);
         btn(B_OCTDN);
+        settle();
         CHECK(lv_snd[1] == 30, "OCT+ made 30 the normal: back to 30 (%d)", lv_snd[1]);
         btn(B_OCTUP);
         cos_cput(CC_LVREV, 0); btn(B_OCTUP);
@@ -100,12 +103,67 @@ int main(void)
                 if (lv_snd[0] != 80 && (dx_mute & DXM_LANE(3))) moved_early = 1;   /* (the knobs before the sounds) */
             }
         }
-        frame16();
+        settle();
         CHECK(!(dx_mute & DXM_LANE(3)) && lv_snd[0] == 0 && song.g[G_DJF] != GP[G_DJF].max - 5 && !live_qback,
               "the bar: the HAT, DELAY and DJ FILTER back together (%x %d %d)", dx_mute, lv_snd[0], song.g[G_DJF]);
         CHECK(!moved_early, "the knobs not ahead of the sounds");
         transport_req = 2; frame16();
         set_mq(0);
+    }
+    {   /* (0.12.5) BACK lets the tails ring: the sends down in ~100 ms, the FEEDBACK down over two bars, the delay heard
+         * on after it; a knob turned meanwhile takes over */
+        static int32_t o[2 * CTL];
+        uint32_t b, f;
+        int16_t fb0 = song.g[G_DFDBK];
+        double tail_old, tail_new;
+        set_mq(0);
+        song.g[G_BPM] = 120;
+        transport_req = 1; frame16();
+        cos_cput(CC_LVDLY, 100); cos_cput(CC_LVFB, 120);
+        for (b = 0; b < FS / CTL; b++) mix_block(o, CTL);
+        btn(B_OCTDN);
+        for (f = 0; f < 4u; f++) frame16();
+        CHECK(lv_snd[0] < 100 && song.g[G_DFDBK] > fb0 + 40, "BACK: the send going, the FEEDBACK still high (%d %d)", lv_snd[0], song.g[G_DFDBK]);
+        for (f = 0; f < 10u; f++) frame16();
+        CHECK(lv_snd[0] == 0, "the send down in ~100 ms (%d)", lv_snd[0]);
+        for (f = 0; f < 4000u / 16u + 10u; f++) frame16();   /* (two bars at 120: 4 s) */
+        CHECK(song.g[G_DFDBK] == fb0, "the FEEDBACK back after two bars (%d %d)", song.g[G_DFDBK], fb0);
+        {   /* the delay after BACK: heard longer than with FEEDBACK let down at once (as before) */
+            uint32_t k;
+            double *tl[2] = {&tail_old, &tail_new};
+            for (k = 0; k < 2u; k++) {
+                for (b = 0; b < FS * 3u / CTL; b++) mix_block(o, CTL);   /* (the last one's tail gone) */
+                for (b = 0; b < NTRK; b++) trk[b].p[P_MUTE] = (int16_t)(b != 2u);
+                trk[2].p[P_DLY] = 0;
+                cos_nrm.ok = 0;
+                cos_cput(CC_LVDLY, 100); cos_cput(CC_LVFB, 120);
+                for (b = 0; b < FS / CTL; b++) {          /* (notes into the delay through LIVE's send) */
+                    if (b % 40u == 0u) trk_note_on(&trk[2], 48 + (b / 40u) % 5u, 110);
+                    if (b % 40u == 4u) trk_note_off(&trk[2], 48 + (b / 40u) % 5u);
+                    mix_block(o, CTL);
+                }
+                for (b = 0; b < NTRK; b++) trk[b].p[P_MUTE] = 1;   /* (everything quiet: only the tail) */
+                if (k == 0u) { cos_back(0); cos_rmp.on = 0; song.g[G_DFDBK] = fb0; lv_snd[0] = 0; }   /* (as 0.12.4) */
+                else cos_back(0);
+                *tl[k] = 0;
+                for (b = 0; b < FS * 2u / CTL; b++) {
+                    uint32_t i;
+                    mix_block(o, CTL);
+                    if (b % 22u == 0u) frame16();
+                    if (b > FS / CTL) for (i = 0; i < 2u * CTL; i++) *tl[k] += (double)o[i] * o[i];   /* (1 .. 2 s after) */
+                }
+            }
+            printf("  the delay 1 .. 2 s after BACK: %.3g (FEEDBACK let down at once: %.3g)\n", tail_new, tail_old);
+            CHECK(tail_new > tail_old * 4.0, "the echoes ring on after BACK (%.3g, cut at once: %.3g)", tail_new, tail_old);
+        }
+        cos_cput(CC_LVFB, 120);
+        cos_nrm.ok = 0; cos_cput(CC_LVFB, 110); btn(B_OCTDN); frame16();
+        cos_cput(CC_LVFB, 90);
+        for (f = 0; f < 40u; f++) frame16();
+        CHECK(song.g[G_DFDBK] == 90, "FEEDBACK turned meanwhile: its own (%d)", song.g[G_DFDBK]);
+        song.g[G_DFDBK] = fb0;
+        for (b = 0; b < NTRK; b++) trk[b].p[P_MUTE] = 0;
+        transport_req = 2; frame16();
     }
     {   /* the global sends heard: a track with its own sends at 0 feeds the reverb through LIVE's */
         double e0, e1;
@@ -125,6 +183,7 @@ int main(void)
         cos_cdesc(CC_LVREV, &vp);
         CHECK(lv_snd[1] == 127 && lv_snd[0] == 64, "CC 101 / 100: REVERB / DELAY (%d %d)", lv_snd[1], lv_snd[0]);
         rmt_cc_put(99, 127); cos_remote_poll();
+        settle();
         CHECK(!lv_snd[0] && !lv_snd[1], "CC 99: BACK TO NORMAL (%d %d)", lv_snd[0], lv_snd[1]);
     }
     {   /* (0.10.4) the keys' lights on LIVE: a track playing, its black key lit; a drum sound in, its white key lit; a
