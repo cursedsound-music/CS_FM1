@@ -9,6 +9,7 @@
  *   40..55 the FX pad's white keys 1..16, 56..66 its black keys 1..11: held while 64 or more (FX + OCT+'s latch too)
  *   70 DJ FILTER  71 72 73 the ISOLATOR's LOW MID HIGH  74..77 MACRO 1..4  78 MORPH A-B   (0..127 over the knob's range)
  *   79 BPM (60 + the value)   85..90 the track 1..6 selected
+ *   (0.10.3) 99 BACK TO NORMAL (64+: as HOME > LIVE's OCT-)   100 DLY SEND  101 REV SEND  102 FEEDBACK (LIVE's knobs)
  *   (0.10.0) 91..98 the drums' sounds: KICK (the KICK track) SNARE CLAP HAT OPEN HAT TOM RIM BELL, 64 or more OUT,
  *            less IN (on the beat / bar with MUTE Q, as HOME + white 1..8)
  *   (0.9.7) 80 81 an exact BPM in tenths (400..2400): 80 its high 7 bits first, then 81 its low 7 bits sets it
@@ -39,6 +40,7 @@ static int32_t rmt_scale(uint32_t id, uint32_t v)        /* 0..127 over a cos kn
 static void rmt_mute(uint32_t j)                         /* (HOME's black key j) */
 {
     if (j >= trk_live) return;
+    cos_snap();                                          /* (0.10.3: LIVE's normal) */
     if (!cos_mq) {
         trk[j].p[P_MUTE] = (int16_t)!trk[j].p[P_MUTE];
         cos_say(trk[j].p[P_MUTE] ? "MUTED" : "UNMUTED");
@@ -67,6 +69,12 @@ static __attribute__((noinline)) void rmt_cc(uint32_t cc, uint32_t v)
     int on = v >= 64u;
     if (cc >= 40u && cc <= 66u) { rmt_pad_key(cc - 40u, on); return; }
     if (cc >= 91u && cc <= 98u) { cos_drum_set(cc - 91u, on); return; }   /* (0.10.0) a drum sound out / in */
+    if (cc >= 100u && cc <= 102u) {                      /* (0.10.3) LIVE's global sends, the delay's FEEDBACK */
+        static const uint8_t LV[3] = {CC_LVDLY, CC_LVREV, CC_LVFB};
+        cos_cput(LV[cc - 100u], rmt_scale(LV[cc - 100u], v));
+        return;
+    }
+    if (cc == 99u) { if (on) cos_back(0); return; }       /* (0.10.3) BACK TO NORMAL */
     if (cc >= 70u && cc <= 78u) {
         static const uint8_t ID[9] = {CC_DJF, CC_EQL, CC_EQM, CC_EQH, CC_MAC0, CC_MAC0 + 1u, CC_MAC0 + 2u, CC_MAC3, CC_MOPOS};
         cos_cput(ID[cc - 70u], rmt_scale(ID[cc - 70u], v));
@@ -148,6 +156,7 @@ static __attribute__((noinline)) void cos_remote_poll(void)
 {
     uint32_t k;
     lfo_user_poll();                                     /* (0.10.2) the drawn shapes to flash once stopped */
+    cos_back_poll();                                     /* (0.10.3) LIVE's BACK TO NORMAL, its knobs on the bar */
     for (k = 0; k < 16u && rmt_cc_r != rmt_cc_w; k++) {
         uint32_t e;
         RING_PUBLISH();

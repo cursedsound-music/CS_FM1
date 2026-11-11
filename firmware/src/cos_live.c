@@ -14,6 +14,8 @@
 enum { BD_OFF, BD_ARM_BREAK, BD_BREAK, BD_ARM_BUILD, BD_BUILD, BD_ARM_DROP };
 static volatile uint8_t cos_mq = 2;           /* main: MUTE Q, 0 NOW 1 BEAT 2 BAR (ui_polls: the settings') */
 static volatile uint8_t live_qmute;           /* main: the tracks whose mute turns over next (bit k) */
+static volatile uint8_t live_qback;           /* (0.10.3) main: BACK TO NORMAL asked (the knobs: on the beat / bar, as the
+                                               * mutes); the ISR: 2 when it is time (cos.c cos_back_poll) */
 static volatile uint8_t live_qlane;           /* (0.10.0) main: the kit's sounds whose mute turns over next (bit l: lane l,
                                                * eng_drum.c DXM_LANE), on the same beat / bar as the tracks' */
 static volatile uint8_t live_qsolo, live_qsolo_on;   /* main: the solo asked for (live_qsolo_on: asked) */
@@ -156,6 +158,8 @@ static __attribute__((noinline)) void live_tick(uint32_t n)
         for (k = 0; k < NTRK; k++)
             if ((m >> k) & 1u) trk[k].p[P_MUTE] = (int16_t)!trk[k].p[P_MUTE];
     }
+    if (live_qback == 1u && (now || cos_mq == 0u || (cos_mq == 1u ? beat : bar)))
+        live_qback = 2;
     if (live_qlane && (now || cos_mq == 0u || (cos_mq == 1u ? beat : bar))) {
         uint32_t m = live_qlane;
         live_qlane = 0;

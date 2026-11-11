@@ -14,6 +14,7 @@ NAK_TEXT = {1: "not understood (no VOICE track?)"}
 CC_PLAY, CC_MUTE0, CC_SECT0, CC_FILL, CC_BREAK, CC_BACK, CC_TAP = 20, 22, 28, 32, 33, 34, 35
 CC_NUDGE0, CC_BPMDN = 36, 38                # (0.9.6) 36 37 NUDGE - + (held), 38 39 BPM - + 1
 CC_BPMX = 80                                # (0.9.7) 80 81: an exact BPM in tenths, high 7 bits then low
+CC_BACK, CC_LVDLY, CC_LVREV, CC_LVFB = 99, 100, 101, 102   # (0.10.3) BACK TO NORMAL, LIVE's sends, FEEDBACK
 CC_DRUM0 = 91                                # (0.10.0) 91..98 a drum sound OUT (64+) / IN
 DRUM_SOUNDS = ["KICK", "SNARE", "CLAP", "HAT", "OPEN HAT", "TOM", "RIM", "BELL"]
 CC_PADW0, CC_PADB0 = 40, 56

@@ -45,6 +45,12 @@ Planned work. Done items move to the commit log.
 - Ideas for flash room (GG to pick, 2026-11-10): wavetables from the phone for a WAVETABLE engine; granular textures
   from a short sound; a one-shot kit of own hits; a VOICE phrase library.
 
+## Live (GG, 2026-11-11)
+
+- ~~One page for a set's moves, and back to normal for a drop~~ (0.10.3): HOME > LIVE (DJ FILTER, global REVERB and
+  DELAY sends, FEEDBACK; white 1..8 the drums, black 1..6 the tracks), OCT- BACK TO NORMAL on the bar, OCT+ this is
+  normal; the phone's LIVE tab (CC 99..102). (GG asked HOME + OCT-: that is the NUDGE.)
+
 ## Sounds (GG, 2026-11-11)
 
 - ~~Engines and presets on two knobs~~ (0.10.2): ALGO the engine, PRESETS inside it; EDIT + ALGO the track.

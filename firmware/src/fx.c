@@ -2594,7 +2594,8 @@ static inline __attribute__((always_inline)) void mix_part(track_t *t, uint32_t 
         gr = 4096 + (p0 < 0 ? p0 >> 2 : 0);
         dgl = ((4096 - (mp_pan[ti] > 0 ? mp_pan[ti] >> 2 : 0)) - gl) >> CTL_LOG2;
         dgr = ((4096 + (mp_pan[ti] < 0 ? mp_pan[ti] >> 2 : 0)) - gr) >> CTL_LOG2;
-        int32_t c = t->p[P_CHOR] * 258, d = t->p[P_DLY] * 258, r = t->p[P_REV] * 258, pk = t->peak;
+        int32_t c = t->p[P_CHOR] * 258, d = clamp(t->p[P_DLY] + lv_snd[0], 0, 127) * 258,   /* (0.10.3: + LIVE's global */
+                r = clamp(t->p[P_REV] + lv_snd[1], 0, 127) * 258, pk = t->peak;             /* sends, eng_drum.c lv_snd) */
         int32_t xmax = c > d ? c : d, *ol = c1 ? c1_mix.l : mix_l, *or_ = c1 ? c1_mix.r : mix_r;
         int32_t *sc = c1 ? c1_mix.c : send_c, *sd = c1 ? c1_mix.d : send_d, *sr = c1 ? c1_mix.rv : send_r;
         if (slicer_routes((uint32_t)(t - trk))) {       /* (JIANT 0.6.3) into the SLICER's bus, not the dry mix */

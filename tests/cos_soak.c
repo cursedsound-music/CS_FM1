@@ -52,6 +52,8 @@ int main(int argc, char **argv)
                                                          * of random bytes (a TEXT, a sampler's, garbage) */
             rmt_cc_put(rnd(128u), rnd(128u));
             if (r == 224u && trk_live) cos_drum_flip(rnd(8u));   /* (0.10.0) a drum sound in / out (HOME + white 1..8) */
+            if (r == 225u) cos_back(rnd(4u) == 0u);              /* (0.10.3) LIVE: BACK TO NORMAL, now and then THIS IS NORMAL */
+            if (r == 226u) cos_cput(rnd(2u) ? CC_LVREV : CC_LVDLY, (int32_t)rnd(128u));
             if (r == 223u && !rmt_fready) {
                 uint32_t k, n = 3u + rnd(300u);
                 rmt_f[0] = 0x7Du; rmt_f[1] = 0x63u;

@@ -42,7 +42,7 @@ enum { CM_HOME, CM_TRIG, CM_SRC, CM_AMP, CM_DRONE, CM_FX, CM_GEN, CM_MIX, CM_KEY
 enum { CK_NONE, CK_TRK, CK_GLO, CK_AC, CK_EU, CK_COS, CK_DB };
 enum { CC_OUTCH, CC_MOUT, CC_CLOCK, CC_SLOT, CC_TRKS, CC_LOAD, CC_COMP, CC_CATK, CC_CREL, CC_LIM, CC_PF0, CC_PF3 = CC_PF0 + 3,
        CC_X2, CC_X2E = CC_X2 + 15, CC_OCT, CC_KICK, CC_KICKE = CC_KICK + 4, CC_LN0, CC_LNE = CC_LN0 + 7, CC_KDRV, CC_BT,
-       CC_L1SYNC, CC_L1RATE, CC_L1WAVE, CC_L1MODE, CC_L1PH, CC_L1FADE, CC_L2SYNC, CC_L2RATE, CC_BPM, CC_BFINE, CC_USLOT,
+       CC_L1SYNC, CC_L1RATE, CC_L1WAVE, CC_L1MODE, CC_L1PH, CC_L1FADE, CC_L2SYNC, CC_L2RATE, CC_BPM, CC_BFINE, CC_USLOT, CC_LVDLY, CC_LVREV, CC_LVFB,
        CC_CIN, CC_CTHR, CC_CRAT, CC_CMK, CC_CKNEE, CC_CSC, CC_CMIX, CC_LIN, CC_LREL, CC_LVL, CC_MUTEQ, CC_PCCH, CC_PCOUT, CC_VJCH, CC_EQL, CC_EQM, CC_EQH, CC_MAC0, CC_MAC3 = CC_MAC0 + 3, CC_RB0, CC_RB3 = CC_RB0 + 3, CC_MOPOS, CC_MOBARS, CC_LVLEN, CC_LVRATE, CC_LVDN, CC_LVSH, CC_MCCH, CC_MCCC, CC_MCDIR, CC_MCMAP, CC_MC0, CC_MC3 = CC_MC0 + 3, CC_MOCC,
        CC_NAME, CC_IDLE, CC_SCT, CC_SCG, CC_SCTR, CC_SPV, CC_SPR, CC_SPS, CC_SCM, CC_SPSRC, CC_SCZ, CC_LUT, CC_LUR, CC_LOCAL, CC_KPAT, CC_SCALE, CC_QUANT, CC_DJF, CC_DSEL, CC_DLV, CC_DWAV, CC_DFLT, CC_DBT, CC_DDRV, CC_DLAY, CC_DFB, CC_DSNP, CC_DE0, CC_DEE = CC_DE0 + DE_N - 1 };
 _Static_assert(CC_DEE < 0xFEu, "the CK_COS ids fit a page's byte (0xFE, 0xFF: OCTAVE, none)");
@@ -54,6 +54,9 @@ _Static_assert(X2_N <= 16u, "CC_X2 .. CC_X2E: room for every trk_x2 field");
 typedef struct { const char *tab; uint8_t kind, id[4]; } cpg_t;
 #define X 0xFFu
 static const cpg_t CZP_HOME[] = {{"PERFORM", CK_GLO, {ID_BPM, ID_BFINE, G_SWING, G_DJF}},   /* (0.10.1: BPM, FINE; OCTAVE */
+                                {"LIVE", CK_COS, {CC_DJF, CC_LVREV, CC_LVDLY, CC_LVFB}},   /* (0.10.3) a set's moves on one page:
+                                                         * white 1..8 the drums' sounds, black 1..6 the tracks; OCT- BACK TO
+                                                         * NORMAL (cos_back), OCT+ this is normal */
                                 {"PERFORM 2", CK_GLO, {G_DUCK, G_DREL, ID_MUTEQ, ID_OCT}},   /* to PERFORM 2) */
                                 {"ISOLATOR", CK_COS, {CC_EQL, CC_EQM, CC_EQH, X}},   /* (cos_iso.c; HOME's black 9-11 the kills) */
                                 {"MACROS", CK_COS, {CC_MAC0, CC_MAC0 + 1u, CC_MAC0 + 2u, CC_MAC3}},
@@ -237,8 +240,8 @@ static int cos_dead(const track_t *t, uint32_t id);      /* (below: a parameter 
 static void cos_pages(uint32_t m, const cpg_t **p, uint32_t *n)
 {
     static const cpg_t *const P[CM_N] = {CZP_HOME, CZP_TRIG, CZP_SRC, CZP_AMP, CZP_DRONE, CZP_FX, CZP_GENA, CZP_MIX, CZP_KEY, CZP_PROJ};
-    static const uint8_t N[CM_N] = {6, 4, 9, 9, 2, 9, 4, 14, 1, 2};   /* (each at most CZ_TABS: cos_tabs) */
-    _Static_assert(NELEM(CZP_HOME) == 6 && NELEM(CZP_TRIG) == 4 && NELEM(CZP_SRC) == 9 && NELEM(CZP_AMP) == 9 &&
+    static const uint8_t N[CM_N] = {7, 4, 9, 9, 2, 9, 4, 14, 1, 2};   /* (each at most CZ_TABS: cos_tabs) */
+    _Static_assert(NELEM(CZP_HOME) == 7 && NELEM(CZP_TRIG) == 4 && NELEM(CZP_SRC) == 9 && NELEM(CZP_AMP) == 9 &&
                    NELEM(CZP_DRONE) == 2 && NELEM(CZP_FX) == 9 && NELEM(CZP_GENA) == 4 && NELEM(CZP_MIX) == 14 &&
                    NELEM(CZP_KEY) == 1 && NELEM(CZP_PROJ) == 2 && NELEM(CZP_SRCD) <= CZ_TABS && NELEM(CZP_GENS) <= CZ_TABS &&
                    NELEM(CZP_SRCV) == 10 && NELEM(CZP_AMPA) == 9 && NELEM(CZP_SRCN) == 9,
@@ -283,6 +286,9 @@ static const cpg_t *cos_page(void)
     cos_pages(cz.mode, &p, &n);
     return &p[cz.tab[cz.mode] % n];
 }
+static void cos_snap(void);                              /* (0.10.3: LIVE's normal, below) */
+static void cos_back(int up);
+static int cos_on_live(void) { return cz.mode == CM_HOME && !cz.fx_down && str_eq(cos_page()->tab, "LIVE"); }   /* (0.10.3) */
 static int cos_on_words(void) { return cz.mode == CM_SRC && trk_engp(TSEL) == &ENG_FORMANT && str_eq(cos_page()->tab, "WORDS"); }
 static void cos_say(const char *s) { str_cpy(cz.msg, s, sizeof cz.msg); cz.msg_ms = fm1_ms; }
 static uint32_t cos_ext10(void);                        /* (below: an external clock's tempo) */
@@ -653,6 +659,13 @@ static const param_desc_t *cos_cdesc(uint32_t id, int16_t **vp)
         return &DMC[(id - CC_MAC0) & 3u];
     }
     if (id == CC_DJF) { *vp = &song.g[G_DJF]; return &GP[G_DJF]; }   /* (FX > DJ: the master's DJ FILTER, as PERFORM's) */
+    if (id == CC_LVDLY || id == CC_LVREV) {              /* (0.10.3) HOME > LIVE: the global sends */
+        static const param_desc_t DS2[2] = {{"DELAY", F_PCT, 0, 127, 0, 0, 0}, {"REVERB", F_PCT, 0, 127, 0, 0, 0}};
+        cz.cc_v[12] = lv_snd[id == CC_LVREV];
+        *vp = &cz.cc_v[12];
+        return &DS2[id == CC_LVREV];
+    }
+    if (id == CC_LVFB) { *vp = &song.g[G_DFDBK]; return &GP[G_DFDBK]; }   /* (LIVE: the delay's FEEDBACK, the throws' tail) */
     if (id >= CC_EQL && id <= CC_EQH) {                  /* HOME > ISOLATOR (cos_iso.c iso_v): LOW MID HIGH, KILL -24 .. +6 dB */
         static const char *const ISN[33] = {"KILL", "-24", "-23", "-22", "-21", "-20", "-19", "-18", "-17", "-16", "-15", "-14", "-13", "-12", "-11", "-10", "-9", "-8", "-7", "-6", "-5", "-4", "-3", "-2", "-1", "0", "+1", "+2", "+3", "+4", "+5", "+6", 0};
         static const param_desc_t DE[3] = {{"LOW", F_INT, ISO_KILL, 6, 0, ISN, "dB"}, {"MID", F_INT, ISO_KILL, 6, 0, ISN, "dB"},
@@ -905,7 +918,14 @@ static void cos_cput(uint32_t id, int32_t v)
     } else if (id >= CC_MAC0 && id <= CC_MAC3) {
         macro_v[(id - CC_MAC0) & 3u] = (uint8_t)clamp(v, 0, 127);
     } else if (id == CC_DJF) {
+        cos_snap();                                      /* (0.10.3: LIVE's normal, before the first move) */
         motion_djf_set(TSEL, (int16_t)clamp(v, GP[G_DJF].min, GP[G_DJF].max));   /* (REC: recorded too, as PERFORM's) */
+    } else if (id == CC_LVDLY || id == CC_LVREV) {
+        cos_snap();
+        lv_snd[id == CC_LVREV] = (uint8_t)clamp(v, 0, 127);
+    } else if (id == CC_LVFB) {
+        cos_snap();
+        song.g[G_DFDBK] = (int16_t)clamp(v, GP[G_DFDBK].min, GP[G_DFDBK].max);
     } else if (id >= CC_EQL && id <= CC_EQH) {
         iso_v[id - CC_EQL] = (int8_t)clamp(v, ISO_KILL, 6);
     } else if (id >= CC_PCCH && id <= CC_VJCH) {
@@ -1305,6 +1325,71 @@ static __attribute__((noinline)) uint32_t cos_acid_trk(uint32_t *made)
 /* (0.10.0) the drums' sounds in and out, one at a time (HOME + white 1..8, the phone's CC 91..98): 0 the KICK (the
  * first KICK track's mute; no KICK track: the kit's kick), 1..7 the kit's SNARE CLAP HATCL HATOP TOM RIM BELL (each
  * sound's own mute, eng_drum.c DXM_LANE). With MUTE Q on the beat or the bar, as the tracks' mutes (cos_live.c) */
+/* (0.10.3) HOME > LIVE's NORMAL: what the set was before the first move (the DJ FILTER, the global sends, the delay's
+ * FEEDBACK, the tracks' mutes, the drums' sounds), taken by that move; OCT- on LIVE goes back to it (on the beat / bar as
+ * MUTE Q says: the mutes, the sounds and the knobs at once, a drop), OCT+ makes now the normal */
+static struct { uint8_t ok, mute, lane, snd[2]; int16_t djf, fb; } cos_nrm;
+static uint8_t cos_mute_eff(void)                        /* the tracks' mutes as they will be (a queued flip counted) */
+{
+    uint32_t k, m = 0;
+    for (k = 0; k < NTRK; k++) m |= (uint32_t)((trk[k].p[P_MUTE] != 0) ^ ((live_qmute >> k) & 1u)) << k;
+    return (uint8_t)m;
+}
+static uint8_t cos_lane_eff(void) { return (uint8_t)(((dx_mute >> 8) & 0xFFu) ^ live_qlane); }
+static void cos_snap(void)
+{
+    if (cos_nrm.ok) return;
+    cos_nrm.ok = 1;
+    cos_nrm.mute = cos_mute_eff();
+    cos_nrm.lane = cos_lane_eff();
+    cos_nrm.snd[0] = lv_snd[0];
+    cos_nrm.snd[1] = lv_snd[1];
+    cos_nrm.djf = song.g[G_DJF];
+    cos_nrm.fb = song.g[G_DFDBK];
+}
+static void cos_back_knobs(void)                         /* the knobs to NORMAL (the main loop's) */
+{
+    if (song.g[G_DJF] != cos_nrm.djf) motion_djf_set(TSEL, cos_nrm.djf);
+    song.g[G_DFDBK] = cos_nrm.fb;
+    lv_snd[0] = cos_nrm.snd[0];
+    lv_snd[1] = cos_nrm.snd[1];
+    cos_nrm.ok = 0;
+}
+static __attribute__((noinline)) void cos_back(int up)
+{
+    uint8_t dm, dl;
+    uint32_t k;
+    if (up) { cos_nrm.ok = 0; cos_snap(); cos_say("THIS IS NORMAL"); return; }
+    if (!cos_nrm.ok) { cos_say("ALREADY NORMAL"); return; }
+    dm = (uint8_t)(cos_mute_eff() ^ cos_nrm.mute);
+    dl = (uint8_t)(cos_lane_eff() ^ cos_nrm.lane);
+    if (!song.playing || !cos_mq) {                      /* (stopped, or MUTE Q NOW: at once) */
+        fm1_irq_off();
+        live_qmute = 0;
+        live_qlane = 0;
+        live_qback = 0;
+        fm1_irq_on();
+        for (k = 0; k < NTRK; k++) trk[k].p[P_MUTE] = (int16_t)((cos_nrm.mute >> k) & 1u);
+        dx_mute_set((uint16_t)((dx_mute & ~0xFF00u) | (uint32_t)cos_nrm.lane << 8));
+        cos_back_knobs();
+        cos_say("BACK TO NORMAL");
+        return;
+    }
+    fm1_irq_off();                                       /* (on the beat / bar: the ISR flips them whole, cos_live.c) */
+    live_qmute ^= dm;
+    live_qlane ^= dl;
+    live_qback = 1;
+    fm1_irq_on();
+    cos_say(cos_mq == 1u ? "NORMAL ON THE BEAT" : "NORMAL ON THE BAR");
+}
+static void cos_back_poll(void)                          /* (each frame) the knobs back when the ISR says it is time */
+{
+    if (live_qback == 2u) {
+        live_qback = 0;
+        cos_back_knobs();
+        cos_say("BACK TO NORMAL");
+    }
+}
 static const char *const DRUM_SND_N[8] = {"KICK", "SNARE", "CLAP", "HAT", "OPEN HAT", "TOM", "RIM", "BELL"};
 static int cos_kick_trk(void)                            /* the first live KICK track, -1 none */
 {
@@ -1323,6 +1408,7 @@ static void cos_drum_flip(uint32_t s)
 {
     int kt = (s &= 7u) ? -1 : cos_kick_trk(), out = !cos_drum_out(s);
     char b[24];
+    cos_snap();
     if (kt >= 0) {
         if (!cos_mq) trk[kt].p[P_MUTE] = (int16_t)!trk[kt].p[P_MUTE];
         else { fm1_irq_off(); live_qmute ^= (uint8_t)(1u << kt); fm1_irq_on(); }
@@ -1775,6 +1861,7 @@ static __attribute__((noinline)) void cos_input(void)
                 uint32_t n = cos_banks();
                 cz.bank = (uint8_t)((cz.bank + (up ? 1u : n - 1u)) % n);
             } else if (cos_on_words()) cos_words(up);
+            else if (cos_on_live()) cos_back(up);        /* (0.10.3) LIVE: OCT- BACK TO NORMAL, OCT+ this is normal */
             else if (cz.mode == CM_PROJ) cos_proj_oct(up);
             else if (cz.mode == CM_GEN && cos_kit()) eu_oct(up, cz.tab[CM_GEN] == 2u);
             else if (cz.mode == CM_GEN && cos_page()->kind == CK_DB) db_oct(up, cos_page()->id[0] == DK_ROOT);
@@ -1898,7 +1985,7 @@ static __attribute__((noinline)) void cos_input(void)
                                                          * (0.10.0) HOME + white 1..8: the drums' sounds in and out */
             if (cos_home_held()) cz.home_used = 1;
             if (w == 15u && cos_home_held()) cos_tap(fm1_ms);   /* (HOME + white 16: TAP TEMPO) */
-            else if (w < 8u && cos_home_held()) cos_drum_flip(w);
+            else if (w < 8u && (cos_home_held() || cos_on_live())) cos_drum_flip(w);   /* (0.10.3: LIVE without HOME) */
             else if (w < trk_live) track_select(w);
             else if (w == 12u || w == 13u) mph_key(w - 12u, cos_home_held());   /* (MORPH's A, B: cos_morph.c) */
             else if (w == 14u) {                         /* (LOOP: the track picked back in phase on the beat; HOME held:
@@ -1920,10 +2007,11 @@ static __attribute__((noinline)) void cos_input(void)
                 if (!cos_mq) cos_say(live_qsolo ? "SOLO" : "SOLO OFF");
             }
             else if (j < trk_live && !cos_mq) {
+                cos_snap();
                 trk[j].p[P_MUTE] = (int16_t)!trk[j].p[P_MUTE];
                 cos_say(trk[j].p[P_MUTE] ? "MUTED" : "UNMUTED");
             }
-            else if (j < trk_live) { fm1_irq_off(); live_qmute ^= (uint8_t)(1u << j); fm1_irq_on(); }   /* (on the next
+            else if (j < trk_live) { cos_snap(); fm1_irq_off(); live_qmute ^= (uint8_t)(1u << j); fm1_irq_on(); }   /* (on the next
                                                          * beat / bar; the ISR takes it whole) */
             else if (j == 6u) { fill_req = 1; cos_say(song.playing ? "FILL" : "FILL: PLAY FIRST"); }
             else if (j == 7u) {
@@ -2495,6 +2583,12 @@ static void cos_tabs(void)
         cos_txr(238, 22, "OCT NUDGE K1 .1 W16 TAP", C_DIM);
         return;
     }
+    if (cos_on_live() && cos_nrm.ok) {                   /* (0.10.3) LIVE moved off NORMAL: how to go back */
+        cv_rect(2, 20, cos_w("LIVE") + 6, 12, C_RED);
+        cos_tx(5, 22, "LIVE", C_BG);
+        cos_txr(238, 22, live_qback ? "NORMAL COMING" : "MOVED  OCT- NORMAL", C_RED);
+        return;
+    }
     if (cz.mode == CM_TRIG && cos_held()) {               /* (steps held: what a knob locks) */
         char b[24];
         str_cpy(b, "LOCK ", sizeof b);
@@ -2677,7 +2771,8 @@ static void cos_body_home(void)
             else { uint32_t q = (uint32_t)(mph.to ? mph.pos : 1000 - mph.pos) / 10u;   /* (how far: a percent) */
                    fmt_int(b + 5, (int32_t)q); str_cpy(b + str_len(b), "%", 2); }
         }
-        if (!b[0] && cos_home_held()) {                  /* (0.10.0) HOME held: white 1..8, the drums' sounds (out: dim) */
+        if (!b[0] && (cos_home_held() || cos_on_live())) {   /* (0.10.0) HOME held, (0.10.3) LIVE: white 1..8, the drums'
+                                                         * sounds (out: dim) */
             static const char *const AB[8] = {"KK", "SN", "CP", "HH", "OH", "TM", "RM", "BL"};
             uint32_t s;
             for (s = 0; s < 8u; s++) {
@@ -2694,9 +2789,9 @@ static void cos_body_home(void)
                 if (dx_mute & DXM_LANE(s)) { str_cpy(b + str_len(b), " ", 2); str_cpy(b + str_len(b), AB[s], 3); }
             cos_tx(4, 144, b, C_MID);
         }
-        else if (cz.tab[CM_HOME] == 5u)                  /* (LOOP) */
+        else if (cz.tab[CM_HOME] == 6u)                  /* (LOOP) */
             cos_tx(4, 144, "W15 BACK  HOME+W15 ALL BACK", C_DIM);
-        else if (cz.tab[CM_HOME] == 4u)                  /* (MORPH: the keys; A and B lit when stored) */
+        else if (cz.tab[CM_HOME] == 5u)                  /* (MORPH: the keys; A and B lit when stored) */
             cos_tx(4, 144, (mph.set & 3u) == 3u ? "W13 A  W14 B  HOME+ STORES" : "W13 / W14: STORE A / B", C_DIM);
         else cos_tx(4, 144, trk_live > 5u ? "B7 FILL B8 DROP B9-11 KILL" : "B7 FILL B8 BREAK B9-11 KILL", C_DIM);
         if (live.cur >= 0 && !b[0]) { char c[2] = {(char)('A' + live.cur), 0}; cos_txr(236, 144, c, C_MID); }
@@ -3382,7 +3477,7 @@ dials:
 /* the splash (ui_draw.c draw_splash / splash_write under COS_SLIM; main.c's boot loop calls it every ~4 ms for
  * SPL_WRITE + SPL_HOLD ms): black, a few still stars, the name 2x, the version, a 16-block bar filling like a pattern
  * (the block being filled red), READY. Drawn whole once, then only the bar's strip when a block fills */
-#define COS_VERSION "0.10.2"
+#define COS_VERSION "0.10.3"
 static void cos_px2(int32_t x, int32_t y, const char *s, uint16_t c)      /* (the face 2 x 2) */
 {
     int32_t r, b, b0;

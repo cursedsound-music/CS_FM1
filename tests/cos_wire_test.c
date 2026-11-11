@@ -252,6 +252,8 @@ static void engage(uint32_t m, const char *tab)
     if (str_eq(g, "VOICE")) set_knob(m, "VOICE", 0, 0, "UNI");    /* (DETUNE: the unison's) */
     if (str_eq(g, "LFO 2")) engage(m, "FILTER 2");        /* (LFO 2 moves FILTER 2: on) */
     if (str_eq(g, "DIST")) set_knob(m, "SEND", 0, 60, 0); /* (the DIST page: the send in) */
+    if (m == CM_HOME && str_eq(tab, "LIVE")) lv_snd[0] = lv_snd[1] = 0;   /* (0.10.3: LIVE's global sends on top of the
+                                                         * tracks' 50: from 0, or a turn up meets the ceiling, 127) */
     if (m == CM_FX && str_eq(tab, "DELAY 2")) song.g[G_DFDBK] = 112;   /* (0.10.0: TYPE, ANALOG / DIGITAL, differs past 100 %
                                                          * FEEDBACK, where DIGITAL holds; at 60 % only a trace: heard by
                                                          * chance before, 3e6 against the 1e6 asked) */

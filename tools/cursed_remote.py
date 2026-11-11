@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: GPL-3.0-only
 # Copyright (C) 2026 cursedsound
-"""CURSED REMOTE: the JIANT FM-1 (cursed-os 0.10.2+) from an iPhone, in Pythonista 3.
+"""CURSED REMOTE: the JIANT FM-1 (cursed-os 0.10.3+) from an iPhone, in Pythonista 3.
 
 Put this file and cursed_remote_proto.py in the same Pythonista folder and run this one.
 
@@ -9,8 +9,8 @@ Put this file and cursed_remote_proto.py in the same Pythonista folder and run t
   FX       the FX pad (hold a key)
   MIX      DJ filter, isolator, macros, morph: tap a value and it jumps back to rest
            (all channel 16 CCs: cos_remote.c; NUDGE and BPM -/+ need cursed-os 0.9.6, the exact BPM 0.9.7)
-  DRUMS    each drum sound in and out (KICK, SNARE, CLAP, HAT, OPEN HAT, TOM, RIM, BELL; cursed-os 0.10.0): lit = in,
-           on the beat / bar as the FM-1's MUTE Q says
+  LIVE     each drum sound in and out (lit = in), the DJ FILTER, REVERB and DELAY on every track, FEEDBACK, and
+           BACK TO NORMAL (cursed-os 0.10.3; on the beat / bar as the FM-1's MUTE Q says)
   VOICE    type words: the first VOICE track sings them from its next note
   LFO      draw the LFO's USER1..4 shapes (cursed-os 0.10.2): the FM-1's LFO page, WAVE = USER1..4
 
@@ -331,55 +331,73 @@ class PlayPage(ui.View):
         return f
 
 
-class DrumsPage(ui.View):
-    """the drums' sounds in and out: big toggles, lit = in (the FM-1 does it on the beat / bar, its MUTE Q)"""
+class LivePage(ui.View):
+    """the set's moves on one page, as the FM-1's HOME > LIVE (cursed-os 0.10.3): the drums' sounds in and out (lit =
+    in), the DJ FILTER, the REVERB and DELAY sent from every track, the delay's FEEDBACK; BACK TO NORMAL puts all of it
+    back as it was before the first move (on the beat / bar, the FM-1's MUTE Q: a drop)"""
     def __init__(self, **kw):
         super().__init__(**kw)
-        g, fw = 8, W - 20
-        w2 = (fw - g) / 2
+        g, fw = 6, W - 20
+        w4 = (fw - 3 * g) / 4
         self.out = [False] * 8
         self.b = []
+        self.normal = None                                # (the phone's copy of NORMAL: the toggles, the faders)
         for i, t in enumerate(P.DRUM_SOUNDS):
-            r, c = divmod(i, 2)
-            b = button(t, (10 + c * (w2 + g), 10 + r * 84, w2, 76), self.flip(i), PANEL, 20)
+            r, c = divmod(i, 4)
+            b = button(t.replace('OPEN HAT', 'OPEN'), (10 + c * (w4 + g), 8 + r * 58, w4, 52), self.flip(i), PANEL, 14)
             self.b.append(b)
             self.add_subview(b)
-        y = 10 + 4 * 84 + 4
-        self.add_subview(button('ALL IN', (10, y, w2, 52), self.all_in, PANEL, 16))
-        self.add_subview(button('ONLY KICK + HATS', (10 + w2 + g, y, w2, 52), self.only(0, 3), PANEL, 13))
-        self.add_subview(label('KICK is the KICK track; the rest the DRUM track\'s sounds. On the FM-1: HOME + white 1\u20138.',
-                               (10, y + 60, fw, 40), 10))
-        self.subviews[-1].number_of_lines = 2
+        y = 8 + 2 * 58 + 4
+        self.f = []
+        for t, n, rest, fm in [('DJ FILTER', P.CC_DJF, 64, lambda x: 'OFF' if x == 64 else str(x - 64)),
+                               ('REVERB (all tracks)', P.CC_LVREV, 0, None),
+                               ('DELAY (all tracks)', P.CC_LVDLY, 0, None),
+                               ('FEEDBACK', P.CC_LVFB, 64, None)]:
+            fd = Fader(t, n, rest, fm, frame=(10, y, fw, 50))
+            fd.s.action = self.moved(fd)
+            self.f.append(fd)
+            self.add_subview(fd)
+            y += 54
+        b = button('BACK TO NORMAL', (10, y + 6, fw, 72), self.back, HOT, 22)
+        self.add_subview(b)
+        self.add_subview(label('On the FM-1: HOME > LIVE (white 1\u20138 the sounds, OCT\u2212 back to normal).',
+                               (10, y + 84, fw, 30), 10))
         self.show()
+
+    def snap(self):
+        if self.normal is None:
+            self.normal = (list(self.out), [fd.s.value for fd in self.f])
+
+    def moved(self, fd):
+        def m(s):
+            self.snap()
+            fd.moved(s)
+        return m
 
     def show(self):
         for i, b in enumerate(self.b):
             b.background_color = PANEL if self.out[i] else HOT
             b.tint_color = DIM if self.out[i] else FG
 
-    def send(self, i):
-        cc(P.CC_DRUM0 + i, 127 if self.out[i] else 0)
-
     def flip(self, i):
         def f(s):
+            self.snap()
             self.out[i] = not self.out[i]
-            self.send(i)
+            cc(P.CC_DRUM0 + i, 127 if self.out[i] else 0)
             self.show()
         return f
 
-    def all_in(self, s):
-        for i in range(8):
-            self.out[i] = False
-            self.send(i)
+    def back(self, s):
+        cc(P.CC_BACK, 127)
+        cc(P.CC_BACK, 0)
+        if self.normal is not None:                       # (the phone's keys and faders as the FM-1 will be)
+            self.out = list(self.normal[0])
+            for fd, v in zip(self.f, self.normal[1]):
+                fd.s.value = v
+                fd.last = int(round(v * 127))
+                fd.show()
+            self.normal = None
         self.show()
-
-    def only(self, *keep):
-        def f(s):
-            for i in range(8):
-                self.out[i] = i not in keep
-                self.send(i)
-            self.show()
-        return f
 
 
 class ShapeCanvas(ui.View):
@@ -582,13 +600,13 @@ class App(ui.View):
         sw, sh = ui.get_screen_size()
         self.frame = (0, 0, min(sw, sh), max(sw, sh))
         self.tabs = ui.SegmentedControl(frame=(10, 8, W - 20, 32),
-                                        segments=['PLAY', 'DRUMS', 'FX', 'MIX', 'VOICE', 'LFO', 'LINK'], action=self.show)
+                                        segments=['PLAY', 'LIVE', 'FX', 'MIX', 'VOICE', 'LFO', 'LINK'], action=self.show)
         self.tabs.tint_color = HOT
         self.add_subview(self.tabs)
         self.st = label('', (10, 42, W - 20, 18), 10)
         self.add_subview(self.st)
         f = (0, 62, W, self.height - 62)
-        self.pages = [PlayPage(frame=f), DrumsPage(frame=f), PadPage(frame=f), MixPage(frame=f), VoicePage(self, frame=f), LfoPage(self, frame=f),
+        self.pages = [PlayPage(frame=f), LivePage(frame=f), PadPage(frame=f), MixPage(frame=f), VoicePage(self, frame=f), LfoPage(self, frame=f),
                       ConnectPage(self, frame=f)]
         for p in self.pages:
             p.flex = 'WH'

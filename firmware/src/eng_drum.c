@@ -335,6 +335,9 @@ static int32_t drum_amp(track_t *t, voice_t *v, int32_t adsr)
 #define DXS_BUS(s) ((uint32_t)(s) >> 6)                  /* 0 none, 1 CHORUS, 2 DELAY, 3 REVERB */
 #define DXS_AMT(s) ((int32_t)(s) & 63)                   /* 0..63 */
 static uint8_t dx_snd[DV_NLANE];
+/* (cursed-os 0.10.3) HOME > LIVE's global sends, 0..127: added to every track's DELAY and REVERB send (fx.c), the kit's
+ * hits' too (drum_feed); a performance's, not kept in the project */
+static volatile uint8_t lv_snd[2];                    /* 0 DELAY, 1 REVERB */
 /* (JIANT 0.7.8) a core's own (mod.c's mod_c the same way): the two cores render two parts at once (fx.c mix_block), and
  * with one set the other core's part cleared dx_xon and the sides mid-render: the image on and off block by block (a
  * grit at the block rate, like a downsampling) and clicks on the side a sound leaned to. A core renders its parts one
@@ -391,6 +394,7 @@ static int32_t drum_feed(const track_t *t, uint32_t l, uint32_t b)
     a = (a * 129) >> 8;                                  /* (127: 64) */
     if (DXS_BUS(dx_snd[l & 7u]) == b + 1u)
         a += DXS_AMT(dx_snd[l & 7u]);
+    if (b) a += (lv_snd[b - 1u] * 129) >> 8;              /* (0.10.3) LIVE's global DELAY / REVERB send */
     return a > 64 ? 64 : a;
 }
 /* a DRUM part's render starts (voice.c track_render): the pans of the block, the buffers that will be fed cleared */
