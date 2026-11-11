@@ -272,6 +272,17 @@ static volatile int32_t lim_t = LIM_T0;               /* (cursed-os) GLO > MASTE
                                                          * -18 dBFS (ui_input.c ui_polls' LIM) */
 #define LIM_T lim_t
 static int32_t lim_env = LIM_T0;
+static uint16_t lim_hold;                             /* (cursed-os 0.12.2) the peak held this long before the release */
+#define LIM_HOLD 1200u                                /* (27 ms: a 40 Hz kick's cycle) */
+#define LIM_LA 32u                                    /* (0.12.2) the look-ahead: the output 32 samples (0.7 ms) late, so
+                                                         * the gain is down before a peak arrives, not riding it */
+static int32_t lim_dl[LIM_LA], lim_dr[LIM_LA], lim_g = 32768;
+static uint8_t lim_di;
+/* (cursed-os 0.12.2, GG 2026-11-11: "noise mixed with aliasing" on the kicks) The limiter before: the envelope a step
+ * behind |x| (x 1/4 a sample) and the gain T / envelope at once, released between a kick's cycles: on every cycle's rise
+ * the gain went down with the waveform, a waveshaper on the kick (-35 dB of hash at LIMIT -18, the soft clip after it).
+ * Now: the peak at once and held 27 ms, then the release as before; the gain toward T / peak smoothly (~8 samples) on
+ * the signal 32 samples late: down before the peak, steady through the cycles */
 /* (JIANT) CLIP (G_CLIP 0..100): the mix driven x1 .. x4 into the soft clip ahead of the limiter, its level kept near
  * -4 dBFS (as DRUM's DRV); 0: out of the chain. Set each block (master_begin) */
 static int32_t clip_g, clip_mk;
@@ -306,7 +317,8 @@ static __attribute__((noinline)) void clip_block(uint32_t n)
 static volatile uint8_t mc_amt, mc_atk, mc_rel;          /* ON, ATTACK, RELEASE */
 static volatile struct { int8_t in, thr, mk; uint8_t rat, knee, sc, mix; } mc = {0, -12, 0, 3, 6, 0, 100};
 static volatile int32_t comp_gr;
-static int32_t comp_env, comp_g = 32768, comp_sz[4];
+static int32_t comp_env, comp_g = 32768, comp_sz[4], comp_hp;   /* (0.12.2) comp_hp: the detector's held peak */
+static uint8_t comp_hc;
 #define DB_Q8(db) ((db) * 425 / 10)                     /* dB -> octaves, Q8 (6.02 dB an octave) */
 static int32_t comp_lg2(uint32_t x)                     /* log2(x), Q8 (the mantissa linear: within ~0.09 octave) */
 {
@@ -356,6 +368,16 @@ static __attribute__((noinline)) void comp_block(uint32_t n)
             pk = r > pk ? r : pk;
         }
         pk = pk > (1 << 21) ? 1 << 21 : pk;                     /* (2^21, not 2^22: -2^22 is 0xFFC00000, the ROM check reads it as an address) */
+        if (pk >= comp_hp) {                            /* (cursed-os 0.12.2) the peak held ~23 ms (64 x 16): a fast ATTACK
+                                                         * followed each of a kick's cycles and the gain rode its waveform
+                                                         * (a distortion, GG 2026-11-11); held, the follower sees one level */
+            comp_hp = pk;
+            comp_hc = 64;
+        } else if (comp_hc) {
+            comp_hc--;
+            pk = comp_hp;
+        } else
+            comp_hp = pk;
         {                                               /* (the follower in full: a step under 256 kept, so a quiet mix is
                                                          * read at its level; THRESH -36 had read it up to 3 dB low) */
             int32_t d = pk > comp_env ? pk - comp_env : comp_env - pk, k = pk > comp_env ? ka : kr;
@@ -814,14 +836,27 @@ static inline void master_out(int32_t *l, int32_t *r)
     al = *l < 0 ? -*l : *l;
     ar = *r < 0 ? -*r : *r;
     a = al > ar ? al : ar;
-    if (a > lim_env)
-        lim_env += (a - lim_env) >> 2;
+    if (a > lim_env) {                                  /* (0.12.2) the peak at once, held */
+        lim_env = a;
+        lim_hold = LIM_HOLD;
+    } else if (lim_hold)
+        lim_hold--;
     else if (lim_env > LIM_T)
         lim_env -= ((lim_env - LIM_T) >> lim_rs) + 1;   /* (0.5.1: ~45 ms back, was ~90; cursed-os: its RELEASE) */
-    if (lim_env > LIM_T) {
-        int32_t g = (int32_t)(((uint32_t)LIM_T << 15) / (uint32_t)lim_env);   /* < 32768 */
-        *l = ((*l >> 4) * g) >> 11;                      /* >> 4 first: |l| may be far above Q15 */
-        *r = ((*r >> 4) * g) >> 11;
+    {
+        int32_t gt = lim_env > LIM_T ? (int32_t)(((uint32_t)LIM_T << 15) / (uint32_t)lim_env) : 32768;   /* <= 32768 */
+        int32_t dl = lim_dl[lim_di], dr = lim_dr[lim_di];   /* (the signal 32 samples ago) */
+        lim_dl[lim_di] = *l;
+        lim_dr[lim_di] = *r;
+        lim_di = (uint8_t)((lim_di + 1u) & (LIM_LA - 1u));
+        lim_g += gt < lim_g ? (gt - lim_g) >> 3 : gt - lim_g;   /* (down over ~8 samples, of the 32 ahead; up: the
+                                                         * envelope's release itself) */
+        if (lim_g < 32768) {
+            dl = ((dl >> 4) * lim_g) >> 11;              /* >> 4 first: |l| may be far above Q15 */
+            dr = ((dr >> 4) * lim_g) >> 11;
+        }
+        *l = dl;
+        *r = dr;
     }
     *l = softclip(*l);
     *r = softclip(*r);

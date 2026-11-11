@@ -59,6 +59,7 @@ static void fresh(void)
     for (p = 0; p < NPART; p++)
         trk[p].p[P_DIST] = trk[p].p[P_CHOR] = trk[p].p[P_DLY] = trk[p].p[P_REV] = 0;
     transport_req = panic_req = 0;
+    memset(lim_dl, 0, sizeof lim_dl); memset(lim_dr, 0, sizeof lim_dr);   /* (0.12.2: the limiter's look-ahead, a run's last) */
     seq_stop();
     clk_pos = CLK_START; clk_step = 0;
     lim_env = LIM_T; lev_env = 0; lev_g = lev_cur = 32768; lev_dg = 0; dc_l = dc_r = dce_l = dce_r = 0;

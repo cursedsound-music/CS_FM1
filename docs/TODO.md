@@ -58,6 +58,15 @@ Planned work. Done items move to the commit log.
   later.
 - ~~Own LFO shapes from the phone~~ (0.10.2): USER1..4, 32 points, U32's record. Left: LFO 2 and the autopan with them?
 
+## Kick noise (GG, 2026-11-11)
+
+- ~~"Noise mixed with aliasing" on the kicks, not on the other drums~~ (0.12.2): the master LIMITER rode the kick's
+  waveform (its envelope a step behind |x|, the release running between the kick's cycles; since 0.9.9 it always gets
+  the full level, MASTER after it). Now a 32-sample look-ahead, the peak held 27 ms, the gain smoothed: -35 -> -43 dB of
+  hash at LIMIT -18, -39 -> -50 at -12. COMP's detector holds its peak 23 ms the same way. Left: DRUM-X runs at half
+  rate with a linear upsampler (images near 22 kHz, ~-62 dB on a kick's body); its drive and CLICK (noise) are the
+  sound's own.
+
 ## A drum synth's voices (GG, 2026-11-11)
 
 - ~~Engines and effects after the LXR drum machine~~ (0.11.0): FMDRUM (engine 9: DRUM / SNARE / CYMBAL / HAT by FM, a
