@@ -147,7 +147,7 @@ typedef struct {
                                                 * block, empty before */
     int8_t x2[NTRK][X2_N];                     /* (cursed-os) LFO 2 and FILTER 2 (params.c trk_x2): 'X3' (in on the bar
                                                 * with the section; a load: project_restore_runtime) */
-    uint8_t tf, fxl_on, rsv_cos[2];            /* .. the tempo's tenths ('TF'), the FX lane in use ('FL') */
+    uint8_t tf, fxl_on, rsv_cos[2];            /* .. the tempo's hundredths ('TH'; 'TF' tenths), the FX lane in use ('FL') */
     int16_t eqv[4], tapev[2];                  /* (cursed-os) the master's EQ ('EQ') and TAPE ('TP'): the project's, the
                                                 * music's only from a load (never a read, nor a section on the bar) */
     uint16_t fxl[FXL_N];                       /* .. the FX lane (cosfx.c cfx_lane): the pad's effects a sixteenth */
@@ -346,16 +346,21 @@ static __attribute__((noinline)) uint32_t proj_x2(project_t *q, const uint8_t *b
 static __attribute__((noinline)) uint32_t proj_tf(project_t *q, const uint8_t *bc, uint32_t pos, uint32_t room)
 {
     uint8_t *b = (uint8_t *)(uintptr_t)bc;
-    if (!room) {
+    if (!room) {                                        /* (0.10.1) 'TH': hundredths; 'TF' (tenths) when a tenth says it all,
+                                                         * so an older cursed-os reads it */
         if (!q->tf) return 0;
-        if (b) { b[pos] = 'T'; b[pos + 1u] = 'F'; b[pos + 2u] = (uint8_t)(q->tf % 10u); }
+        if (b) {
+            b[pos] = 'T';
+            b[pos + 1u] = q->tf % 10u ? 'H' : 'F';
+            b[pos + 2u] = (uint8_t)(q->tf % 10u ? q->tf % 100u : q->tf / 10u % 10u);
+        }
         return 3u;
     }
-    if (pos + 3u > room || b[pos] != 'T' || b[pos + 1u] != 'F') {
+    if (pos + 3u > room || b[pos] != 'T' || (b[pos + 1u] != 'F' && b[pos + 1u] != 'H')) {
         q->tf = 0;
         return 0;
     }
-    q->tf = (uint8_t)(b[pos + 2u] % 10u);
+    q->tf = (uint8_t)(b[pos + 1u] == 'H' ? b[pos + 2u] % 100u : b[pos + 2u] % 10u * 10u);
     return 3u;
 }
 /* (cursed-os) the FX lane: 'F' 'L' and FXL_N x 2 bytes (the pad's effects a sixteenth, low byte first), when in use */

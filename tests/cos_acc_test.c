@@ -36,7 +36,7 @@ static void t_bpm(void)
         for (t = 0; t < 10u; t++) {
             double want = 60.0 * 44100.0 / ((double)b + t / 10.0);
             uint32_t got, e;
-            song.g[G_BPM] = (int16_t)b; bpm_frac = (uint8_t)t;
+            song.g[G_BPM] = (int16_t)b; bpm_frac = (uint8_t)(t * 10u);   /* (0.10.1: hundredths) */
             got = beat_samples();
             e = (uint32_t)fabs((double)got - want);
             if (e > worst) worst = e;

@@ -421,12 +421,15 @@ int main(void)
         int32_t pk, lo, hi;
         song.playing = 0; song.g[G_BPM] = 120; bpm_frac = 0; bpm_nudge = 0; song.g[G_CLOCK] = 0;
         CHECK(beat_samples() == 22050u, "120 BPM: 22050 a beat (%u)", beat_samples());
-        bpm_frac = 5;
-        CHECK(beat_samples() == 44100u * 600u / 1205u, "120.5 BPM (%u)", beat_samples());
+        bpm_frac = 50;                                   /* (0.10.1: hundredths) */
+        CHECK(beat_samples() == 44100u * 6000u / 12050u, "120.5 BPM (%u)", beat_samples());
+        bpm_frac = 16;
+        CHECK(beat_samples() == 44100u * 6000u / 12016u, "120.16 BPM (%u)", beat_samples());
+        bpm_frac = 50;
         bpm_nudge = 1;
-        CHECK(beat_samples() == 44100u * 600u / 1205u * 1000u / 1030u, "nudged 3 %% faster (%u)", beat_samples());
+        CHECK(beat_samples() == 44100u * 6000u / 12050u * 1000u / 1030u, "nudged 3 %% faster (%u)", beat_samples());
         bpm_nudge = -1;
-        CHECK(beat_samples() > 44100u * 600u / 1205u, "nudged slower (%u)", beat_samples());
+        CHECK(beat_samples() > 44100u * 6000u / 12050u, "nudged slower (%u)", beat_samples());
         bpm_nudge = 0; bpm_frac = 0;
         perf_latch_on = 0; cfx_held = cfx_latched = 0;
         cfx_press(CX_CODE + CX_GATE16, 1);
@@ -573,18 +576,43 @@ int main(void)
         cz.mode = CM_HOME; cz.tab[CM_HOME] = 0;
         fm1_in.buttons |= 1u << panel.btn[B_HOME];
         cos_turn(0, 1); cos_turn(0, 1);
-        CHECK(song.g[G_BPM] == 128 && bpm_frac == 2, "HOME held: 128.2 (%d.%u)", song.g[G_BPM], bpm_frac);
+        CHECK(song.g[G_BPM] == 128 && bpm_frac == 20, "HOME held: 128.2 (%d.%u)", song.g[G_BPM], bpm_frac);
         fm1_in.buttons &= ~(1u << panel.btn[B_HOME]);
         cos_turn(0, 1);
-        CHECK(song.g[G_BPM] >= 129 && bpm_frac == 2, "a whole one, the tenth kept (%d.%u)", song.g[G_BPM], bpm_frac);
-        CHECK(cos_cdesc(CC_BPM, &vp) && *vp == song.g[G_BPM] * 10 + 2, "the knob's value in tenths");
+        CHECK(song.g[G_BPM] >= 129 && bpm_frac == 20, "a whole one, the tenth kept (%d.%u)", song.g[G_BPM], bpm_frac);
+        CHECK(cos_cdesc(CC_BPM, &vp) && *vp == song.g[G_BPM] * 100 + 20, "the knob's value in hundredths");
+        {   /* (0.10.1) FINE, PERFORM's K2: the hundredths, a step each; the whole BPM stays; .00 .. .99, no carry */
+            uint32_t i;
+            song.g[G_BPM] = 130; bpm_frac = 0;
+            CHECK(cos_page()->id[1] == ID_BFINE, "PERFORM K2: FINE");
+            for (i = 0; i < 16u; i++) { host_ticks += 400000u; cos_turn(1, 1); }
+            CHECK(song.g[G_BPM] == 130 && bpm_frac == 16, "FINE x16: 130.16 (%d.%02u)", song.g[G_BPM], bpm_frac);
+            CHECK(beat_samples() == 44100u * 6000u / 13016u, "130.16 plays (%u)", beat_samples());
+            for (i = 0; i < 200u; i++) { host_ticks += 400000u; cos_turn(1, 1); }
+            CHECK(song.g[G_BPM] == 130 && bpm_frac == 99, "FINE up to .99, the BPM kept (%d.%02u)", song.g[G_BPM], bpm_frac);
+            host_ticks += 400000u; cos_turn(0, 1);
+            CHECK(song.g[G_BPM] == 131 && bpm_frac == 99, "BPM +1: 131.99 (%d.%02u)", song.g[G_BPM], bpm_frac);
+            {
+                char t[12];
+                cos_bpm100_text(t, 13016); CHECK(!strcmp(t, "130.16"), "130.16 (%s)", t);
+                cos_bpm100_text(t, 12840); CHECK(!strcmp(t, "128.4"), "128.4 (%s)", t);
+                cos_bpm100_text(t, 12000); CHECK(!strcmp(t, "120"), "120 (%s)", t);
+                cos_bpm100_text(t, 12005); CHECK(!strcmp(t, "120.05"), "120.05 (%s)", t);
+            }
+            song.g[G_BPM] = 128; bpm_frac = 20;
+        }
         song.g[G_BPM] = 128;
         {
             project_t *q = &proj_scratch;
             project_capture(q);
-            CHECK(q->tf == 2u && proj_tf(q, blk, 0, 0) == 3u && blk[0] == 'T' && blk[2] == 2u, "captured and written: TF 2");
+            CHECK(q->tf == 20u && proj_tf(q, blk, 0, 0) == 3u && blk[0] == 'T' && blk[1] == 'F' && blk[2] == 2u,
+                  "captured and written: TF 2 (a tenth: older cursed-os reads it)");
             q->tf = 0; bpm_frac = 0;
-            CHECK(proj_tf(q, blk, 0, 8) == 3u && q->tf == 2u && bpm_frac == 0u, "read back into the project, not the music");
+            CHECK(proj_tf(q, blk, 0, 8) == 3u && q->tf == 20u && bpm_frac == 0u, "read back into the project, not the music");
+            q->tf = 16;
+            CHECK(proj_tf(q, blk, 0, 0) == 3u && blk[1] == 'H' && blk[2] == 16u, "(0.10.1) .16: written TH 16");
+            q->tf = 0;
+            CHECK(proj_tf(q, blk, 0, 8) == 3u && q->tf == 16u, "TH read back: .16 (%u)", q->tf);
             blk[0] = 'X';
             proj_tf(q, blk, 0, 8);
             CHECK(q->tf == 0u, "a project without it: a whole BPM");
@@ -847,7 +875,7 @@ int main(void)
         uint32_t t0 = 100000u;
         cz_tap.n = 0;
         cos_tap(t0); cos_tap(t0 + 469u); cos_tap(t0 + 938u); cos_tap(t0 + 1407u);
-        CHECK(song.g[G_BPM] == 127 && bpm_frac == 9u, "TAP: 127.9 (%d.%u)", song.g[G_BPM], bpm_frac);
+        CHECK(song.g[G_BPM] == 127 && bpm_frac == 90u, "TAP: 127.9 (%d.%u)", song.g[G_BPM], bpm_frac);
         cos_tap(t0 + 5000u);
         CHECK(cz_tap.n == 1u, "a pause: from the start");
         cos_tap(t0 + 5500u);

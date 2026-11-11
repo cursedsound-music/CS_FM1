@@ -69,14 +69,14 @@ int main(int argc, char **argv)
             fm1_ms += 6000u; ui_input();
             CHECK(bpm_nudge == 0, "a nudge held 6 s (the link lost): over (%d)", bpm_nudge);
             rmt_cc_put(39, 127); ui_input(); cos_cdesc(CC_BPM, &vp);
-            CHECK(*vp == b0 + 10, "CC 39: BPM + 1 (%d -> %d)", b0, *vp);
+            CHECK(*vp == b0 + 100, "CC 39: BPM + 1 (%d -> %d)", b0, *vp);
             rmt_cc_put(38, 127); ui_input(); cos_cdesc(CC_BPM, &vp);
             CHECK(*vp == b0, "CC 38: BPM - 1 (%d)", *vp);
             rmt_cc_put(79, 72); ui_input(); cos_cdesc(CC_BPM, &vp);
-            CHECK(*vp == 1320, "CC 79 at 72: 132 BPM (%d)", *vp);
+            CHECK(*vp == 13200, "CC 79 at 72: 132 BPM (%d)", *vp);
             rmt_cc_put(80, 1284 >> 7); rmt_cc_put(81, 1284 & 127); ui_input(); cos_cdesc(CC_BPM, &vp);
-            CHECK(*vp == 1284, "CC 80/81: 128.4 BPM (%d)", *vp);
-            rmt_bpm(b0);
+            CHECK(*vp == 12840, "CC 80/81: 128.4 BPM (%d)", *vp);
+            cos_bpm_set(b0);                             /* (hundredths, 0.10.1) */
             {   /* the faders: each of 70..78 moves its knob to the top and the bottom */
                 static const uint8_t ID[9] = {CC_DJF, CC_EQL, CC_EQM, CC_EQH, CC_MAC0, CC_MAC0 + 1u, CC_MAC0 + 2u, CC_MAC3, CC_MOPOS};
                 uint32_t c;

@@ -42,18 +42,19 @@ enum { CM_HOME, CM_TRIG, CM_SRC, CM_AMP, CM_DRONE, CM_FX, CM_GEN, CM_MIX, CM_KEY
 enum { CK_NONE, CK_TRK, CK_GLO, CK_AC, CK_EU, CK_COS, CK_DB };
 enum { CC_OUTCH, CC_MOUT, CC_CLOCK, CC_SLOT, CC_TRKS, CC_LOAD, CC_COMP, CC_CATK, CC_CREL, CC_LIM, CC_PF0, CC_PF3 = CC_PF0 + 3,
        CC_X2, CC_X2E = CC_X2 + 15, CC_OCT, CC_KICK, CC_KICKE = CC_KICK + 4, CC_LN0, CC_LNE = CC_LN0 + 7, CC_KDRV, CC_BT,
-       CC_L1SYNC, CC_L1RATE, CC_L1WAVE, CC_L1MODE, CC_L1PH, CC_L1FADE, CC_L2SYNC, CC_L2RATE, CC_BPM,
+       CC_L1SYNC, CC_L1RATE, CC_L1WAVE, CC_L1MODE, CC_L1PH, CC_L1FADE, CC_L2SYNC, CC_L2RATE, CC_BPM, CC_BFINE,
        CC_CIN, CC_CTHR, CC_CRAT, CC_CMK, CC_CKNEE, CC_CSC, CC_CMIX, CC_LIN, CC_LREL, CC_LVL, CC_MUTEQ, CC_PCCH, CC_PCOUT, CC_VJCH, CC_EQL, CC_EQM, CC_EQH, CC_MAC0, CC_MAC3 = CC_MAC0 + 3, CC_RB0, CC_RB3 = CC_RB0 + 3, CC_MOPOS, CC_MOBARS, CC_LVLEN, CC_LVRATE, CC_LVDN, CC_LVSH, CC_MCCH, CC_MCCC, CC_MCDIR, CC_MCMAP, CC_MC0, CC_MC3 = CC_MC0 + 3, CC_MOCC,
        CC_NAME, CC_IDLE, CC_SCT, CC_SCG, CC_SCTR, CC_SPV, CC_SPR, CC_SPS, CC_SCM, CC_SPSRC, CC_SCZ, CC_LUT, CC_LUR, CC_LOCAL, CC_KPAT, CC_SCALE, CC_QUANT, CC_DJF, CC_DSEL, CC_DLV, CC_DWAV, CC_DFLT, CC_DBT, CC_DDRV, CC_DLAY, CC_DFB, CC_DSNP, CC_DE0, CC_DEE = CC_DE0 + DE_N - 1 };
 _Static_assert(CC_DEE < 0xFEu, "the CK_COS ids fit a page's byte (0xFE, 0xFF: OCTAVE, none)");
 _Static_assert(X2_N <= 16u, "CC_X2 .. CC_X2E: room for every trk_x2 field");
 #define ID_MUTEQ 0xFCu                          /* (HOME 2's: MUTE Q, cos_knob) */
+#define ID_BFINE 0xFBu                          /* (0.10.1) PERFORM's K2: the tempo's hundredths, .00 .. .99 */
 #define ID_BPM 0xFDu                            /* (HOME's: BPM in tenths, cos_knob) */
 #define ID_OCT 0xFEu                            /* (any page's knob: the track's OCTAVE, cos_knob) */   /* (CC_X2 + X2_*: params.c trk_x2, LFO 2 and FILTER 2) */   /* (CK_COS: cursed-os's own knobs) */
 typedef struct { const char *tab; uint8_t kind, id[4]; } cpg_t;
 #define X 0xFFu
-static const cpg_t CZP_HOME[] = {{"PERFORM", CK_GLO, {ID_BPM, G_SWING, G_DJF, ID_OCT}},
-                                {"PERFORM 2", CK_GLO, {G_DUCK, G_DREL, ID_MUTEQ, X}},
+static const cpg_t CZP_HOME[] = {{"PERFORM", CK_GLO, {ID_BPM, ID_BFINE, G_SWING, G_DJF}},   /* (0.10.1: BPM, FINE; OCTAVE */
+                                {"PERFORM 2", CK_GLO, {G_DUCK, G_DREL, ID_MUTEQ, ID_OCT}},   /* to PERFORM 2) */
                                 {"ISOLATOR", CK_COS, {CC_EQL, CC_EQM, CC_EQH, X}},   /* (cos_iso.c; HOME's black 9-11 the kills) */
                                 {"MACROS", CK_COS, {CC_MAC0, CC_MAC0 + 1u, CC_MAC0 + 2u, CC_MAC3}},
                                 {"MORPH", CK_COS, {CC_MOPOS, CC_MOBARS, X, X}},   /* (cos_morph.c: white 13 A, 14 B) */
@@ -686,11 +687,17 @@ static const param_desc_t *cos_cdesc(uint32_t id, int16_t **vp)
         *vp = &cz.cc_v[14];
         return &DQ;
     }
-    if (id == CC_BPM) {                                  /* BPM in tenths: HOME held, a knob's step is a tenth */
-        static const param_desc_t DB = {"BPM", F_INT, 400, 2400, 1200, 0, 0};
-        cz.cc_v[14] = (int16_t)(cos_follows() ? (int32_t)cos_ext10() : song.g[G_BPM] * 10 + bpm_frac % 10u);   /* (a clock: its) */
+    if (id == CC_BPM) {                                  /* BPM in hundredths (0.10.1; tenths before): the whole on K1 */
+        static const param_desc_t DB = {"BPM", F_INT, 4000, 24000, 12000, 0, 0};
+        cz.cc_v[14] = (int16_t)(cos_follows() ? (int32_t)cos_ext10() * 10 : song.g[G_BPM] * 100 + bpm_frac % 100u);   /* (a clock: its) */
         *vp = &cz.cc_v[14];
         return &DB;
+    }
+    if (id == CC_BFINE) {                                /* (0.10.1) the hundredths: 130 + .16 = 130.16 */
+        static const param_desc_t DF = {"FINE", F_INT, 0, 99, 0, 0, 0};
+        cz.cc_v[13] = (int16_t)(cos_follows() ? (int32_t)cos_ext10() % 10 * 10 : bpm_frac % 100u);
+        *vp = &cz.cc_v[13];
+        return &DF;
     }
     if (id == CC_OCT) {                                  /* OCTAVE: TRANS in octaves (-2 .. +2), its semitones kept; a kit none */
         static const param_desc_t DO = {"OCTAVE", F_INT, -2, 2, 0, 0, 0};
@@ -983,6 +990,7 @@ static const param_desc_t *cos_knob(const cpg_t *p, uint32_t k, int16_t **vp)
     if (p->kind == CK_TRK && cos_dead(TSEL, id)) return 0;   /* (this engine does not use it) */
     if (id == ID_OCT) return cos_cdesc(CC_OCT, vp);     /* (any page's: the track's OCTAVE) */
     if (id == ID_BPM) return cos_cdesc(CC_BPM, vp);
+    if (id == ID_BFINE) return cos_cdesc(CC_BFINE, vp);
     if (id == ID_MUTEQ) return cos_cdesc(CC_MUTEQ, vp);
     switch (p->kind) {
     case CK_TRK: *vp = &TSEL->p[id]; return track_desc(TSEL, id);
@@ -1041,13 +1049,29 @@ static void cos_lock_turn(uint32_t k, int32_t s, uint64_t held)
 /* HOME held: the tempo's button (as a Syntakt's TEMPO): OCT- / OCT+ nudge, a knob's step on BPM a tenth */
 static int cos_home_held(void) { return (int)((fm1_in.buttons >> panel.btn[B_HOME]) & 1u); }
 /* "128.4" */
-static void cos_bpm_text(char *b, int32_t v)
+static void cos_bpm_text(char *b, int32_t v)            /* tenths: 1284 -> 128.4 */
 {
     fmt_int(b, v / 10);
     b += str_len(b);
     b[0] = '.';
     b[1] = (char)('0' + v % 10);
     b[2] = 0;
+}
+static void cos_bpm100_text(char *b, int32_t v)         /* (0.10.1) hundredths: 13016 -> 130.16, 12840 -> 128.4, 12000 -> 120 */
+{
+    fmt_int(b, v / 100);
+    if (!(v % 100)) return;
+    b += str_len(b);
+    b[0] = '.';
+    b[1] = (char)('0' + v / 10 % 10);
+    b[2] = v % 10 ? (char)('0' + v % 10) : 0;
+    b[3] = 0;
+}
+static void cos_bpm_set(int32_t v)                      /* (0.10.1) the tempo in hundredths, 40.00 .. 240.00 */
+{
+    v = clamp(v, 4000, 24000);
+    song.g[G_BPM] = (int16_t)(v / 100);
+    bpm_frac = (uint8_t)(v % 100);
 }
 /* (external clock) the tempo it plays at, BPM x 10 for the header: midi_clock.c measures a quarter beat in ms, so
  * each reading is +-1 % (128 shows 127 .. 129); smoothed here (1/32 a frame), a jump of 4 % or more taken at once,
@@ -1080,8 +1104,7 @@ static __attribute__((noinline)) void cos_tap(uint32_t now)
         uint32_t gap = (cz_tap.t[cz_tap.n - 1u] - cz_tap.t[0]) / (cz_tap.n - 1u);
         int32_t v = gap ? clamp((int32_t)((600000u + gap / 2u) / gap), 400, 2400) : 1200;
         char b[16];
-        song.g[G_BPM] = (int16_t)(v / 10);
-        bpm_frac = (uint8_t)(v % 10);
+        cos_bpm_set(v * 10);                             /* (tenths: a tap's) */
         str_cpy(b, "TAP ", 5);
         cos_bpm_text(b + 4, v);
         cos_say(b);
@@ -1096,15 +1119,20 @@ static void cos_turn(uint32_t k, int32_t s)
     if (!d || !vp || d->max == d->min) return;
     if (cz.mode == CM_SRC || cz.mode == CM_AMP || cz.mode == CM_FX) { cz.lk_mode = cz.mode; cz.lk_tab = cz.tab[cz.mode]; }
     if (cos_home_held()) cz.home_used = 1;               /* (HOME + a knob: no page turn when let go) */
-    if (p->id[k] == ID_BPM && cos_follows()) {           /* (an external clock leads: its tempo, not the knob's) */
+    if ((p->id[k] == ID_BPM || p->id[k] == ID_BFINE) && cos_follows()) {   /* (an external clock leads: its tempo) */
         cos_say("EXT CLOCK LEADS");
         return;
     }
-    if (p->id[k] == ID_BPM) {                            /* BPM: a whole one a step (accelerated); HOME held: a tenth */
-        v = *vp + (cos_home_held() ? (s > 0 ? 1 : -1) : 10 * accel(EN_K1 + k, s, 200));
-        v = clamp(v, 400, 2400);
-        song.g[G_BPM] = (int16_t)(v / 10);
-        bpm_frac = (uint8_t)(v % 10);
+    if (p->id[k] == ID_BPM) {                            /* BPM: a whole one a step (accelerated), the hundredths kept; HOME
+                                                         * held: a tenth */
+        cos_bpm_set(*vp + (cos_home_held() ? (s > 0 ? 10 : -10) : 100 * accel(EN_K1 + k, s, 200)));
+        cz.hot = (uint8_t)(k + 1u);
+        cz.hot_ms = fm1_ms;
+        return;
+    }
+    if (p->id[k] == ID_BFINE) {                          /* (0.10.1) FINE: .00 .. .99, a hundredth a step (accelerated); the
+                                                         * whole BPM stays (no carry: 130.99 stays 130.99) */
+        bpm_frac = (uint8_t)clamp((int32_t)(bpm_frac % 100u) + accel(EN_K1 + k, s, 200), 0, 99);
         cz.hot = (uint8_t)(k + 1u);
         cz.hot_ms = fm1_ms;
         return;
@@ -2337,13 +2365,22 @@ static void cos_head(void)
     }
     b[0] = 0;
     if (cos_follows()) cos_bpm_text(b, (int32_t)cos_ext10());   /* (following a clock: its tempo, steady, in tenths) */
-    else if (bpm_frac) cos_bpm_text(b, song.g[G_BPM] * 10 + bpm_frac % 10u);
-    else fmt_int(b, song.g[G_BPM]);
+    else cos_bpm100_text(b, song.g[G_BPM] * 100 + bpm_frac % 100u);   /* (0.10.1: 130.16) */
     if (bpm_nudge) str_cpy(b + str_len(b), bpm_nudge > 0 ? "+" : "-", 2);   /* (nudged: 3 %, red) */
-    cos_txr(226, 3, b, bpm_nudge ? C_RED : C_FG);
-    cos_txr(226 - 8 * 4, 3, COS_NN[cz.key_next ? cz.key_next - 1u : cos_key()], cz.key_next ? C_RED : C_MID);
-    cos_batt_text(b);                                    /* (the battery: between the engine and the key) */
-    if (b[0]) cos_txr(176, 3, b, cos_batt_pct() <= 15 ? C_RED : C_DIM);
+    {                                                     /* (0.10.1) the key and the battery left of the tempo, however long
+                                                         * (130.16+ is wider than 120) */
+        int32_t kx = 226 - cos_w(b) - 6, bx;
+        const char *kn = COS_NN[cz.key_next ? cz.key_next - 1u : cos_key()];
+        cos_txr(226, 3, b, bpm_nudge ? C_RED : C_FG);
+        if (kx > 194) kx = 194;
+        cos_txr(kx, 3, kn, cz.key_next ? C_RED : C_MID);
+        bx = kx - cos_w(kn) - 8;
+        if (bx > 176) bx = 176;
+        cos_batt_text(b);                                /* (the battery: between the engine and the key) */
+        if (b[0] && (bx >= 164 || cos_batt_pct() <= 15))   /* (a long tempo, 130.16: the battery left out unless
+                                                         * it runs low, the engine's name has the room) */
+            cos_txr(bx, 3, b, cos_batt_pct() <= 15 ? C_RED : C_DIM);
+    }
 tri:
     {                                                     /* the play triangle, red while it runs */
         int32_t i;
@@ -2460,7 +2497,8 @@ static void cos_dial(int32_t cx, int32_t cy, uint32_t k)
     if (str_len(b) > 7u) b[7] = 0;
     cos_txc(cx, cy + r + 4, CZ_LBL, b, C_MID);
     param_format(d, v, val, &unit);
-    if (p->id[k & 3u] == ID_BPM) cos_bpm_text(val, v);
+    if (p->id[k & 3u] == ID_BPM) fmt_int(val, v / 100);   /* (0.10.1: the whole BPM; its hundredths on FINE) */
+    if (p->id[k & 3u] == ID_BFINE) { val[0] = '.'; val[1] = (char)('0' + v / 10 % 10); val[2] = (char)('0' + v % 10); val[3] = 0; }
     if (p->kind == CK_COS && p->id[k & 3u] == CC_MOCC && v < 0) { str_cpy(val, "OFF", sizeof val); unit = 0; }
     if (p->kind == CK_COS && p->id[k & 3u] == CC_IDLE) {   /* (OFF, else "5 MIN") */
         if (v <= 0) str_cpy(val, "OFF", sizeof val);
@@ -3223,7 +3261,7 @@ dials:
 /* the splash (ui_draw.c draw_splash / splash_write under COS_SLIM; main.c's boot loop calls it every ~4 ms for
  * SPL_WRITE + SPL_HOLD ms): black, a few still stars, the name 2x, the version, a 16-block bar filling like a pattern
  * (the block being filled red), READY. Drawn whole once, then only the bar's strip when a block fills */
-#define COS_VERSION "0.10.0"
+#define COS_VERSION "0.10.1"
 static void cos_px2(int32_t x, int32_t y, const char *s, uint16_t c)      /* (the face 2 x 2) */
 {
     int32_t r, b, b0;

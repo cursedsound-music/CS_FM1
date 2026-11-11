@@ -56,12 +56,10 @@ static void rmt_pad_key(uint32_t k, int down)            /* the FX pad: white 0.
     cfx_press(k < 16u ? CFX_W[k] : CFX_B[k - 16u], down);
     fm1_irq_on();
 }
-static void rmt_bpm(int32_t v)                           /* the tempo, in tenths (as the BPM knob) */
+static void rmt_bpm(int32_t v)                           /* the tempo, in tenths (the phone's CC 79, 80/81) */
 {
     if (cos_follows()) { cos_say("EXT CLOCK LEADS"); return; }
-    v = clamp(v, 400, 2400);
-    song.g[G_BPM] = (int16_t)(v / 10);
-    bpm_frac = (uint8_t)(v % 10);
+    cos_bpm_set(v * 10);                                 /* (tenths here; hundredths kept by the FM-1, 0.10.1) */
 }
 static __attribute__((noinline)) void rmt_cc(uint32_t cc, uint32_t v)
 {
@@ -89,7 +87,8 @@ static __attribute__((noinline)) void rmt_cc(uint32_t cc, uint32_t v)
         return;
     }
     if ((cc == 38u || cc == 39u) && on) {                /* (0.9.6) BPM - / + 1 */
-        rmt_bpm(song.g[G_BPM] * 10 + bpm_frac % 10u + (cc == 39u ? 10 : -10));
+        if (cos_follows()) cos_say("EXT CLOCK LEADS");
+        else cos_bpm_set(song.g[G_BPM] * 100 + bpm_frac % 100u + (cc == 39u ? 100 : -100));   /* (the hundredths kept) */
         return;
     }
     if (!on) return;                                     /* (the rest: presses) */

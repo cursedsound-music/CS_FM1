@@ -802,15 +802,16 @@ static inline void master_out(int32_t *l, int32_t *r)
 /* length of one division (N_DIV order) in samples at the song tempo */
 static const uint8_t DIV_DEN[6] = {1, 2, 4, 8, 3, 6};    /* original IDs stay fixed; slow rates append */
 static uint32_t midi_beat_samples;                    /* zero until an external clock has a measured tempo */
-static volatile uint8_t bpm_frac;                     /* (cursed-os) the tempo's tenths (0..9; project.c 'TF') */
+static volatile uint8_t bpm_frac;                     /* (cursed-os) the tempo's hundredths (0..99; 0.10.1, tenths before;
+                                                       * project.c 'TH', 'TF') */
 static volatile int8_t bpm_nudge;                     /* (cursed-os) HOME + OCT- / OCT+ held: -1 / +1, 3 % slower / faster */
-/* (cursed-os: out of line, the RAM code's room) a quarter, samples: the external clock's, or BPM.tenths, nudged */
+/* (cursed-os: out of line, the RAM code's room) a quarter, samples: the external clock's, or BPM.hundredths, nudged */
 static __attribute__((noinline)) uint32_t beat_samples(void)
 {
     uint32_t b;
     if (song.g[G_CLOCK] && midi_beat_samples)
         return midi_beat_samples;
-    b = (uint32_t)FS * 600u / ((uint32_t)song.g[G_BPM] * 10u + bpm_frac % 10u);
+    b = (uint32_t)FS * 6000u / ((uint32_t)song.g[G_BPM] * 100u + bpm_frac % 100u);   /* (264.6 M: in 32 bits) */
     return bpm_nudge ? b * 1000u / (uint32_t)(1000 + 30 * bpm_nudge) : b;
 }
 static uint32_t div_samples(uint32_t div)
