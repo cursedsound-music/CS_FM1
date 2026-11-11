@@ -46,6 +46,11 @@ int main(void)
         cos_cput(CC_CTLCH, 3);
         enc(EN_K1, -1);
         CHECK(((cos_ctl_last >> 8) & 15u) == (2u + CM_AMP) % 16u, "CTRL CH 3: + the mode (%u)", (cos_ctl_last >> 8) & 15u);
+        cz.mode = CM_MIX; cz.tab[CM_MIX] = 10; frame16();   /* (0.13.1) GLO > MIDI 2 itself: the knobs the FM-1's */
+        cos_ctl_last = 0;
+        enc(EN_K1, -1);
+        CHECK(cos_ctl_mode() == 1u && !cos_ctl_last, "MIDI 2's own page: KNOBS turns there, no CC (mode %u)", cos_ctl_mode());
+        cz.mode = CM_AMP; frame16();
         cos_cput(CC_CTLM, 0);
         cos_cput(CC_CTLCH, 7);
     }

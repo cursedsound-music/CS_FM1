@@ -50,7 +50,7 @@ static const char *const N_PFXRES[] = {"1/8", "1/16", "1/32"};     /* (0.6.99) F
 /* seq.c kb_map; 1 = SNAP (stored projects: the former ON); 3 = SEQ: SNAP, and the sequencer's notes snap too as
  * they play (seq.c seq_step; the steps keep what was written). Append-only: older projects hold 0..2 */
 static const char *const N_QUANT[] = {"OFF", "SNAP", "WHITE", "SEQ"};
-static const char *const N_DTYPE[] = {"SOFT", "HARD", "FOLD", "CRUSH", "RECT", "AMP", "TUBE", "RAT"};   /* (JIANT) fx.c DT_*;
+static const char *const N_DTYPE[] = {"SOFT", "HARD", "FOLD", "CRUSH", "RECT", "AMP", "TUBE", "RAT", "RING"};   /* (JIANT) fx.c DT_*;
                                                          * 0.7.8 AMP; cursed-os 0.11.0 TUBE RAT (xr_tables.h) */
 static const char *const N_FTYPE[] = {"LP", "HP", "BP", "COMB", "COMB-", "MS20"};   /* (JIANT 0.5) P_FTYPE: eng_analog.c FT_*
                                                          * (0.9.9-snd1: COMB- the negative comb, MS20) */
@@ -64,7 +64,7 @@ static const char *const N_MIDI_INPUT[] = {"USB", "TRS"};
 static const char *const N_ROUTE[] = {"CH1-6", "SEL"};   /* MIDI IN (seq.c): 1..6 -> parts, 7..16 ignored / all -> selected */
 static const char *const N_NOTE[] = {"C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"};
 static const char *const N_DASH[] = {"--"};
-static const char *const N_RTYPE[] = {"ROOM", "SPRING", "SHIMR", "RESO", "CLOUD", "PLATE"};   /* (cursed-os 0.9.3: PLATE) */   /* (JIANT 0.5: + 3) */   /* G_RTYPE: the reverb bus's model (fx.c) */
+static const char *const N_RTYPE[] = {"ROOM", "SPRING", "SHIMR", "RESO", "CLOUD", "PLATE", "TIGHT"};   /* (cursed-os 0.9.3: PLATE) */   /* (JIANT 0.5: + 3) */   /* G_RTYPE: the reverb bus's model (fx.c) */
 static const char *const N_GO[] = {"--", "GO"};
 static const char *const N_SLCR[] = {"OFF", "GATE", "STUT"};             /* SL_OFF .. SL_STUT (slicer.c) */
 static const char *const N_SLDIV[] = {"1/8", "1/16", "1/32", "8T", "16T", "32T"};   /* SL_DEN */
@@ -223,7 +223,7 @@ static const param_desc_t GP[G_COUNT] = {
     [G_CLRSEQ] = PE("CLRSQ", N_GO, 0),
     [G_INITSND] = PE("INIT", N_GO, 0),
     /* the reverb's model on the REVERB page: the id of the old GM drum channel (G_DRCH, inert since 1.0) */
-    [G_RTYPE] = PE("TYPE", N_RTYPE, 5),           /* (cursed-os 0.9.3: PLATE by default, ROOM before) */
+    [G_RTYPE] = PE("TYPE", N_RTYPE, 5),   /* (0.13.1: + TIGHT) */           /* (cursed-os 0.9.3: PLATE by default, ROOM before) */
     /* (JIANT) the drum bus and the kick's ducking (fx.c, eng_drum.c); the ids of the GM drum part's level and
      * reverb send, inert since 1.0 */
     [G_PUNCH] = PD("PUNCH", F_PCT, 0, 100, 0),    /* DRUM fattened: up to +5 dB the first 4 ms, the body +3 dB (0.5) */
@@ -307,6 +307,10 @@ static const param_desc_t *track_desc(const track_t *t, uint32_t id)
         return &TRN_DESC[id == P_MORPH];
     if (id == P_WRDEP && ENG_TRN(ENGINES[eng_idx(t->eng_req)]))   /* (0.13.0) .. its T.PITCH */
         return &TRN_DESC[2];
+    if (id == P_DTONE && t->p[P_DTYPE] == 8) {          /* (0.13.1) DIST RING: TONE is the carrier's pitch */
+        static const param_desc_t RING_F = {"FREQ", F_INT, -64, 63, 0, 0, 0};
+        return &RING_F;
+    }
     if (id == MOT_DJF)                                /* (0.9.1) a DJ FILTER record (motion.c): the global's */
         return &GP[G_DJF];
     if ((id == P_VLANG || id == P_VLYR) && ENGINES[eng_idx(t->eng_req)] == &ENG_FORMANT)
@@ -779,6 +783,7 @@ static uint8_t ms_ui_step;       /* (JIANT) the MSEQ page: the step (0..15) KNOB
 static const char *const N_RFOLW[] = {"OFF", "T1", "T2", "T3", "T4", "T5", "T6"};
 static const param_desc_t RESO_PITCH = PD("PITCH", F_INT, 0, 14, 0);   /* (0.6.5) RESO: the chord's steps up the scale (G_RPRE) */
 static const param_desc_t RESO_FOLW = PE("FOLLOW", N_RFOLW, 0);          /* .. the track whose notes it follows (G_RDAMP) */
+static const param_desc_t REV_EARLY = PD("EARLY", F_PCT, 0, 127, 0);   /* (0.13.1) TIGHT: WIDE's slot */
 static const param_desc_t REV_PRE = PD("PRE", F_INT, 0, 100, 0);       /* ROOM / SPRING: the pre-delay, ms (G_RPRE) */
 static const param_desc_t REV_AIR = PD("AIR", F_SEMI, -24, 24, 0);    /* (0.6.12) SHIMMER / CLOUD: pitch and tone, down dark,
                                                                        * up airy (G_RPRE; fx.c rev_air) */
@@ -836,6 +841,8 @@ static const param_desc_t *page_desc(const page_t *pg, uint32_t slot, int16_t **
         *valp = &song.g[id];
         if (song.g[G_RTYPE] == 3 && (id == G_RPRE || id == G_RDAMP))   /* (0.6.5) RESO: PITCH, FOLW in their slots */
             return id == G_RPRE ? &RESO_PITCH : &RESO_FOLW;
+        if (id == G_RWIDE && song.g[G_RTYPE] == 6)
+            return &REV_EARLY;
         if (id == G_RPRE)                             /* (0.6.12) SHIMMER / CLOUD: AIR; ROOM / SPRING: PRE */
             return song.g[G_RTYPE] == 2 || song.g[G_RTYPE] == 4 ? &REV_AIR : &REV_PRE;
         return &GP[id];

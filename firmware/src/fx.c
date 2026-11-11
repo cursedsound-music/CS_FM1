@@ -131,7 +131,10 @@ _Static_assert(sizeof rev_comb / 2u >= SP_LEN && sizeof rev_u.sp / 4u >= 4u * (S
  * Distortion.c), in integers: TUBE a triode's (ECC83) curve, leaning one way (even harmonics), its rest offset and the
  * DC its lean leaves taken out; RAT the pedal's op-amp: a ~480 Hz pole before a gain up to ~x2300, a slew limit, a
  * clamp, then a silicon diode pair's curve (1N914). Their curves: xr_tables.h */
-enum { DT_SOFT, DT_HARD, DT_FOLD, DT_CRUSH, DT_RECT, DT_AMP, DT_TUBE, DT_RAT };
+/* (cursed-os 0.13.1) RING: a ring modulator, after the LXR's (Erica Synths, GPL-3.0-only: Ringmod.c): the track times a
+ * sine carrier, TONE its pitch (-64 .. 63: ~20 Hz .. ~2.5 kHz, exponential), DIST the dry / ring mix. No low cut, no
+ * low-pass: the sidebands are the sound. State: dist_hold the carrier's phase */
+enum { DT_SOFT, DT_HARD, DT_FOLD, DT_CRUSH, DT_RECT, DT_AMP, DT_TUBE, DT_RAT, DT_RING };
 #define AMP_B1 7000                                     /* the stages' biases (Q15 into tanh) */
 #define AMP_B2 (-3500)
 static __attribute__((noinline)) int32_t dist_shape(track_t *t, uint32_t type, int32_t x, int32_t g, int32_t d)
@@ -208,6 +211,21 @@ static __attribute__((noinline)) void dist_amp(track_t *t, int32_t *b, uint32_t 
     }
     t->dist_hp = hp; t->dist_lp1 = l1; t->dist_lp2 = l2; t->dist_cab_l = cl; t->dist_cab_b = cb;
 }
+static __attribute__((noinline)) void dist_ring(track_t *t, int32_t *b, uint32_t n, int32_t d, int32_t full,
+                                                int32_t w0, int32_t dw)
+{
+    uint32_t ph = (uint32_t)t->dist_hold, inc = pitch_inc((uint32_t)clamp(t->p[P_DTONE] + 64, 0, 127) * 12u + 256u);
+    int32_t m = clamp(d, 0, 127) * 258, i;              /* (Q15: the ring's share) */
+    for (i = 0; i < (int32_t)n; i++) {
+        int32_t x = clamp(b[i], -230000, 230000), r, y;
+        r = ((x >> 2) * sine_i(ph)) >> 13;             /* (>> 2: fits 32 bits) */
+        r = clamp(r + (r >> 1), -262144, 262144);       /* (x1.5: a sine's mean level back) */
+        y = x + ((((r - x) >> 4) * m) >> 11);
+        ph += inc;
+        b[i] = full ? y : b[i] + ((((y - b[i]) >> 2) * (w0 + dw * (i + 1))) >> 10);
+    }
+    t->dist_hold = (int32_t)ph;
+}
 /* (JIANT 0.6.8, the crackles turning DIST up from 0) DST 1..8 blends the dry part into the drive (it was all drive
  * at 1: the low cut and the clip at once), the blend eased a block at a time and ramped across it; at 0 out of the
  * chain once the blend is down */
@@ -230,8 +248,12 @@ static void track_dist(track_t *t, int32_t *b, uint32_t n)
     g = 4096 + d * d * 2;                                /* Q12: 1x .. ~9x, gentle at first */
     k = clamp(32000 - d * 95 + t->p[P_DTONE] * 300, 2500, 32767);   /* tone: transparent at low drive .. ~3 kHz, Q15 */
     mk = type == DT_HARD || type == DT_FOLD || type == DT_CRUSH ? 30000 - d * 60 : 30000 - d * 120;   /* make-up */
-    if (type > DT_RAT)
+    if (type > DT_RING)
         type = DT_SOFT;
+    if (type == DT_RING) {                              /* (0.13.1) RING: its own loop */
+        dist_ring(t, b, n, d, full, w0, dw);
+        return;
+    }
     if ((type == DT_TUBE || type == DT_RAT) && !w0)
         t->dist_dc = t->dist_hold = 0;
     if (type == DT_RAT)
@@ -331,6 +353,15 @@ static int32_t comp_ex2(int32_t q)                      /* 2^(q / 256) * 32768, 
     int32_t e = q >> 8, f = q & 255, m = 32768 + ((32768 * f) >> 8) - ((f * (256 - f) * 43) >> 8);   /* (a bent line) */
     return e >= 0 ? (e > 6 ? m << 6 : m << e) : (-e > 30 ? 0 : m >> -e);
 }
+/* (cursed-os 0.13.1, GG 2026-11-11: "hiss and artifacts, especially with limiter drive and sidechain") x (the mix, up
+ * to +-2^21, 0 dBFS at 32768) times g (Q15, up to 2^18) in 32 bits without dropping x's low bits. Before, (x >> 4) * g:
+ * the mix cut to 11 bits wherever the COMP (always, even at unity), the limiter's DRIVE or its gain reduction ran, a
+ * grainy -66 dB floor on every tail, raised by MAKEUP and DRIVE */
+static inline int32_t mix_mul(int32_t x, int32_t g)
+{
+    int32_t gq = g >> 4;
+    return (((x >> 4) * gq) >> 7) + (((x & 15) * gq + 1024) >> 11);
+}
 static const uint16_t COMP_RQ[8] = {384, 512, 768, 1024, 1536, 2048, 3072, 5120};   /* RATIO 1.5 2 3 4 6 8 12 20, Q8 */
 static const int16_t COMP_SCA[7] = {0, 16290, 16244, 16174, 16104, 16034, 15918};    /* SC HPF OFF 40 60 90 120 150 200 Hz:
                                                                                      * a one-pole's pole, Q14 */
@@ -348,8 +379,8 @@ static __attribute__((noinline)) void comp_block(uint32_t n)
         int32_t pk = 0, g1, g0 = comp_g, over, dg, gr;
         for (i = j; i < j + 16u && i < n; i++) {        /* INPUT, folded (the mix and the buses' return, as CLIP) */
             int32_t l = clamp(mix_l[i] + wet[i], -(1 << 21) + 1, (1 << 21) - 1), r = clamp(mix_r[i] + wet[i], -(1 << 21) + 1, (1 << 21) - 1);
-            l = clamp(((l >> 4) * (gi >> 4)) >> 7, -(1 << 21) + 1, (1 << 21) - 1);
-            r = clamp(((r >> 4) * (gi >> 4)) >> 7, -(1 << 21) + 1, (1 << 21) - 1);
+            l = clamp(mix_mul(l, gi), -(1 << 21) + 1, (1 << 21) - 1);   /* (0.13.1: all its bits) */
+            r = clamp(mix_mul(r, gi), -(1 << 21) + 1, (1 << 21) - 1);
             mix_l[i] = l;
             mix_r[i] = r;
             wet[i] = 0;
@@ -400,10 +431,10 @@ static __attribute__((noinline)) void comp_block(uint32_t n)
         comp_g = g1;
         dg = (g1 - g0) / 16;
         for (i = j; i < j + 16u && i < n; i++) {
-            int32_t l = mix_l[i], r = mix_r[i], cl = ((l >> 4) * (g0 >> 4)) >> 7, cr = ((r >> 4) * (g0 >> 4)) >> 7;
+            int32_t l = mix_l[i], r = mix_r[i], cl = mix_mul(l, g0), cr = mix_mul(r, g0);
             if (mix < 32768) {                          /* MIX: the dry under it (parallel) */
-                cl = l + ((((cl - l) >> 6) * (mix >> 3)) >> 6);
-                cr = r + ((((cr - r) >> 6) * (mix >> 3)) >> 6);
+                cl = l + mix_mul(clamp(cl - l, -(1 << 21) + 1, (1 << 21) - 1), mix);   /* (0.13.1: was >> 6 first) */
+                cr = r + mix_mul(clamp(cr - r, -(1 << 21) + 1, (1 << 21) - 1), mix);
             }
             mix_l[i] = cl;
             mix_r[i] = cr;
@@ -418,10 +449,9 @@ static volatile uint8_t lev_off, lim_rs = 11;           /* .. the limiter's RELE
 static __attribute__((noinline)) void lim_drive(uint32_t n)
 {
     uint32_t i;
-    int32_t g = lim_in >> 4;
     for (i = 0; i < n; i++) {
-        mix_l[i] = ((clamp(mix_l[i] + wet[i], -(1 << 21) + 1, (1 << 21) - 1) >> 4) * g) >> 7;
-        mix_r[i] = ((clamp(mix_r[i] + wet[i], -(1 << 21) + 1, (1 << 21) - 1) >> 4) * g) >> 7;
+        mix_l[i] = mix_mul(clamp(mix_l[i] + wet[i], -(1 << 21) + 1, (1 << 21) - 1), lim_in);   /* (0.13.1: all its bits) */
+        mix_r[i] = mix_mul(clamp(mix_r[i] + wet[i], -(1 << 21) + 1, (1 << 21) - 1), lim_in);
         wet[i] = 0;
     }
 }
@@ -753,7 +783,7 @@ static volatile uint8_t fx_usb_fixed;
  * or a computer whose input clips at the full level (usb.c uac_tap reads it) */
 static volatile int32_t fx_usb_gain = 4096;
 #define UAC_GAIN() fx_usb_gain
-static const uint8_t REV_LITE[3][6] = {{0, 1, 2, 3, 4, 5}, {0, 1, 0, 1, 0, 0}, {1, 1, 1, 1, 1, 1}};   /* (0.6.29) LOAD FULL, LITE, ECO
+static const uint8_t REV_LITE[3][7] = {{0, 1, 2, 3, 4, 5, 6}, {0, 1, 0, 1, 0, 0, 0}, {1, 1, 1, 1, 1, 1, 1}};   /* (0.6.29) LOAD FULL, LITE, ECO
                                                          * (voice.c sys_load): each reverb's lighter kin */
 #define MASTER_FULL 4096                /* main.c: the MASTER knob's top, Q12 */
 /* the MASTER pot (ADC 0..1023, smoothed in main.c) to its level, square law: 0 .. 4088 (Q12) */
@@ -852,8 +882,8 @@ static inline void master_out(int32_t *l, int32_t *r)
         lim_g += gt < lim_g ? (gt - lim_g) >> 3 : gt - lim_g;   /* (down over ~8 samples, of the 32 ahead; up: the
                                                          * envelope's release itself) */
         if (lim_g < 32768) {
-            dl = ((dl >> 4) * lim_g) >> 11;              /* >> 4 first: |l| may be far above Q15 */
-            dr = ((dr >> 4) * lim_g) >> 11;
+            dl = mix_mul(clamp(dl, -(1 << 21) + 1, (1 << 21) - 1), lim_g);   /* (0.13.1: was (dl >> 4) * g: 11 bits while it */
+            dr = mix_mul(clamp(dr, -(1 << 21) + 1, (1 << 21) - 1), lim_g);   /* limited, the hiss under a DRIVE) */
         }
         *l = dl;
         *r = dr;
@@ -1712,6 +1742,75 @@ static __attribute__((noinline)) void rev_plate(const int32_t *rev_in, int32_t *
     fx.pl_p = p; fx.pl_q = q;
     fx.pl_lp[0] = lpL; fx.pl_lp[1] = lpR; fx.pl_bw = bw; fx.pl_pm = pm; fx.pl_ps = ps;
 }
+/* (cursed-os 0.13.1) TIGHT (G_RTYPE 6): the LXR drum machine's reverb (Erica Synths, GPL-3.0-only: Reverb.c, its
+ * non-SPIN_SEMI loop), in integers at PLATE's half rate (its lengths halved). A smaller tank than PLATE's, for drums:
+ * the pre-delay, early reflections (four taps 0.3 .. 1.1 ms after it, 1, 1/2, 1/8, 1/4: EARLY, in WIDE's slot, their
+ * level), two input diffusers in pairs (0.75 0.75, 0.625 0.625: one pair each branch), two branches in a loop, each a
+ * swept allpass (MOD, RATE), a delay, x SIZE, an allpass, a delay; the first's end through the damping low-pass (DAMP)
+ * x SIZE into the second, the second's x SIZE back into the first. The output mono, five taps (the LXR's). The LXR's
+ * second branch runs its first's allpass twice (the 1800 left unused); here each its own, as meant. SIZE: the feedback
+ * 0.3 .. 0.95 (four times a loop: RT60 ~0.8 s, ~1.6 s at 90, ~7 s at 127). Its lines: PLATE's place (rev_x, rev_comb) */
+#define TT_EXC 10u
+enum {
+    TA_1 = 336u + TT_EXC + 2u, TD_0 = 1024u, TA_2 = 1020u, TD_1 = 957u,      /* the first branch (672 2047 2039 1913) */
+    TB_1 = 454u + TT_EXC + 2u, TD_2 = 860u, TB_2 = 900u, TD_3 = 582u,        /* the second (908 1720 1800 1163) */
+    TP_A1 = 0, TP_D0 = TP_A1 + TA_1 + 1, TP_A2 = TP_D0 + TD_0 + 1, TP_D1 = TP_A2 + TA_2 + 1,
+    TP_B1 = TP_D1 + TD_1 + 1, TP_D2 = TP_B1 + TB_1 + 1, TP_B2 = TP_D2 + TD_2 + 1, TP_D3 = TP_B2 + TB_2 + 1,
+    TP_END = TP_D3 + TD_3 + 1,
+    TI_1 = 71u, TI_2 = 54u, TI_3 = 190u, TI_4 = 139u,                         /* the input diffusers (142 107 379 277) */
+    TQ_1 = 2300, TQ_2 = TQ_1 + TI_1 + 1, TQ_3 = TQ_2 + TI_2 + 1, TQ_4 = TQ_3 + TI_3 + 1, TQ_END = TQ_4 + TI_4 + 1
+};
+_Static_assert(TP_END <= CL_LEN && TQ_END <= 4096, "TIGHT's lines in rev_x and rev_comb");
+static __attribute__((noinline)) void rev_tight(const int32_t *rev_in, int32_t *out, uint32_t n)
+{
+    int16_t *pl = rev_x.cl, *pq = rev_comb;
+    uint32_t p = fx.pl_p, q = fx.pl_q, i, pre = (uint32_t)clamp(song.g[G_RPRE], 0, 100) * 2205u / 100u;
+    int32_t fb = 9830 + GFX(GF_RSIZE) * 168;             /* (0.3 .. 0.95, Q15) */
+    int32_t damp = GFX(GF_RDAMP) * 220, kb = clamp(30000 - GFX(GF_RDAMP) * 120, 12000, 30000);
+    int32_t ev = song.g[G_RWIDE] * 258;                  /* (EARLY: the reflections' level, Q15) */
+    int32_t ex = 24 + song.g[G_RMOD] * 8;                /* (the sweep, Q8 half-rate samples) */
+    int32_t m1, m2, lp = fx.pl_lp[0], bw = fx.pl_bw, pm = fx.pl_pm;
+    fx.pl_ph += LFO_INC[song.g[G_RRATE] & 127] * 2u;
+    m1 = ((osc_sine(fx.pl_ph + 0x40000000u) + 32768) * ex) >> 16;   /* (the cosine the first's, the sine the second's) */
+    m2 = ((osc_sine(fx.pl_ph) + 32768) * ex) >> 16;
+    for (i = 0; i + 1u < n; i += 2u) {
+        int32_t x = (rev_in[i] + rev_in[i + 1u]) >> 3, a, b, e, d, w, y;
+        PQW(0, x);
+        x = PQR(0, pre);
+        e = PQR(0, pre + 6u) + (PQR(0, pre + 12u) >> 1) + (PQR(0, pre + 19u) >> 3) + (PQR(0, pre + 25u) >> 2);
+        bw += plmul(x - bw, kb);
+        a = PL_AP(PQR, PQW, TQ_2, TI_2, 24576, bw);       /* (the first branch's pair: 107, then 142) */
+        a = PL_AP(PQR, PQW, TQ_1, TI_1, 24576, a);
+        b = PL_AP(PQR, PQW, TQ_4, TI_4, 20480, bw);       /* (the second's: 277, then 379) */
+        b = PL_AP(PQR, PQW, TQ_3, TI_3, 20480, b);
+        /* the first branch: in + the second's last (x SIZE), the swept allpass, the delay, x SIZE, the allpass, the
+         * delay; its end x SIZE through the damping into the second */
+        d = pl_rdf(pl, p, TP_A1, (int32_t)(TA_1 - TT_EXC - 1u) * 256 + m1);
+        w = a + plmul(plmul(PLR(TP_D3, TD_3), fb), fb) - plmul(d, 19661);
+        PLW(TP_A1, w);
+        PLW(TP_D0, d + plmul(clamp(w, -32768, 32767), 19661));
+        w = PL_AP(PLR, PLW, TP_A2, TA_2, 19661, plmul(PLR(TP_D0, TD_0), fb));
+        PLW(TP_D1, w);
+        d = plmul(PLR(TP_D1, TD_1), fb);
+        lp = d + plmul(lp - d, damp);
+        /* the second: in2 + that, the same */
+        d = pl_rdf(pl, p, TP_B1, (int32_t)(TB_1 - TT_EXC - 1u) * 256 + m2);
+        w = b + lp - plmul(d, 19661);
+        PLW(TP_B1, w);
+        PLW(TP_D2, d + plmul(clamp(w, -32768, 32767), 19661));
+        w = PL_AP(PLR, PLW, TP_B2, TB_2, 19661, plmul(PLR(TP_D2, TD_2), fb));
+        PLW(TP_D3, w);
+        y = PLR(TP_D2, 133u) - PLR(TP_A2, 956u) + PLR(TP_D3, 498u) - PLR(TP_B2, 93u) - PLR(TP_D1, 533u);
+        y = ((y * 19661) >> 15) + plmul(e, ev);       /* (x 0.6 the LXR's; the reflections at EARLY) */
+        y = (y * 7) >> 1;                                 /* (PLATE's level: tests/ring_tight_test.c) */
+        out[i] += (pm + y) >> 1;
+        out[i + 1u] += y;
+        pm = y;
+        p--; q--;
+    }
+    fx.pl_p = p; fx.pl_q = q;
+    fx.pl_lp[0] = lp; fx.pl_bw = bw; fx.pl_pm = pm;
+}
 #undef PLR
 #undef PLW
 #undef PQR
@@ -1759,6 +1858,7 @@ static void rev_run(uint32_t ty, const int32_t *rev_in, int32_t *out, uint32_t n
     case 3: rev_reso(rev_in, out, n); break;
     case 4: rev_cloud(rev_in, out, n); break;
     case 5: rev_plate(rev_in, out, n); break;
+    case 6: rev_tight(rev_in, out, n); break;
     default:
         if (song.g[G_RMOD] || song.g[G_RWIDE]) rev_room_mod(rev_in, out, n, song.g[G_RWIDE]);
         else rev_room(rev_in, out, n);
@@ -1809,7 +1909,7 @@ static __attribute__((noinline)) void rev_line_clear(uint32_t n)
  * ROOM, SPRING and RESO nothing, the pre-delay's line runs on as it always has */
 static uint32_t rev_line_dirty(uint32_t from, uint32_t to)
 {
-    return to == 4u || to == 5u ? CL_LEN : to == 2u ? SH_LEN : from == 2u || from == 4u || from == 5u ? RPRE_LEN : 0u;   /* (0.9.3: PLATE's
+    return to >= 4u ? CL_LEN : to == 2u ? SH_LEN : from == 2u || from >= 4u ? RPRE_LEN : 0u;   /* (0.9.3: PLATE's
                                                          * tank all of it, like CLOUD's) */
 }
 /* every buffer and state of the reverb silenced (fx_trip, the tests) */
@@ -2195,7 +2295,7 @@ static uint8_t rest_ph;                                  /* the rest's clearing:
 static __attribute__((noinline)) int fx_rest(int32_t *wet, uint32_t n, uint32_t cinc, int32_t cdepth, int32_t cw,
                                              int32_t dmix)
 {
-    uint32_t rt = (uint32_t)song.g[G_RTYPE] <= 5u ? (uint32_t)song.g[G_RTYPE] : 0u, ph = rest_ph, i;
+    uint32_t rt = (uint32_t)song.g[G_RTYPE] <= 6u ? (uint32_t)song.g[G_RTYPE] : 0u, ph = rest_ph, i;
     int32_t wm, dwm;
     if (fxg_g || fxg_dly || GFX(GF_DFDBK) >= 100 || fx.dsw || fx.din_g || (rt == 4u && GFX(GF_RSIZE) >= 127) ||
         REV_LITE[sys_load % 3u][rt] != fx.rtype) {
@@ -2432,7 +2532,7 @@ static inline __attribute__((always_inline)) void fx_buses(const int32_t *cho_in
             fx_sr[i] -= side;
         }
     }
-    rt = (uint32_t)song.g[G_RTYPE] <= 5u ? song.g[G_RTYPE] : 0;
+    rt = (uint32_t)song.g[G_RTYPE] <= 6u ? song.g[G_RTYPE] : 0;
     rt = REV_LITE[sys_load % 3u][rt];                   /* (0.6.29) LOAD LITE: SHIMMER, CLOUD as ROOM, RESO as SPRING; ECO:
                                                          * all SPRING */
     if (rt != fx.rtype) {                               /* the model changed: the old one's block fades out, */

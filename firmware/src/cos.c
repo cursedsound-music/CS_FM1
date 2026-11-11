@@ -1199,6 +1199,8 @@ static const param_desc_t *cos_knob(const cpg_t *p, uint32_t k, int16_t **vp)
         *vp = &song.g[id];
         if (song.g[G_RTYPE] == 3 && (id == G_RPRE || id == G_RDAMP))   /* (params.c: RESO's PITCH, FOLW in their slots; */
             return id == G_RPRE ? &RESO_PITCH : &RESO_FOLW;           /* SHIMMER / CLOUD's AIR for PRE) */
+        if (id == G_RWIDE && song.g[G_RTYPE] == 6)
+            return &REV_EARLY;
         if (id == G_RPRE)
             return song.g[G_RTYPE] == 2 || song.g[G_RTYPE] == 4 ? &REV_AIR : &REV_PRE;
         return &GP[id];
@@ -2260,6 +2262,9 @@ static __attribute__((noinline)) void cos_input(void)
         if ((s = panel_enc(EN_K1 + k)) != 0) {
             uint64_t h = cz.mode == CM_TRIG ? cos_held() : 0u;
             uint32_t cm = cos_ctl_mode();
+            if (cos_page()->kind == CK_COS && cos_page()->id[0] == CC_CTLM)
+                cm = 0;                                  /* (0.13.1) on GLO > MIDI 2 the knobs are always the FM-1's: the
+                                                         * way back from MIDI (GG: "how do i exit midi mode") */
             if (cm == 2u && !cz.fx_down) {               /* (0.13.0) KNOBS MIDI: a relative CC only */
                 cos_ctl_send(k, s > 0 ? (uint32_t)clamp(s, 1, 63) : (uint32_t)(128 - clamp(-s, 1, 63)));
                 cz.hot = (uint8_t)(k + 1u); cz.hot_ms = fm1_ms;
@@ -3826,7 +3831,7 @@ dials:
 /* the splash (ui_draw.c draw_splash / splash_write under COS_SLIM; main.c's boot loop calls it every ~4 ms for
  * SPL_WRITE + SPL_HOLD ms): black, a few still stars, the name 2x, the version, a 16-block bar filling like a pattern
  * (the block being filled red), READY. Drawn whole once, then only the bar's strip when a block fills */
-#define COS_VERSION "0.13.0"
+#define COS_VERSION "0.13.1"
 static void cos_px2(int32_t x, int32_t y, const char *s, uint16_t c)      /* (the face 2 x 2) */
 {
     int32_t r, b, b0;
