@@ -19,7 +19,7 @@
  * that has rung out (-84 dB) stops computing (live 0) and writes zeros. Only 32-bit products. */
 enum { DV_KICK, DV_SNARE, DV_CLAP, DV_HATC, DV_HATO, DV_TOM, DV_RIM, DV_BELL, DV_NLANE };   /* the kit's lanes */
 enum { DXW_SINE, DXW_FM, DXW_METAL, DXW_BELL };
-enum { DXF_LP, DXF_BP, DXF_HP };
+enum { DXF_LP, DXF_BP, DXF_HP, DXF_FM };   /* (cursed-os 0.12.0) FM: the sound by FMDRUM's voice (dx_fmd) */
 #define DX_MODE(w, f, snap) ((uint8_t)((w) | (f) << 2 | (snap) << 4))
 enum { DXM_DECAY, DXM_LONG, DXM_NOISE, DXM_SINE };       /* (JIANT 0.4) the pitch modulation: mode bits 5..6 */
 #define DX_DRIVE 0x80u                                   /* .. the oscillator driven: bit 7 */
@@ -216,6 +216,140 @@ static __attribute__((noinline)) int32_t dx_hands_step(dx_voice_t *v, uint32_t n
     *g1 = (int32_t)(mul64(*g1, 4096 + s) >> 12);
     return (int32_t)(mul64(gn, 4096 + s0) >> 12);
 }
+/* (cursed-os 0.12.0) FILTER FM: a sound of the kit played by FMDRUM's voice (eng_fmdrum.c, after the LXR's drum
+ * voices) instead of DRUM-X's, its knobs read as FMDRUM's: WAVE the TYPE (SINE DRUM, FM SNARE, METAL CYMBAL, BELL
+ * HAT), PITCH the carrier, BEND (PMOD) the SWEEP, DECAY, NOISE, TONE (COLOR) the FM depth, SNAP with BENDTYP (mode
+ * bits 4..6) the TRANSIENT (OFF SNAP CLICK CLICK 2 RIM CLAP PEDAL ACOUST), DRIVE. MORPH between A and B as DRUM-X's;
+ * the envelopes as dx_run's (DECAY's tau, the AHDSR, the choke, the end at -66 dB). At the full rate, so the hats
+ * keep their top (DRUM-X's runs at half). State: ph the carrier, ph2 the modulator, ph4 the second (CYMBAL HAT) or
+ * SNARE's partial; ic1 ic2 the high-passes; b1 SNAP's envelope; hpos the transient's place */
+static const uint8_t DXF_TRN[8] = {0, TRN_SNAP, 2, 3, 6, 9, 8, 5};
+static const uint16_t DXF_RAT[4] = {256, 707, 707, 955};   /* the modulator, Q8: 1, 2.76, 2.76, 3.73 */
+#define DXF_TRN_OF(m) ((uint32_t)DXF_TRN[((m) >> 4) & 7u])
+static __attribute__((noinline)) void dx_fmd(const dx_lane_t *L, dx_voice_t *v, int32_t morph, int32_t tune16,
+                                             int32_t dofs, int32_t cofs, int32_t nofs, int32_t *y, uint32_t n, uint32_t ln)
+{
+    int32_t q[DXP_N], p16, depth, ea1, en1, ep1, se1, og, ng, ga, dga, gn, dgn, idx, ha, a0 = 32767, a1 = 32767;
+    uint32_t i, c, k, type = L->mode & 3u, ta, tp, kb, aA, aH, rat = DXF_RAT[L->mode & 3u];
+    int32_t tk = (int32_t)DXF_TRN_OF(L->mode), h1, h2, rng, tpos;
+    uint32_t ph0, ph1, ph2;
+    const uint8_t *de = dx_de[ln & 7u];
+    morph = clamp(morph, 0, 127);
+    for (k = 0; k < DXP_N; k++)
+        q[k] = L->a[k] + ((L->b[k] - L->a[k]) * morph) / 127;
+    q[DXP_DECAY] = clamp(q[DXP_DECAY] + dofs, 0, 127);
+    q[DXP_COLOR] = clamp(q[DXP_COLOR] + cofs, 0, 127);
+    q[DXP_NOISE] = clamp(q[DXP_NOISE] + nofs, 0, 127);
+    ta = dx_tau((uint32_t)q[DXP_DECAY]);
+    tp = (uint32_t)clamp((int32_t)(ta / 6u), 1000, 40000);
+    p16 = 384 + q[DXP_PITCH] * 12 + tune16;
+    depth = q[DXP_PMOD] * 6;
+    if (v->trig) {
+        v->trig = 0;
+        v->live = 1;
+        v->ea = v->en = 1 << 30;
+        v->ep = 32767;
+        v->b1 = 32767;
+        v->ph = v->ph2 = v->ph4 = 0;
+        v->ic1 = v->ic2 = 0;
+        if (!v->rng)
+            v->rng = 0x2545F491;
+        v->hpos = 0;
+        v->at = 0;
+    }
+    kb = v->choke ? dv_kb(1500u) : dv_kb(ta);
+    ea1 = mulq16(v->ea, kb);
+    en1 = v->choke ? ea1 : mulq16(v->en, kb);
+    aA = dx_ahs(de[DE_ATK]);
+    aH = dx_ahs(de[DE_HLD]);
+    if (!v->choke && (aA | aH | de[DE_SUS])) {           /* (as dx_run's) */
+        if (v->at < aA + aH) {
+            ea1 = v->ea;
+            en1 = v->en;
+        } else if (de[DE_SUS] && (v->lg & 0x80u)) {
+            int32_t S = (int32_t)de[DE_SUS] << 23;
+            ea1 = v->ea > S ? S + mulq16(v->ea - S, kb) : v->ea;
+            en1 = v->en > S ? S + mulq16(v->en - S, kb) : v->en;
+        } else if (de[DE_SUS]) {
+            uint32_t kr = dv_kb(TIME_MS_X10[de[DE_REL] & 127u] * 100u);
+            ea1 = mulq16(v->ea, kr);
+            en1 = mulq16(v->en, kr);
+        }
+    }
+    if (aA && v->at < aA) {                              /* ATTACK: up from 0 (half-rate samples, as dx_run's) */
+        uint32_t t1 = v->at + n / 2u, sh = aA >= 65536u ? 4u : 0u;
+        a0 = (int32_t)(((v->at >> sh) * 32767u) / (aA >> sh));
+        a1 = t1 >= aA ? 32767 : (int32_t)(((t1 >> sh) * 32767u) / (aA >> sh));
+    }
+    if (v->at < 0x40000000u)
+        v->at += n / 2u;
+    ep1 = (int32_t)(((uint32_t)v->ep * dv_kb(tp)) >> 16);
+    se1 = (v->b1 * 5650) >> 15;                          /* (SNAP: ~1 ms, a block at a time) */
+    ng = q[DXP_NOISE] * 258;
+    og = ((32767 - ng) * 11) >> 4;
+    ng = (ng * 11) >> 4;
+    ga = mulq15(mulq15(og, v->ea >> 15), a0) << 8;
+    dga = ((mulq15(mulq15(og, ea1 >> 15), a1) << 8) - ga) / (int32_t)(n ? n : 1u);
+    gn = mulq15(mulq15(ng, v->en >> 15), a0) << 8;
+    dgn = ((mulq15(mulq15(ng, en1 >> 15), a1) << 8) - gn) / (int32_t)(n ? n : 1u);
+    ha = type == 3u ? 18000 : type == 2u ? 12000 : type == 1u ? 7000 : 5000;
+    ph0 = v->ph; ph1 = v->ph2; ph2 = v->ph4;
+    h1 = v->ic1; h2 = v->ic2; rng = v->rng; tpos = v->hpos;
+    for (c = 0; c < n; c += 16u) {
+        uint32_t e = c + 16u < n ? c + 16u : n, inc, mi, mi2;
+        int32_t epc = v->ep + (((ep1 - v->ep) * (int32_t)c) / (int32_t)n), pit = p16 + ((depth * epc) >> 15);
+        if (tk == TRN_SNAP)
+            pit += trn_snap(v->b1, 100);
+        inc = pitch_inc((uint32_t)clamp(pit, 0, 2047));
+        mi = (inc >> 8) * rat;
+        mi2 = type == 1u ? (inc >> 8) * 410u : (mi >> 8) * 379u;
+        idx = (q[DXP_COLOR] * (8192 + ((epc >> 2) * 3))) >> 13;
+        for (i = c; i < e; i++, ga += dga, gn += dgn) {
+            int32_t mo = type >= 2u ? (fmd_wave(3u, ph1, mi) + fmd_wave(3u, ph2, mi2)) >> 1 : osc_sine(ph1), s, x;
+            uint32_t pm = ph0 + ((uint32_t)(mo * idx) << 9);
+            s = type == 0u ? osc_sine(pm) : type == 1u ? (osc_tri(pm) * 3 + osc_sine(ph2)) >> 2 : fmd_wave(3u, pm, inc);
+            x = (int32_t)(noise32(&rng) >> 17) - 16384;
+            if (type >= 2u) {                            /* CYMBAL HAT: the whole through the high-passes */
+                s = mulq15(s, ga >> 8) + mulq15(x << 1, gn >> 8);
+                h1 += ((s - h1) * ha) >> 15;
+                s -= h1;
+                h2 += ((s - h2) * ha) >> 15;
+                s -= h2;
+                s = type == 3u ? (s * 5) >> 1 : s + (s >> 1);
+            } else {
+                h1 += ((x - h1) * ha) >> 15;
+                s = mulq15(s, ga >> 8) + mulq15((x - h1) << 1, gn >> 8);
+            }
+            y[i] = s;
+            ph0 += inc;
+            ph1 += mi;
+            ph2 += mi2;
+        }
+    }
+    if (L->mode & DX_DRIVE)
+        for (i = 0; i < n; i++)
+            y[i] = (softclip(y[i] * 3) * 22000) >> 15;
+    if (tk >= 2) {                                       /* the transient, at the hit's level */
+        int32_t pos = tpos;
+        trn_add(y, n, tk, (mulq15(og ? og : 32767, v->ea >> 15) * 3) >> 9, &pos);   /* (~ 0..127 with the hit) */
+        tpos = pos;
+    }
+    for (i = 0; i < n; i++)                              /* (x 0.6: the level of the kit's DRUM-X sounds, which lose
+                                                          * their top at half rate) */
+        y[i] = clamp((y[i] * 20000) >> 15, -32767, 32767);
+    v->ph = ph0; v->ph2 = ph1; v->ph4 = ph2;
+    v->ic1 = h1; v->ic2 = h2; v->rng = rng;
+    v->hpos = (uint16_t)(tpos > 65535 ? 65535 : tpos);
+    v->hl = n ? y[n - 1u] : 0;
+    v->ea = ea1;
+    v->en = en1;
+    v->ep = ep1;
+    v->b1 = se1;
+    if (v->ea < (1 << 19) && v->en < (1 << 19)) {
+        v->live = 0;
+        v->hl = 0;
+    }
+}
 static __attribute__((noinline)) void dx_run(const dx_lane_t *L, dx_voice_t *v, int32_t morph, int32_t tune16,
                                              int32_t dofs, int32_t cofs, int32_t nofs, int32_t warp, int32_t fm, int32_t *y,
                                              uint32_t n)
@@ -229,6 +363,10 @@ static __attribute__((noinline)) void dx_run(const dx_lane_t *L, dx_voice_t *v, 
     if (!v->live && !v->trig) {
         for (i = 0; i < n; i++)
             y[i] = 0;
+        return;
+    }
+    if (flt == DXF_FM) {                                 /* (cursed-os 0.12.0) FMDRUM's voice */
+        dx_fmd(L, v, morph, tune16, dofs, cofs, nofs, y, n, ln);
         return;
     }
     if (nf < 2u) {                                       /* (ctl64) one sample (a hit starting at a block's last sample,
@@ -611,7 +749,8 @@ static int dx_kit_ok(const dx_lane_t *k)
 {
     uint32_t l, i;
     for (l = 0; l < 8u; l++) {
-        if (((k[l].mode >> 2) & 3u) > DXF_HP)          /* (JIANT 0.4: bits 5..7 the pitch modulation, DRIVE) */
+        if (((k[l].mode >> 2) & 3u) > DXF_FM)          /* (JIANT 0.4: bits 5..7 the pitch modulation, DRIVE; cursed-os
+                                                         * 0.12.0: filter 3 FM, every value of the field) */
             return 0;
         for (i = 0; i < DXP_N; i++)
             if (k[l].a[i] > 127u || k[l].b[i] > 127u)

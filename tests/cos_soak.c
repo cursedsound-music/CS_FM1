@@ -64,6 +64,7 @@ int main(int argc, char **argv)
                 t->p[P_MORPH] = (int16_t)rnd(128u);
                 t->p[P_DTYPE] = (int16_t)(6u + rnd(2u));
                 t->p[P_DIST] = (int16_t)rnd(128u);
+                dx_kit[rnd(8u)].mode = (uint8_t)rnd(256u);   /* (0.12.0) any mode: FILTER FM among them */
             }
             if (r == 223u && !rmt_fready) {
                 uint32_t k, n = 3u + rnd(300u);

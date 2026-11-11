@@ -158,6 +158,14 @@ int main(void)
             if (n < 4u) { printf("cpu_vg: the part does not sound (%u voices)\n", n); return 1; }
         }
     }
+    {   /* (0.12.0) the kit with every sound on FMDRUM's voice (FILTER FM, drumx_voice.c dx_fmd) */
+        uint32_t l;
+        for (l = 0; l < 8u; l++) dx_kit[l].mode = (uint8_t)((dx_kit[l].mode & ~0x0Cu) | DXF_FM << 2);
+        vg_quiet();
+        vg_part(0, ENGI_DRUM, 0, 8);
+        vg_section("eng/DRUM.FM");
+        memcpy(dx_kit, DX_KIT_DEF, sizeof dx_kit);
+    }
     for (i = 0; i < AN_NMODE; i++) {                    /* (0.8.3) ANIMAL's five sources */
         uint32_t k;
         vg_quiet();

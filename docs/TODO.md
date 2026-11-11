@@ -63,7 +63,7 @@ Planned work. Done items move to the commit log.
 - ~~Engines and effects after the LXR drum machine~~ (0.11.0): FMDRUM (engine 9: DRUM / SNARE / CYMBAL / HAT by FM, a
   pitch sweep, noise; 10 presets), the TRANSIENT layer on FMDRUM and KICK (SNAP and the LXR's twelve transient
   samples, GG 2026-11-11: xr_tables.h), DIST TUBE (ECC83) and RAT (op-amp + 1N914) from its curves. Left: a
-  transient PITCH knob (the LXR plays them faster / slower)? Left: a hi-hat choke between two FMDRUM tracks? FMDRUM lanes inside the DRUM kit?
+  transient PITCH knob (the LXR plays them faster / slower)? Left: a hi-hat choke between two FMDRUM tracks? ~~FMDRUM lanes inside the DRUM kit~~ (0.12.0: FILTER FM on a kit sound, drumx_voice.c dx_fmd).
 
 ## Drums live (GG, 2026-11-10)
 

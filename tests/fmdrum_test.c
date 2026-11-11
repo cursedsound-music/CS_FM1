@@ -185,6 +185,57 @@ int main(void)
         trk[2].p[P_DIST] = 0;
         trk[2].p[P_DTYPE] = 0;
     }
+    {   /* (0.12.0) a kit's sound on FMDRUM's voice: FILTER FM on the SNARE (DRUM's TONE page), every TYPE and TRANSIENT */
+        static int32_t base[2048];
+        uint32_t ty, tr;
+        int32_t *cv;
+        const param_desc_t *d;
+        solo(0);
+        trk[0].p[P_LN0 + DV_SNARE] = 100;
+        dx_kit[DV_SNARE] = DX_KIT_DEF[DV_SNARE];
+        e = hit(0, 38, 0, &pk);
+        printf("  DRUM-X snare: energy %.3g peak %d\n", e, pk);
+        memcpy(base, first, sizeof base);
+        track_select(0);
+        dx_ui_lane = DV_SNARE;
+        cos_cput(CC_DFLT, 3);
+        CHECK(((dx_kit[DV_SNARE].mode >> 2) & 3u) == DXF_FM && dx_kit_ok(dx_kit), "FILTER FM set, the kit still valid");
+        d = cos_ddesc(CC_DWAV, (int16_t **)&cv);
+        CHECK(!strcmp(d->label, "TYPE") && !strcmp(d->names[1], "SNARE"), "WAVE shows TYPE (%s)", d->label);
+        d = cos_ddesc(CC_DSNP, (int16_t **)&cv);
+        CHECK(!strcmp(d->label, "TRANS") && d->max == 7, "SNAP shows TRANS (%s)", d->label);
+        for (ty = 0; ty < 4u; ty++)
+            for (tr = 0; tr < 8u; tr++) {
+                cos_cput(CC_DWAV, (int32_t)ty);
+                cos_cput(CC_DSNP, (int32_t)tr);
+                e = hit(0, 38, &l, &pk);
+                CHECK(e > 2e8 && pk < 32700, "FM lane TYPE %u TRANS %u: sounds, bounded (%.3g %d)", ty, tr, e, pk);
+                CHECK(l < e / 4, "FM lane TYPE %u TRANS %u: falls (%.3g -> %.3g)", ty, tr, e, l);
+                if (tr == 0u || tr == 4u) printf("  FM lane %s TRANS %u: energy %.3g peak %d\n", N_FMD_TYPE[ty], tr, e, pk);
+                if (!ty && !tr) CHECK(diff_first(base) > 512.0 * 300, "FM: not DRUM-X's snare (%.3g)", diff_first(base));
+            }
+        CHECK(quiet(2) < 1e6, "FM lane: silence after");
+        cos_cput(CC_DSNP, 3);
+        CHECK(((dx_kit[DV_SNARE].mode >> 4) & 7u) == 3u && ((dx_kit[DV_SNARE].mode >> 2) & 3u) == DXF_FM, "TRANS in bits 4..6, FM kept");
+        cos_cput(CC_DFLT, 1);
+        e = hit(0, 38, 0, 0);
+        CHECK(e > 1e8, "back to BP: DRUM-X's again (%.3g)", e);
+        {   /* the hats FM: the closed one chokes the open one */
+            static int32_t o[2 * CTL];
+            uint32_t b;
+            dx_ui_lane = DV_HATO; cos_cput(CC_DFLT, 3); cos_cput(CC_DWAV, 3);
+            dx_ui_lane = DV_HATC; cos_cput(CC_DFLT, 3); cos_cput(CC_DWAV, 3);
+            trk[0].p[P_LN0 + DV_HATO] = trk[0].p[P_LN0 + DV_HATC] = 100;
+            trk_note_on(&trk[0], 46, 110);
+            for (b = 0; b < 20u; b++) mix_block(o, CTL);
+            CHECK(drum_kit_of(&trk[0])[DV_HATO].x.live, "open hat (FM) rings");
+            trk_note_on(&trk[0], 42, 110);
+            for (b = 0; b < 20u; b++) mix_block(o, CTL);
+            CHECK(!drum_kit_of(&trk[0])[DV_HATO].x.live, "the closed one chokes it");
+            trk_note_off(&trk[0], 46); trk_note_off(&trk[0], 42);
+        }
+        memcpy(dx_kit, DX_KIT_DEF, sizeof dx_kit);
+    }
     {   /* projects: engine 9 of before 0.11 (phys 2) is PHYS's, ANALOG now; written since (PROJ_FMD), FMDRUM */
         static project_t q;
         memset(&q, 0, sizeof q);

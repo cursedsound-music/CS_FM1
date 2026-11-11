@@ -479,15 +479,21 @@ static const char *const COS_DRUM5[] = {"KICK", "SNARE", "CLAP", "HH CL", "HH OP
                                                          * value: five letters at most, param_format) */
 static __attribute__((noinline)) const param_desc_t *cos_ddesc(uint32_t id, int16_t **vp)
 {
-    static const char *const WV[] = {"SINE", "FM", "METAL", "BELL", 0}, *const FT[] = {"LP", "BP", "HP", 0};
+    static const char *const WV[] = {"SINE", "FM", "METAL", "BELL", 0}, *const FT[] = {"LP", "BP", "HP", "FM", 0};
+    static const char *const TY[] = {"DRUM", "SNARE", "CYMBL", "HAT", 0};   /* (0.12.0) FILTER FM: FMDRUM's voice (drumx_voice.c
+                                                         * dx_fmd): WAVE its TYPE, SNAP / BENDTYP its TRANSIENT */
+    static const char *const TR[] = {"OFF", "SNAP", "CLICK", "CLK 2", "RIM", "CLAP", "PEDAL", "ACOUS", 0};
+    static const param_desc_t DF[2] = {{"TYPE", F_ENUM, 0, 3, 0, TY, 0}, {"TRANS", F_ENUM, 0, 7, 0, TR, 0}};
     static const char *const BT[] = {"DECAY", "LONG", "NOISE", "SINE", 0}, *const OO[] = {"OFF", "ON", 0};
     static const param_desc_t D[] = {{"DRUM", F_ENUM, 0, 7, 0, COS_DRUM5, 0}, {"WAVE", F_ENUM, 0, 3, 0, WV, 0},
-                                     {"FILTER", F_ENUM, 0, 2, 0, FT, 0}, {"BENDTYP", F_ENUM, 0, 3, 0, BT, 0},
+                                     {"FILTER", F_ENUM, 0, 3, 0, FT, 0}, {"BENDTYP", F_ENUM, 0, 3, 0, BT, 0},
                                      {"DRIVE", F_ENUM, 0, 1, 0, OO, 0}, {"LAYER", F_INT, 0, 15, 0, 0, 0},
                                      {"FEEDBK", F_INT, 0, 15, 0, 0, 0}, {"SNAP", F_ENUM, 0, 1, 0, OO, 0}};
-    uint32_t l = dx_ui_lane & 7u, m = dx_kit[l].mode;
+    uint32_t l = dx_ui_lane & 7u, m = dx_kit[l].mode, fm = ((m >> 2) & 3u) == DXF_FM;
     int16_t *c = &cz.cc_v[14];
     *vp = c;
+    if (fm && id == CC_DWAV) { *c = (int16_t)(m & 3u); return &DF[0]; }
+    if (fm && (id == CC_DSNP || id == CC_DBT)) { *c = (int16_t)((m >> 4) & 7u); return &DF[1]; }
     switch (id) {
     case CC_DSEL: *c = (int16_t)l; return &D[0];
     case CC_DLV: {                                       /* (its LEVEL: LEVELS' knob, named so) */
@@ -498,7 +504,7 @@ static __attribute__((noinline)) const param_desc_t *cos_ddesc(uint32_t id, int1
         return &lv;
     }
     case CC_DWAV: *c = (int16_t)(m & 3u); return &D[1];
-    case CC_DFLT: *c = (int16_t)(((m >> 2) & 3u) % 3u); return &D[2];
+    case CC_DFLT: *c = (int16_t)((m >> 2) & 3u); return &D[2];
     case CC_DBT: *c = (int16_t)((m >> 5) & 3u); return &D[3];
     case CC_DDRV: *c = (int16_t)((m & DX_DRIVE) != 0); return &D[4];
     case CC_DLAY: *c = (int16_t)DX_LAY_L(dx_lay[l]); return &D[5];
@@ -516,11 +522,15 @@ static __attribute__((noinline)) void cos_dput(uint32_t id, int32_t v)
     uint32_t l = dx_ui_lane & 7u;
     dx_lane_t *L = &dx_kit[l];
     uint32_t m = L->mode;
+    if (((m >> 2) & 3u) == DXF_FM && (id == CC_DSNP || id == CC_DBT)) {   /* (0.12.0) FM: the TRANSIENT, bits 4..6 */
+        L->mode = (uint8_t)((m & ~0x70u) | (uint32_t)clamp(v, 0, 7) << 4);
+        return;
+    }
     switch (id) {
     case CC_DSEL: dx_ui_lane = (uint8_t)clamp(v, 0, 7); break;
     case CC_DLV: TSEL->p[P_LN0 + l] = (int16_t)clamp(v, 0, 127); break;
     case CC_DWAV: m = (m & ~3u) | (uint32_t)clamp(v, 0, 3); break;
-    case CC_DFLT: m = (m & ~0x0Cu) | (uint32_t)clamp(v, 0, 2) << 2; break;
+    case CC_DFLT: m = (m & ~0x0Cu) | (uint32_t)clamp(v, 0, 3) << 2; break;
     case CC_DBT: m = (m & ~0x60u) | (uint32_t)clamp(v, 0, 3) << 5; break;
     case CC_DDRV: m = v > 0 ? m | DX_DRIVE : m & ~DX_DRIVE; break;
     case CC_DSNP: m = v > 0 ? m | 0x10u : m & ~0x10u; break;
@@ -740,11 +750,14 @@ static const param_desc_t *cos_cdesc(uint32_t id, int16_t **vp)
         static const param_desc_t DK[5] = {{"PITCH", F_INT, 0, 127, 64, 0, 0}, {"BEND", F_PCT, 0, 127, 64, 0, 0},
                                            {"DECAY", F_PCT, 0, 127, 64, 0, 0}, {"NOISE", F_PCT, 0, 127, 0, 0, 0},
                                            {"TONE", F_PCT, 0, 127, 64, 0, 0}};
+        static const param_desc_t DKF[2] = {{"SWEEP", F_PCT, 0, 127, 64, 0, 0}, {"FM", F_PCT, 0, 127, 64, 0, 0}};
         uint32_t i = id - CC_KICK;
         const dx_lane_t *L = &dx_kit[dx_ui_lane & 7u];
         int32_t mo = clamp(TSEL->p[P_E0], 0, 127);
         cz.cc_v[14] = (int16_t)(L->a[i] + ((L->b[i] - L->a[i]) * mo) / 127);
         *vp = &cz.cc_v[14];
+        if (((L->mode >> 2) & 3u) == DXF_FM && (i == DXP_PMOD || i == DXP_COLOR))   /* (0.12.0) FMDRUM's names */
+            return &DKF[i == DXP_COLOR];
         return &DK[i];
     }
     if (id >= CC_LN0 && id <= CC_LNE) { *vp = &TSEL->p[P_LN0 + (id - CC_LN0)]; return track_desc(TSEL, P_LN0 + (id - CC_LN0)); }
@@ -3483,7 +3496,7 @@ dials:
 /* the splash (ui_draw.c draw_splash / splash_write under COS_SLIM; main.c's boot loop calls it every ~4 ms for
  * SPL_WRITE + SPL_HOLD ms): black, a few still stars, the name 2x, the version, a 16-block bar filling like a pattern
  * (the block being filled red), READY. Drawn whole once, then only the bar's strip when a block fills */
-#define COS_VERSION "0.11.1"
+#define COS_VERSION "0.12.0"
 static void cos_px2(int32_t x, int32_t y, const char *s, uint16_t c)      /* (the face 2 x 2) */
 {
     int32_t r, b, b0;
