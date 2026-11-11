@@ -99,6 +99,8 @@ static const cpg_t CZP_SRCA[] = {{"SRC 1", CK_TRK, {P_E0, P_E1, P_E2, P_E3}}, {"
                                 CZ_FILT,
                                 {"DEVIL", CK_TRK, {P_ATK, P_DEC, P_SUS, P_REL}},   /* (ACID: ACC DEC, DRV TYPE, SUB, KEY TRK in
                                                          * the envelope's slots: eng_acid.c ACID_X) */
+                                {"SEND", CK_TRK, {P_DLY, P_REV, P_DIST, P_CHOR}},   /* (0.12.3, GG: the ACID's sends where its
+                                                         * sound is; FX > SEND's, DELAY and REVERB first) */
                                 {"VOICE", CK_TRK, {P_VOICE, P_GLIDE, P_DETUNE, ID_OCT}},
                                 {"CHORD", CK_TRK, {P_CHRD, P_CVOI, P_CSTR, X}},
                                 CZ_MOD(1), CZ_MOD(2), CZ_MOD(3), CZ_MOD(4)};
@@ -3587,7 +3589,7 @@ dials:
 /* the splash (ui_draw.c draw_splash / splash_write under COS_SLIM; main.c's boot loop calls it every ~4 ms for
  * SPL_WRITE + SPL_HOLD ms): black, a few still stars, the name 2x, the version, a 16-block bar filling like a pattern
  * (the block being filled red), READY. Drawn whole once, then only the bar's strip when a block fills */
-#define COS_VERSION "0.12.2"
+#define COS_VERSION "0.12.3"
 static void cos_px2(int32_t x, int32_t y, const char *s, uint16_t c)      /* (the face 2 x 2) */
 {
     int32_t r, b, b0;
