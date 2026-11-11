@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: GPL-3.0-only
  * Copyright (C) 2026 cursedsound */
 /* (cursed-os 0.9.5) the phone remote, the main loop's part (cos.c cos_input: each frame). tools/cursed_remote.py
- * (Pythonista on the iPhone) talks to it over Bluetooth MIDI ("JIANT FM-1"); USB MIDI works the same (a computer).
+ * (Pythonista on the iPhone) talks to it over Bluetooth MIDI ("cursed os"; 0.15.0, "JIANT FM-1" before); USB MIDI works the same (a computer).
  *
  * Channel 16's CCs (the ISR queues them: midi_control.c rmt_cc_put); a press is a value of 64 or more, a release less:
  *   20 PLAY / STOP      22..27 MUTE T1..T6 (as HOME's black keys: MUTE Q)   28..31 SECTION A..D (on the bar)

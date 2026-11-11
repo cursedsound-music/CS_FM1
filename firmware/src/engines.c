@@ -10,6 +10,7 @@
 #include "eng_wheel.c"
 #include "xr_tables.h"         /* (cursed-os 0.11.0) TUBE RAT curves, the transients (tools/gen_xr_tables.py) */
 #include "eng_fmdrum.c"         /* (cursed-os 0.11.0) FMDRUM (engine 9): FM drums, cymbals, hats; the TRANSIENT layer */
+#include "eng_dub.c"            /* (cursed-os 0.15.0) DUB (engine 6): dub chord stabs, atmospheres */
 #include "eng_drum.c"           /* DRUM: the 8-lane DRUM-X kit (drumx_voice.c) */
 #include "eng_kick.c"           /* (cursed-os 0.10.0) KICK (engine 4): DRUM-X's kick on a track of its own */
 #include "eng_noise.c"
@@ -60,7 +61,8 @@ static const engine_t *const ENGINES[NENGINES] = {
     &ENG_LOFI,                   /* 3 */
     &ENG_KICK,                   /* 4 (cursed-os 0.10.0) KICK (0.9.5..0.9.9 SAMPLER; SAMPLE's number, retired in JIANT) */
     &ENG_FORMANT,                /* 5 VOICE (eng_formant.c: "voice" is a sounding note in voice.c) */
-    &ENG_GONE,                   /* 6: reserved (TRIO, folded into ANALOG in JIANT 0.4: core.h analog_from_trio) */
+    &ENG_DUB,                    /* 6 (cursed-os 0.15.0) DUB (TRIO's number, folded into ANALOG in JIANT 0.4: an older
+                                  * project's 6 plays as ANALOG, project.c PROJ_DUB) */
     &ENG_WHEEL,                  /* 7 */
     &ENG_STRING,                 /* 8 (ENGI_STRING, 0.9.9-snd5; GRAIN's, retired in JIANT: its sounds play as STRING's) */
     &ENG_FMDRUM,                 /* 9 (cursed-os 0.11.0) FMDRUM (PHYS's number, retired in TONIC: an older project's
@@ -86,6 +88,7 @@ static const uint8_t ENGINE_ORDER[NENG_SHOWN] = {
     ENGI_KICK,                   /* (cursed-os 0.10.0) KICK */
     ENGI_FMDRUM,                 /* (cursed-os 0.11.0) FMDRUM */
     ENGI_ACID,                   /* (cursed-os) ACID: the 303 */
+    ENGI_DUB,                    /* (cursed-os 0.15.0) DUB: chords, atmospheres */
     ENGI_VOICE,                  /* VOICE */
     ENGI_ANIMAL,                 /* ANIMAL */
     ENGI_LOFI,                   /* LOFI */
@@ -111,6 +114,7 @@ static const uint8_t ENGINE_PC_ORDER[NENG_SHOWN] = {
     ENGI_ACID,                   /* (cursed-os) */
     ENGI_KICK,                   /* (cursed-os 0.10.0) KICK (0.9.5: SAMPLER's place) */
     ENGI_FMDRUM,                 /* (cursed-os 0.11.0) */
+    ENGI_DUB,                    /* (cursed-os 0.15.0) */
 };
 
 /* the engines one can pick (engine 1 only with FELUCCA_FM4), in ENGINE_ORDER: eng_ok(e), the n-th of them

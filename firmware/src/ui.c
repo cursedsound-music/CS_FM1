@@ -1544,7 +1544,7 @@ static void apply_preset_to(track_t *t, uint32_t pi)
          * REVERB sends left as the track has them: a sound loads dry, the sends are the player's */
         static const uint8_t FX_DEF[4] = {0, 24, 28, 36};
         const preset_t *pr = &e->presets[pi];
-        for (i = 0; i < (COS_SLIM ? 1u : 4u); i++)
+        for (i = 0; i < (COS_SLIM && e != &ENG_DUB ? 1u : 4u); i++)   /* (0.15.0: DUB's sends are its sound) */
             t->p[P_DIST + i] = (int16_t)(pr->fx[i] ? pr->fx[i] - 1 : FX_DEF[i]);
     }
     fm6_track_loaded(t);                              /* FM6: the preset's patch (its SLOT) */

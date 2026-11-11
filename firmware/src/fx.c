@@ -2759,7 +2759,7 @@ static inline __attribute__((always_inline)) void mix_part(track_t *t, uint32_t 
         gr = 4096 + (p0 < 0 ? p0 >> 2 : 0);
         dgl = ((4096 - (mp_pan[ti] > 0 ? mp_pan[ti] >> 2 : 0)) - gl) >> CTL_LOG2;
         dgr = ((4096 + (mp_pan[ti] < 0 ? mp_pan[ti] >> 2 : 0)) - gr) >> CTL_LOG2;
-        int32_t c = t->p[P_CHOR] * 258, d = clamp(t->p[P_DLY] + lv_snd[0], 0, 127) * 258,   /* (0.10.3: + LIVE's global */
+        int32_t c = t->p[P_CHOR] * 258, d = clamp(t->p[P_DLY] + lv_snd[0] + trk_throw[ti], 0, 127) * 258,   /* (0.10.3: + LIVE's global */
                 r = clamp(t->p[P_REV] + lv_snd[1], 0, 127) * 258, pk = t->peak;             /* sends, eng_drum.c lv_snd) */
         int32_t xmax = c > d ? c : d, *ol = c1 ? c1_mix.l : mix_l, *or_ = c1 ? c1_mix.r : mix_r;
         int32_t *sc = c1 ? c1_mix.c : send_c, *sd = c1 ? c1_mix.d : send_d, *sr = c1 ? c1_mix.rv : send_r;
@@ -3239,6 +3239,8 @@ static __attribute__((noinline)) void mix_block(int32_t *out, uint32_t n)   /* (
         send_c[i] = send_d[i] = send_r[i] = mix_l[i] = mix_r[i] = sl_l[i] = sl_r[i] = 0;
     if (fx_stems)                                       /* (0.7.1) a part not mixed this block: a silent stem */
         memset(stem_buf, 0, sizeof stem_buf);
+    for (i = 0; i < NTRK; i++)                          /* (0.15.0) DUB's THROWs: each stab's send falling (~0.4 s) */
+        if (trk_throw[i]) trk_throw[i] = (uint8_t)(trk_throw[i] - 1u);
     pfx_rec_held = perf_kill ? 0u : perf_held & PF_MIDI;
     pfx_block(n, (perf_kill ? 0u : (perf_held | perf_latched | perf_lane) & (PF_MIDI | PF_LOOPS)) | scene_pfx);
     events_block(n);

@@ -5755,7 +5755,7 @@ static int test_fm4_retired(void)
 {
     int bad = 0, ok = 1;
     uint32_t i, k, e, total, seen = 0, all = ((1u << NENGINES) - 1u) & ~(1u << ENGI_DIGITAL) &
-        ~(1u << ENGI_TRIO);   /* (cursed-os 0.11.0: PHYS's 9 is FMDRUM) */   /* (0.9.9-snd5: GRAIN's 8 and SLICE's 13 are STRING and ADD; cursed-os 0.9.5: SAMPLE's 4
+        0xFFFFu;              /* (cursed-os 0.11.0: PHYS's 9 is FMDRUM; 0.15.0: TRIO's 6 is DUB) */   /* (0.9.9-snd5: GRAIN's 8 and SLICE's 13 are STRING and ADD; cursed-os 0.9.5: SAMPLE's 4
                                * SAMPLER) */
     int16_t p[P_COUNT];
     uint8_t v[FP_SIZE + 1u];
@@ -5769,7 +5769,7 @@ static int test_fm4_retired(void)
             seen |= 1u << e;
     }
     bad += check("PRESETS: the list holds every engine's presets but the retired ones' (DIGITAL PHYS TRIO; engine 4 KICK)",
-                 seen == all && NENG_SHOWN == NENGINES - 2u);   /* (0.11.0: FMDRUM in PHYS's 9) */
+                 seen == all && NENG_SHOWN == NENGINES - 1u);   /* (0.11.0: FMDRUM in PHYS's 9; 0.15.0 DUB in TRIO's 6) */
     go_page(GR_BROWSE);
     set_engine_of(TSEL, 0);
     for (i = 0, seen = 0; i < NENG_SHOWN; i++) {
@@ -12834,7 +12834,7 @@ static int test_power_on_099(void)
  * saved on 0.9.8's parts loads as it was saved, whatever the power-on */
 static int test_engine_order_099(void)
 {
-    static const char *const IDX[NENGINES] = {"ANALOG", 0, "PHASE", "LOFI", "KICK", "VOICE", "-", "WHEEL", "STRING", "FMDRUM", "DRUM",
+    static const char *const IDX[NENGINES] = {"ANALOG", 0, "PHASE", "LOFI", "KICK", "VOICE", "DUB", "WHEEL", "STRING", "FMDRUM", "DRUM",
                                               "NOISE", "FM6", "ADD", "ANIMAL"};
     static const char *const PC[] = {"ANALOG", "FM6",
 #if FELUCCA_FM4

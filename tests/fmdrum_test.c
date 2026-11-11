@@ -306,7 +306,7 @@ int main(void)
         q.t[0].engine = ENGI_PHYS;
         q.t[1].engine = ENGI_DRUM;
         proj_phys_gone(&q);
-        CHECK(q.t[0].engine == ENGI_PHYS_TO && q.t[1].engine == ENGI_DRUM && q.phys == PROJ_FMD, "old 9: ANALOG (%u %u)", q.t[0].engine, q.phys);
+        CHECK(q.t[0].engine == ENGI_PHYS_TO && q.t[1].engine == ENGI_DRUM && q.phys >= PROJ_FMD, "old 9: ANALOG (%u %u)", q.t[0].engine, q.phys);
         q.t[0].engine = ENGI_FMDRUM;
         proj_phys_gone(&q);
         CHECK(q.t[0].engine == ENGI_FMDRUM, "new 9: FMDRUM (%u)", q.t[0].engine);

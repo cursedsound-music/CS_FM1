@@ -131,7 +131,9 @@ static void up_migrate(up_rec_t *r)
         r->engine = ENGI_DRUM;
         for (k = 0; k < 8u; k++) up_set_value(r, r->np - 8u + k, e[k]);
     }
-    if (analog_from_trio(r->engine, e)) {               /* (JIANT 0.4) TRIO: ANALOG's nearest */
+    if ((r->ver < 4u || r->np > UP_FM_AT || r->packed[UP_FM_AT] != UP_V04_MARK) &&   /* (0.15.0: a record of before JIANT
+                                                         * 0.4 only: since, a 6 is DUB) */
+        analog_from_trio(r->engine, e)) {               /* (JIANT 0.4) TRIO: ANALOG's nearest */
         r->engine = 0;
         for (k = 0; k < 8u; k++) up_set_value(r, r->np - 8u + k, e[k]);
     }

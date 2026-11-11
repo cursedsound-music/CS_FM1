@@ -22,7 +22,7 @@
 #define NENGINES 16              /* the stores' engine numbers 0..15 (cursed-os: 15 ACID) (engines.c ENGINES[], append-only; 0.8.3: 14 ANIMAL;
                                   * 0.9.9-snd5: STRING and ADD in the retired GRAIN's 8 and SLICE's 13) */
 #define ENGI_DIGITAL 1u          /* reserved without FELUCCA_FM4: never selectable (eng_ok), its sounds load as FM6 */
-#define NENG_SHOWN (NENGINES - !FELUCCA_FM4 - 1)   /* (cursed-os 0.10.0: KICK is 4, SAMPLER 0.9.5..0.9.9) the engines one can pick: PRESETS, the EDIT layer, the editor,
+#define NENG_SHOWN (NENGINES - !FELUCCA_FM4)   /* (0.15.0: DUB in TRIO's 6, nothing retired left) */   /* (cursed-os 0.10.0: KICK is 4, SAMPLER 0.9.5..0.9.9) the engines one can pick: PRESETS, the EDIT layer, the editor,
                                                 * in the display order of engines.c ENGINE_ORDER (PHYS 9, and in
                                                 * JIANT SAMPLE 4, GRAIN 8, SLICE 13: retired) */
 /* (JIANT 0.6.71) the second core (hal/fm1_multicore.h; fx.c mix_block hands it some synth tracks). MC_CPU(): the core
@@ -262,14 +262,16 @@ static void params_by_count(int16_t *out, const int16_t *in, uint32_t np, const 
 #define ENGI_VOICE 5u            /* eng_formant.c ENG_FORMANT */
 #define ENGI_WHEEL 7u
 #define ENGI_NOISE 11u
-#define ENGI_TRIO 6u             /* (JIANT 0.4) folded into ANALOG (analog_from_trio) */
+#define ENGI_TRIO 6u             /* (JIANT 0.4) folded into ANALOG (analog_from_trio); (cursed-os 0.15.0) DUB's number */
+#define ENGI_DUB 6u              /* (cursed-os 0.15.0) eng_dub.c (a project marks it: project.c PROJ_DUB) */
 /* (JIANT) the retired engines: PHYS, and the sample engines SAMPLE GRAIN SLICE (their 123 KB of samples and GRAIN's
  * 27 KB of RAM went to DRUM-X and the effects). Their numbers stay reserved (engines.c ENG_GONE), never offered; a sound
  * of theirs that arrives -- a project, a user preset, the editor -- plays as ANALOG's first preset (SAMPLE's old PERC
  * set as DRUM first: drum_from_perc) */
 static inline int eng_gone(uint32_t e)
 {
-    return e == ENGI_TRIO;                     /* (cursed-os: SAMPLE's 4 is KICK; 0.11.0: PHYS's 9 is FMDRUM, a PHYS
+    return 0 && e == ENGI_TRIO;                /* (cursed-os 0.15.0: none; 6 is DUB, an older project's TRIO
+                                                 * ANALOG: project.c proj_phys_gone; cursed-os: SAMPLE's 4 is KICK; 0.11.0: PHYS's 9 is FMDRUM, a PHYS
                                                  * track of an older project still ANALOG: project.c proj_phys_gone; 0.9.9-snd5: GRAIN's 8 and
                                                  * SLICE's 13 are STRING and ADD) */
 }

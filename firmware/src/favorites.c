@@ -28,8 +28,12 @@ static __attribute__((noinline)) void fav_rows_new(void)
 #ifndef ENGI_FMDRUM
 #define ENGI_FMDRUM 9u
 #endif
+#ifndef FELUCCA_FM4
+#define FELUCCA_FM4 0
+#endif
 /* (cursed-os) KICK (4; 0.9.5 SAMPLER) in TRIO's (6, retired; its bytes 0..7: its presets were < 64, so 0; 22..31 Bluetooth's) */
-static uint32_t fav_row(uint32_t engine) { return engine == ENGI_ACID ? 4u : engine == ENGI_SAMPLE ? 6u : engine; }
+/* (0.15.0) DUB (6, TRIO's: its row KICK's and the settings') in DIGITAL's (1; FELUCCA_FM4 builds: none) */
+static uint32_t fav_row(uint32_t engine) { return engine == ENGI_ACID ? 4u : engine == ENGI_SAMPLE ? 6u : engine == 6u ? 1u : engine; }
 /* (cursed-os 0.11.0) the byte of a factory star: FMDRUM (9: CRASH_LOG's row, cpu_safe.c) in row 6's bytes 4..7, after
  * KICK's 0..3 (each at most 32 presets there; the row's bytes 8.. are settings) */
 static uint8_t *fav_byte(uint32_t engine, uint32_t preset)
@@ -37,6 +41,8 @@ static uint8_t *fav_byte(uint32_t engine, uint32_t preset)
     if (engine == ENGI_FMDRUM)
         return preset < 32u ? &favorites.factory[6][4u + preset / 8u] : 0;
     if (engine == ENGI_KICK && preset >= 32u)
+        return 0;
+    if (engine == 6u && FELUCCA_FM4)                    /* (0.15.0: DUB's row DIGITAL's, in use there) */
         return 0;
     return &favorites.factory[fav_row(engine)][preset / 8u];
 }

@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-3.0-only
  * Copyright (C) 2026 Juan Ignacio Antonucci (Juan Jiant) */
-/* (V10.12) MENU > SYSTEM > BLUETOOTH OFF / ON: Bluetooth LE MIDI, as a peripheral that advertises "JIANT FM-1" with the
+/* (V10.12) MENU > SYSTEM > BLUETOOTH OFF / ON: Bluetooth LE MIDI, as a peripheral that advertises "cursed os" (0.15.0; "JIANT FM-1" before) with the
  * BLE-MIDI service (phones and computers list it as a MIDI device); docs/BLE_FEASIBILITY.md stage 2. MIDI goes
  * (V10.13) both ways: what a central sends plays as USB-MIDI does (notes, CC, PC, bend, the clock and START / STOP,
  * no SysEx); MIDI OUT's messages (MENU > CONTROL > MIDI OUT: KEYS CLOCK ALL OFF) go to it too while it listens.
