@@ -48,8 +48,9 @@ enum { CC_OUTCH, CC_MOUT, CC_CLOCK, CC_SLOT, CC_TRKS, CC_LOAD, CC_COMP, CC_CATK,
        CC_NAME, CC_IDLE, CC_SCT, CC_SCG, CC_SCTR, CC_SPV, CC_SPR, CC_SPS, CC_SCM, CC_SPSRC, CC_SCZ, CC_LUT, CC_LUR, CC_LOCAL, CC_KPAT, CC_SCALE, CC_QUANT, CC_DJF, CC_DSEL, CC_DLV, CC_DWAV, CC_DFLT, CC_DBT, CC_DDRV, CC_DLAY, CC_DFB, CC_DSNP, CC_DSRC, CC_DE0, CC_DEE = CC_DE0 + DE_N - 1,
        CC_RRATE, CC_RRAMP, CC_RVEL, CC_DCH0, CC_DCH7 = CC_DCH0 + 7,   /* (0.13.0) LFO > DRUMS' */
        CC_KSLOT,                                         /* (0.13.0) SAVE > KITS' slot */
-       CC_CTLM, CC_CTLCH, CC_EXT };                      /* (0.13.0) GLO > MIDI 2: the knobs as a controller; SOUND */
-_Static_assert(CC_DCH7 < 0xFBu, "the CK_COS ids fit a page's byte (0xFB..0xFF: BFINE, MUTE Q, BPM, OCTAVE, none)");
+       CC_CTLM, CC_CTLCH, CC_EXT,                        /* (0.13.0) GLO > MIDI 2: the knobs as a controller; SOUND */
+       CC_TCOND, CC_TSLD, CC_TSND };                     /* (0.14.0) TRIG > COND: the held steps' CONDITION, SLIDE, SOUND */
+_Static_assert(CC_TSND < 0xFBu && CC_DCH7 < 0xFBu, "the CK_COS ids fit a page's byte (0xFB..0xFF: BFINE, MUTE Q, BPM, OCTAVE, none)");
 _Static_assert(X2_N <= 16u, "CC_X2 .. CC_X2E: room for every trk_x2 field");
 #define ID_MUTEQ 0xFCu                          /* (HOME 2's: MUTE Q, cos_knob) */
 #define ID_BFINE 0xFBu                          /* (0.10.1) PERFORM's K2: the tempo's hundredths, .00 .. .99 */
@@ -70,11 +71,15 @@ static const cpg_t CZP_HOME[] = {{"PERFORM", CK_GLO, {ID_BPM, ID_BFINE, G_SWING,
 /* SEQ: the sequencer's three ways, SEQ again (or SELECT) the next: TRIG the steps by hand, STEP the keys into the steps
  * one by one (a synth: STEP INPUT, cos_si_*), EUCLID (and its MODES) the track's steps as a euclidean rhythm, a kit's
  * lanes or a synth's notes in its scale (JIANT's EUCLID, ui_euclid.c; GEN's on a kit) */
+#define CZ_COND {"COND", CK_COS, {CC_TCOND, CC_TSLD, CC_TSND, X}}   /* (0.14.0) hold steps: their CONDITION, SLIDE (the
+                                                         * locks glide in), SOUND (a kit: the lane's sound on them) */
 static const cpg_t CZP_TRIG[] = {{"TRIG", CK_TRK, {P_SLEN, P_SDIV, P_SSWING, P_SGATE}},
                                 {"STEP", CK_TRK, {P_SLEN, P_SDIV, P_SSWING, P_SGATE}},
+                                CZ_COND,
                                 {"EUCLID", CK_EU, {EK_HITS, EK_STEPS, EK_ROT, EK_K4}},
                                 {"MODES", CK_EU, {EK_M0, EK_M0 + 1u, EK_M0 + 2u, EK_M0 + 3u}}};
 static const cpg_t CZP_TRIGK[] = {{"TRIG", CK_TRK, {P_SLEN, P_SDIV, P_SSWING, P_SGATE}},   /* (a kit: no STEP) */
+                                 CZ_COND,
                                  {"EUCLID", CK_EU, {EK_HITS, EK_STEPS, EK_ROT, EK_K4}},
                                  {"MODES", CK_EU, {EK_M0, EK_M0 + 1u, EK_M0 + 2u, EK_M0 + 3u}}};
 /* EDIT: the engine's eight (its own page names: cos_tabs), the voice, the matrix's four slots; a VOICE track WORDS
@@ -257,8 +262,8 @@ static int cos_dead(const track_t *t, uint32_t id);      /* (below: a parameter 
 static void cos_pages(uint32_t m, const cpg_t **p, uint32_t *n)
 {
     static const cpg_t *const P[CM_N] = {CZP_HOME, CZP_TRIG, CZP_SRC, CZP_AMP, CZP_DRUMS, CZP_FX, CZP_GENA, CZP_MIX, CZP_KEY, CZP_PROJ};
-    static const uint8_t N[CM_N] = {7, 4, 9, 9, 3, 9, 4, 15, 1, 3};   /* (each at most CZ_TABS: cos_tabs) */
-    _Static_assert(NELEM(CZP_HOME) == 7 && NELEM(CZP_TRIG) == 4 && NELEM(CZP_SRC) == 9 && NELEM(CZP_AMP) == 9 &&
+    static const uint8_t N[CM_N] = {7, 5, 9, 9, 3, 9, 4, 15, 1, 3};   /* (each at most CZ_TABS: cos_tabs) */
+    _Static_assert(NELEM(CZP_HOME) == 7 && NELEM(CZP_TRIG) == 5 && NELEM(CZP_SRC) == 9 && NELEM(CZP_AMP) == 9 &&
                    NELEM(CZP_DRUMS) == 3 && NELEM(CZP_FX) == 9 && NELEM(CZP_GENA) == 4 && NELEM(CZP_MIX) == 15 &&
                    NELEM(CZP_KEY) == 1 && NELEM(CZP_PROJ) == 3 && NELEM(CZP_SRCD) <= CZ_TABS && NELEM(CZP_GENS) <= CZ_TABS &&
                    NELEM(CZP_SRCV) == 10 && NELEM(CZP_AMPA) == 9 && NELEM(CZP_SRCN) == 9,
@@ -462,8 +467,10 @@ static void cos_key_ask(uint32_t key)
     cz.key_next = (uint8_t)(pc + 1u);
     cz.key_bar = bar_n;
 }
+static int cos_dsrc_get(uint32_t i, dx_lane_t *L, uint8_t *lay);
 static void cos_key_poll(void)
 {
+    dx_src_get = cos_dsrc_get;                          /* (0.14.0) the sound locks' sounds (eng_drum.c dx_slk_hit) */
     if (cz.key_next && (!song.playing || bar_n != cz.key_bar))
         cos_key_apply(cz.key_next - 1u);
 }
@@ -621,9 +628,10 @@ static __attribute__((noinline)) const param_desc_t *cos_ddesc(uint32_t id, int1
 }
 static __attribute__((noinline)) void cos_dput(uint32_t id, int32_t v)
 {
-    uint32_t l = dx_ui_lane & 7u;
+    uint32_t l = dx_ui_lane & 7u, m;
     dx_lane_t *L = &dx_kit[l];
-    uint32_t m = L->mode;
+    if (dx_slk_on) { fm1_irq_off(); dx_slk_back(); fm1_irq_on(); }   /* (0.14.0) an edit is of the kit's own sound */
+    m = L->mode;
     if (((m >> 2) & 3u) == DXF_FM && id == CC_DSNP) {   /* (0.12.0) FM: the TRANSIENT, bits 4..6 */
         L->mode = (uint8_t)((m & ~0x70u) | (uint32_t)clamp(v, 0, 7) << 4);
         return;
@@ -678,6 +686,63 @@ static int song_open(uint32_t n);                       /* (song_main.c: song n'
 #define COS_NSONG 8u                                    /* the songs offered (0.9.5..0.9.9: 4, 5..8's flash the sampler's) */
 static uint8_t kick_pat_cur[NTRK];                       /* (0.10.0) each KICK track's last PATTERN (GEN > KICK) */
 static void cos_kick_pat(track_t *t, uint32_t n);
+/* (cursed-os 0.14.0) TRIG > COND: hold steps (white keys), turn a knob: their CONDITION (core.h TC_*: plays only on that
+ * pass, or with FILL: in the chance's place), SLIDE (their locks glide in over the step; a synth's notes slide too, B2's),
+ * SOUND (a kit: the lane picked with the black keys plays this sound on them: a sound lock, motion.c MOT_SND). Nothing
+ * held: the last held step's, shown */
+static uint64_t cos_held(void);
+static const char *const TC_NAME[TC_N + 2u] = {"--", "1ST", "!1ST", "FILL", "!FILL", "1:2", "2:2", "1:3", "2:3", "3:3", "1:4",
+                                               "2:4", "3:4", "4:4", "1:8", "2:8", "3:8", "4:8", "5:8", "6:8", "7:8", "8:8", 0};
+static uint8_t cos_cnd_st;                              /* (the step shown: the last held) */
+static uint32_t cos_cnd_first(void)
+{
+    uint64_t h = cos_held();
+    uint32_t i;
+    for (i = 0; i < NSTEP; i++)
+        if ((h >> i) & 1u) { cos_cnd_st = (uint8_t)i; return i; }
+    return cos_cnd_st % NSTEP;
+}
+static uint32_t cos_snd_of(const track_t *t, uint32_t st, uint32_t l)   /* step st's sound lock on lane l (0: none) */
+{
+    int32_t i = motion_find(t, st, MOT_SND(l));
+    uint32_t u;
+    if (i < 0 || !(motion.event[i].param & MOTION_LOCK)) return 0;
+    u = (uint32_t)(MOTION_VAL(&motion.event[i]) + 64);
+    return (u >= 96u) == (l & 1u) ? u % 96u : 0u;
+}
+static const param_desc_t *cos_cnd_desc(uint32_t id, int16_t **vp)
+{
+    static const char *const OO[] = {"OFF", "ON", 0};
+    static const param_desc_t D[3] = {{"COND", F_ENUM, 0, (int16_t)TC_N, 0, TC_NAME, 0}, {"SLIDE", F_ENUM, 0, 1, 0, OO, 0},
+                                      {"SOUND", F_INT, 0, (int16_t)DSRC_N, 0, 0, 0}};
+    const step_t *s = &TSEL->step[cos_cnd_first()];
+    int16_t *c = &cz.cc_v[3];
+    *vp = c;
+    if (id == CC_TCOND) { *c = (int16_t)(s->probability >= TC_BASE ? s->probability - TC_BASE + 1u : 0u); return &D[0]; }
+    if (id == CC_TSLD) { *c = (int16_t)((s->flags & SF_SLIDE) != 0); return &D[1]; }
+    if (!cos_kit()) return 0;                            /* (SOUND: a kit's) */
+    *c = (int16_t)cos_snd_of(TSEL, cos_cnd_first(), cz.lane % NLANE);
+    return &D[2];
+}
+static void cos_cnd_put(uint32_t id, int32_t v)
+{
+    track_t *t = TSEL;
+    uint64_t h = cos_held();
+    uint32_t i, l = cz.lane % NLANE;
+    if (!h) { cos_say("HOLD A STEP"); return; }
+    if (chain_busy()) { cos_say("SONG PLAYS: STOP IT"); return; }
+    cz.lk_used = 1;                                      /* (the keys let go: no trig) */
+    for (i = 0; i < NSTEP; i++) {
+        step_t *s = &t->step[i];
+        if (!((h >> i) & 1u)) continue;
+        if (id == CC_TCOND) s->probability = (uint8_t)(v > 0 ? TC_BASE + (uint32_t)clamp(v, 1, (int32_t)TC_N) - 1u : 0u);
+        else if (id == CC_TSLD) s->flags = (uint8_t)(v > 0 ? s->flags | SF_SLIDE : s->flags & ~SF_SLIDE);
+        else if (cos_kit()) {
+            if (v <= 0) { if (cos_snd_of(t, i, l)) motion_delete_event(t, i, MOT_SND(l)); }
+            else if (motion_set_lock(t, i, MOT_SND(l), MOT_SNDV(l, clamp(v, 1, (int32_t)DSRC_N))) == 2) { cos_say("LOCKS FULL (64)"); return; }
+        }
+    }
+}
 static const param_desc_t *cos_cdesc(uint32_t id, int16_t **vp)
 {
     static const char *const MO[] = {"KEYS", "CLOCK", "ALL", "OFF", 0};
@@ -702,6 +767,7 @@ static const param_desc_t *cos_cdesc(uint32_t id, int16_t **vp)
         *vp = &cz.cc_v[3];
         return &DEX;
     }
+    if (id == CC_TCOND || id == CC_TSLD || id == CC_TSND) return cos_cnd_desc(id, vp);   /* (0.14.0) TRIG > COND */
     if (id == CC_CTLM || id == CC_CTLCH) {               /* (0.13.0) GLO > MIDI 2: KNOBS, CTRL CH (settings row 15, 1 and 2) */
         static const char *const KN[] = {"FM-1", "+MIDI", "MIDI", 0};
         static const param_desc_t DKN[2] = {{"KNOBS", F_ENUM, 0, 2, 0, KN, 0}, {"CTRL CH", F_INT, 1, 16, 7, 0, 0}};
@@ -1002,6 +1068,8 @@ static void cos_cput(uint32_t id, int32_t v)
         uint8_t m = (uint8_t)(favorites.factory[15][3] & ((1u << NTRK) - 1u));
         favorites.factory[15][3] = (uint8_t)(v ? m | 1u << t : m & ~(1u << t));
         settings_save();
+    } else if (id == CC_TCOND || id == CC_TSLD || id == CC_TSND) {
+        cos_cnd_put(id, v);                              /* (0.14.0) TRIG > COND: the held steps' */
     } else if (id == CC_CTLM) {
         favorites.factory[15][1] = (uint8_t)clamp(v, 0, 2);
         settings_save();
@@ -1218,6 +1286,11 @@ static const cpg_t *cos_lk_page(void)
     uint32_t n, m = cz.lk_mode ? cz.lk_mode : CM_SRC;
     cos_pages(m, &p, &n);
     return &p[cz.lk_tab % n];
+}
+static int cos_on_cnd(void)                             /* (0.14.0) TRIG > COND shown: held steps' knobs are its own */
+{
+    const cpg_t *p = cos_page();
+    return cz.mode == CM_TRIG && p->kind == CK_COS && p->id[0] == CC_TCOND;
 }
 static uint64_t cos_held(void)                          /* the steps of the bank whose white keys are held (TRIG) */
 {
@@ -1968,9 +2041,8 @@ static __attribute__((noinline)) void cos_keep(int back)
         memcpy(keep.rmb, (const void *)rmb_v, sizeof keep.rmb);
         memcpy(keep.iso, (const void *)iso_v, sizeof keep.iso);
         memcpy(keep.eq, eq_v, sizeof keep.eq);
-        memcpy(keep.dx, dx_kit, sizeof keep.dx);
+        dx_kit_own(keep.dx, keep.lay);                  /* (0.14.0: the own, not a sound lock's) */
         memcpy(keep.de, dx_de, sizeof keep.de);
-        memcpy(keep.lay, dx_lay, sizeof keep.lay);
         keep.ok = 1;
         cos_say("SOUND KEPT");
         return;
@@ -1999,6 +2071,7 @@ static __attribute__((noinline)) void cos_keep(int back)
     memcpy(dx_kit, keep.dx, sizeof keep.dx);
     memcpy(dx_de, keep.de, sizeof keep.de);
     memcpy(dx_lay, keep.lay, sizeof keep.lay);
+    dx_slk_forget();
     fm1_irq_on();
     cos_say("BACK TO KEPT");
 }
@@ -2270,7 +2343,7 @@ static __attribute__((noinline)) void cos_input(void)
                 cz.hot = (uint8_t)(k + 1u); cz.hot_ms = fm1_ms;
                 continue;
             }
-            if (h) cos_lock_turn(k, s, h);                   /* (steps held: their locks) */
+            if (h && !cos_on_cnd()) cos_lock_turn(k, s, h);   /* (steps held: their locks; on COND its own) */
             else {
                 cos_turn(k, s);
                 if (cm == 1u && !cz.fx_down) {           /* (0.13.0) KNOBS +MIDI: the value it gave, sent too */
@@ -2916,7 +2989,7 @@ static void cos_tabs(void)
         cos_txr(238, 22, live_qback ? "NORMAL COMING" : "MOVED  OCT- NORMAL", C_RED);
         return;
     }
-    if (cz.mode == CM_TRIG && cos_held()) {               /* (steps held: what a knob locks) */
+    if (cz.mode == CM_TRIG && cos_held() && !cos_on_cnd()) {   /* (steps held: what a knob locks) */
         char b[24];
         str_cpy(b, "LOCK ", sizeof b);
         str_cpy(b + 5, cos_lk_page()->tab, 12);
@@ -2966,7 +3039,8 @@ static int32_t cos_dial_at(const param_desc_t *d, int32_t v)
 }
 static void cos_dial(int32_t cx, int32_t cy, uint32_t k)
 {
-    uint64_t held = cz.mode == CM_TRIG ? cos_held() : 0u;   /* (TRIG with steps held: the lock page, the first one's locks) */
+    uint64_t held = cz.mode == CM_TRIG && !cos_on_cnd() ? cos_held() : 0u;   /* (TRIG with steps held: the lock page, the
+                                                         * first one's locks; on COND: COND itself) */
     const cpg_t *p = held ? cos_lk_page() : cos_page();
     int16_t *vp, lv;
     const param_desc_t *d = cos_knob(p, k, &vp);
@@ -3012,6 +3086,10 @@ static void cos_dial(int32_t cx, int32_t cy, uint32_t k)
     if (p->kind == CK_COS && p->id[k & 3u] == CC_MOCC && v < 0) { str_cpy(val, "OFF", sizeof val); unit = 0; }
     if (p->kind == CK_COS && p->id[k & 3u] == CC_DSRC) {   /* (0.12.1) its name; edited since (or another kit): OWN */
         cos_dsrc_name(cos_dsrc_same(dx_ui_lane) ? (uint32_t)v : 0u, val);
+        unit = 0;
+    }
+    if (p->kind == CK_COS && p->id[k & 3u] == CC_TSND) {   /* (0.14.0) the sound lock's name; none: -- */
+        if (v > 0) cos_dsrc_name((uint32_t)v, val); else str_cpy(val, "--", 3);
         unit = 0;
     }
     if (p->kind == CK_COS && p->id[k & 3u] == CC_IDLE) {   /* (OFF, else "5 MIN") */
@@ -3167,13 +3245,20 @@ static void cos_lk_box(void)                            /* (steps held: which, a
             cos_txc(120, 99, CZ_LBL, lb, v ? C_RED : C_DIM);
         }
         cos_txc(120, 110, CZ_LBL, "PRESETS: THE NOTE", C_MID);
-        cos_txc(120, 121, CZ_LBL, "KNOB LOCK  REC CLEAR", C_DIM);
+        cos_txc(120, 121, CZ_LBL, cos_on_cnd() ? "KNOBS: COND, SLIDE" : "KNOB LOCK  REC CLEAR", C_DIM);
         return;
     }
     cv_rect(28, 62, 184, 52, C_BG);
     cv_frame(28, 62, 184, 52, C_RED);
     cos_txc(120, 70, CZ_TALL, b, C_FG);
-    cos_txc(120, 98, CZ_LBL, "KNOB LOCK  REC CLEAR", C_DIM);
+    if (cos_on_cnd()) {                                  /* (0.14.0) COND: SOUND is the lane's (the black keys pick it) */
+        static const char *const D[8] = {"KICK", "SNARE", "CLAP", "HATCL", "HATOP", "TOM", "RIM", "BELL"};
+        str_cpy(b, "SOUND ON ", 10);
+        str_cpy(b + 9, D[cz.lane % NLANE], 7);
+        cos_txc(120, 92, CZ_LBL, b, C_MID);
+        cos_txc(120, 103, CZ_LBL, "BLACK KEYS: THE DRUM", C_DIM);
+    } else
+        cos_txc(120, 98, CZ_LBL, "KNOB LOCK  REC CLEAR", C_DIM);
 }
 
 static void cos_body_trig1(void);
@@ -3207,8 +3292,11 @@ static void cos_body_trig1(void)
             for (i = 0; i < 16u; i++) {
                 uint32_t st = cz.bank * 16u + i, v = st < len ? cos_step(t, st, l) : 0u;
                 int32_t x = 26 + (int32_t)i * 13;
-                if (v) cv_rect(x, y, 10, 9, v == 2u ? C_FG : C_MID);
+                if (v && t->step[st % NSTEP].probability >= TC_BASE) cv_frame(x, y, 10, 9, v == 2u ? C_FG : C_MID);   /* (0.14.0:
+                                                         * a CONDITION: hollow) */
+                else if (v) cv_rect(x, y, 10, 9, v == 2u ? C_FG : C_MID);
                 else cv_rect(x + 4, y + 4, 2, 2, st < len ? C_DIM : C_BG);
+                if (v && cos_snd_of(t, st % NSTEP, l)) cv_rect(x + 7, y + 1, 2, 2, C_RED);   /* (a sound lock: a red dot) */
                 if (st == now) cv_rect(x, y + 10, 10, 1, C_RED);
             }
         }
@@ -3230,7 +3318,10 @@ static void cos_body_trig1(void)
             if (st >= len || s->time != ST_NOTE || !s->n) continue;
             while (i + g < 16u && t->step[(st + g) % NSTEP].time == ST_TIE) g++;
             y = 140 - (s->note[0] - lo) * (140 - cz_rtop) / (hi - lo);
-            cv_rect(x, y, 15 * (int32_t)g - 2, (s->flags & SF_ACCENT) ? 5 : 3, (s->flags & SF_ACCENT) ? C_FG : C_MID);
+            if (s->probability >= TC_BASE)               /* (0.14.0) a CONDITION: hollow */
+                cv_frame(x, y - 1, 15 * (int32_t)g - 2, (s->flags & SF_ACCENT) ? 7 : 5, (s->flags & SF_ACCENT) ? C_FG : C_MID);
+            else
+                cv_rect(x, y, 15 * (int32_t)g - 2, (s->flags & SF_ACCENT) ? 5 : 3, (s->flags & SF_ACCENT) ? C_FG : C_MID);
             if (s->flags & SF_SLIDE) cv_rect(x + 15 * (int32_t)g - 2, y + 1, 4, 2, C_MID);
         }
     }
@@ -3831,7 +3922,7 @@ dials:
 /* the splash (ui_draw.c draw_splash / splash_write under COS_SLIM; main.c's boot loop calls it every ~4 ms for
  * SPL_WRITE + SPL_HOLD ms): black, a few still stars, the name 2x, the version, a 16-block bar filling like a pattern
  * (the block being filled red), READY. Drawn whole once, then only the bar's strip when a block fills */
-#define COS_VERSION "0.13.1"
+#define COS_VERSION "0.14.0"
 static void cos_px2(int32_t x, int32_t y, const char *s, uint16_t c)      /* (the face 2 x 2) */
 {
     int32_t r, b, b0;

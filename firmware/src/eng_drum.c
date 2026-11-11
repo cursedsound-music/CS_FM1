@@ -237,6 +237,51 @@ static voice_t *drum_reuse(track_t *t, uint32_t note)
     return v->active && (uint32_t)v->s[0] == lane ? v : 0;
 }
 
+/* (cursed-os 0.14.0) SOUND LOCKS: a kit step's lane plays another sound (motion.c dx_slk, set by the step's locks):
+ * swapped in at its hit, the lane's own (dx_slk_home) back at its next hit without one, so a hit's tail keeps the sound
+ * it began with. dx_slk_back: the lanes' own back now (the UI's edits, a kit saved, the transport stopped) */
+static uint8_t dx_slk[8];                               /* this kit step's sound locks: lane l's source (0 none; motion.c) */
+static int (*dx_src_get)(uint32_t i, dx_lane_t *L, uint8_t *lay);   /* (cos.c cos_dsrc_get, set each frame: a build without
+                                                         * cos.c, JIANT's whole UI, has no sound locks) */
+static dx_lane_t dx_slk_home[8];
+static uint8_t dx_slk_hlay[8], dx_slk_on;               /* (their LAYER bytes; the lanes swapped, a bit each) */
+static void dx_slk_hit(uint32_t l)
+{
+    dx_lane_t L;
+    uint8_t lay;
+    l &= 7u;
+    if (dx_slk[l] && dx_src_get && dx_src_get(dx_slk[l], &L, &lay)) {
+        if (!((dx_slk_on >> l) & 1u)) { dx_slk_home[l] = dx_kit[l]; dx_slk_hlay[l] = dx_lay[l]; }
+        dx_slk_on |= (uint8_t)(1u << l);
+        dx_kit[l] = L;
+        dx_lay[l] = lay;
+    } else if ((dx_slk_on >> l) & 1u) {
+        dx_kit[l] = dx_slk_home[l];
+        dx_lay[l] = dx_slk_hlay[l];
+        dx_slk_on &= (uint8_t)~(1u << l);
+    }
+}
+static void dx_slk_back(void)
+{
+    uint32_t l;
+    for (l = 0; l < 8u; l++)
+        if ((dx_slk_on >> l) & 1u) { dx_kit[l] = dx_slk_home[l]; dx_lay[l] = dx_slk_hlay[l]; }
+    dx_slk_on = 0;
+}
+/* the kit's own sounds (a lane swapped by a sound lock: its own), for what is saved and kept */
+static void dx_kit_own(dx_lane_t *k, uint8_t *lay)
+{
+    uint32_t l;
+    for (l = 0; l < 8u; l++) {
+        int sw = (dx_slk_on >> l) & 1u;
+        k[l] = sw ? dx_slk_home[l] : dx_kit[l];
+        lay[l] = sw ? dx_slk_hlay[l] : dx_lay[l];
+    }
+}
+static void dx_slk_forget(void)                         /* (a kit loaded over them: the new one its own) */
+{
+    dx_slk_on = 0;
+}
 static void drum_note_on(track_t *t, voice_t *v)
 {
     drum_lane_t *K = drum_kit_of(t), *L;
@@ -283,6 +328,7 @@ static void drum_note_on(track_t *t, voice_t *v)
     }
     if (lane == DV_KICK)
         duck_hit = 1;
+    dx_slk_hit(lane);                                    /* (0.14.0) its sound lock, or its own back */
     dx_trigger(&L->x);
     if (lane == DV_HATC)                                 /* a closed hat chokes the open one */
         dx_choke(&K[DV_HATO].x);

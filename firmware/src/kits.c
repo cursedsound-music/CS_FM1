@@ -75,8 +75,7 @@ static int kit_save(uint32_t k, const char *name)
     r->used = KIT_USED;
     r->ver = 1;
     for (i = 0; i < 10u && name[i]; i++) r->name[i] = name[i];
-    memcpy(r->lane, dx_kit, sizeof r->lane);
-    memcpy(r->lay, dx_lay, 8);
+    dx_kit_own(r->lane, r->lay);                        /* (0.14.0: the own, not a sound lock's) */
     memcpy(r->snd, dx_snd, 8);
     memcpy(r->skip, dx_skip, 8);
     memcpy(r->de, dx_de, sizeof r->de);
@@ -99,6 +98,7 @@ static int kit_load(uint32_t k)
     fm1_irq_off();
     memcpy(dx_kit, r->lane, sizeof dx_kit);
     memcpy(dx_lay, r->lay, 8);
+    dx_slk_forget();
     memcpy(dx_snd, r->snd, 8);
     memcpy(dx_skip, r->skip, 8);
     memcpy(dx_de, r->de, sizeof dx_de);

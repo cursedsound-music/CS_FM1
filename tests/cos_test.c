@@ -1421,7 +1421,9 @@ int main(void)
         CHECK(song.octave == oc + 1 && cz.bank == 0u, "STEP: OCT+ the octave, not the bank");
         song.octave = oc;
         cos_test_btn(B_SEQ, 1); cos_test_btn(B_SEQ, 0); cos_input();
-        CHECK(str_eq(cos_page()->tab, "EUCLID") && !cz.si && song.grid == 2u, "SEQ again: EUCLID, the keys the steps again");
+        CHECK(str_eq(cos_page()->tab, "COND") && !cz.si && song.grid == 2u, "SEQ again: COND (0.14.0), the keys the steps again");
+        cos_test_btn(B_SEQ, 1); cos_test_btn(B_SEQ, 0); cos_input();
+        CHECK(str_eq(cos_page()->tab, "EUCLID"), "then EUCLID");
         {
             int16_t *vp;
             const param_desc_t *d = cos_knob(cos_page(), 0, &vp);
@@ -1445,7 +1447,9 @@ int main(void)
         track_select(i0 < trk_live ? i0 : 0); if (!drum_track(TSEL)) { set_engine_of(TSEL, ENGI_DRUM); TSEL->engine = ENGI_DRUM; }
         cz.tab[CM_TRIG] = 0;
         cos_test_btn(B_SEQ, 1); cos_test_btn(B_SEQ, 0);
-        CHECK(drum_track(TSEL) && str_eq(cos_page()->tab, "EUCLID"), "a kit: TRIG, then EUCLID (no STEP)");
+        CHECK(drum_track(TSEL) && str_eq(cos_page()->tab, "COND"), "a kit: TRIG, then COND (no STEP)");
+        cos_test_btn(B_SEQ, 1); cos_test_btn(B_SEQ, 0);
+        CHECK(drum_track(TSEL) && str_eq(cos_page()->tab, "EUCLID"), "then EUCLID");
         {                                                 /* (another track: the same page by its name) */
             uint32_t kit = song.sel;
             track_select(1); cos_input();

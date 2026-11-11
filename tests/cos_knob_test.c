@@ -43,6 +43,8 @@ static void turn_all(uint32_t m)
             if (!d || !vp || d->max == d->min) continue;
             page_name(nm, m, p, k);
             if (p->kind == CK_COS && (p->id[k] == CC_SLOT)) continue;   /* (SAVE's slot: white keys too, wraps none) */
+            if (p->kind == CK_COS && (p->id[k] == CC_TCOND || p->id[k] == CC_TSLD || p->id[k] == CC_TSND)) continue;   /* (0.14.0
+                                                         * TRIG > COND: the held steps' only, tests/cond_test.c) */
 #if !COS_SLIM
             if (p->kind == CK_COS && p->id[k] == CC_TRKS) continue;   /* (JIANT's whole UI: its own TRACKS 4 / 6 setting
                                                          * decides, ui.c rp_apply; the firmware and the preview are COS_SLIM) */

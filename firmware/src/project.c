@@ -1199,7 +1199,7 @@ static int proj_pack(project_store_t *out, const project_t *q)
             if (q->t[t].p[i] < -64 || q->t[t].p[i] > 127) return 0;
         for (i = 0; i < NSTEP; i++) {
             const step_t *s = &q->t[t].step[i];
-            if (s->n > 4u || s->time > ST_REST || (s->flags & ~(3u | SF_RATCH | SF_MFINE)) || s->probability > 101u ||
+            if (s->n > 4u || s->time > ST_REST || (s->flags & ~(3u | SF_RATCH | SF_MFINE)) || s->probability > TC_MAX ||
                 CT_DIV(s) >= CT_NDIV || s->ctime > 127u) return 0;
             if (proj_comp_legacy ? s->comp >= CP_N || s->comp2 >= CP_N :
                 CO_ACT(s->comp) >= CA_N || CO_COND(s->comp) >= CC_N || CO_ACT(s->comp2) >= CA_N ||
@@ -1387,7 +1387,7 @@ static int proj_pack_vb(project_store_t *out, const project_t *q)
         for (i = 0; i < NSTEP; i++) {
             const step_t *s = &q->t[t].step[i];
             uint32_t r = step_ratchet(s) - 1u;          /* RATCH: bit 7 of the velocity and chance bytes (see the top) */
-            if (s->n > 4u || s->time > ST_REST || (s->flags & ~(3u | SF_RATCH)) || s->probability > 101u) return 0;
+            if (s->n > 4u || s->time > ST_REST || (s->flags & ~(3u | SF_RATCH)) || s->probability > TC_MAX) return 0;
             for (uint32_t j = 0; j < 4u; j++)           /* what proj_unpack checks, so a saved project always loads: */
                 b[pos++] = s->note[j] > 127u ? 127u : s->note[j];   /* notes and velocity 0..127, accents */
             b[pos++] = (uint8_t)(s->n | s->time << 3 | (s->flags & 3u) << 5);   /* only on hits */
@@ -1494,7 +1494,7 @@ static int proj_unpack_c(project_t *q, const uint8_t *b)
                 if (s->acc & ~s->hit) return 0;
             }
             if (x & 2u) {
-                if (pos + 1u > room || (s->probability = b[pos++]) > 101u || !s->probability) return 0;
+                if (pos + 1u > room || (s->probability = b[pos++]) > TC_MAX || !s->probability) return 0;
             }
             s->comp = s->carg = 0;
             if (x & 16u) {                              /* (0.6.39) a component (seq2d: v2 with x bit 7, else a CP_*) */
@@ -1678,6 +1678,7 @@ static int proj_motion_ids(motion_store_t *m, uint32_t np)
     uint32_t i;
     for (i = 0; i < m->count && i < MOTION_MAX; i++) {
         uint32_t id = MOTION_ID(&m->event[i]);
+        if (MOT_IS_SND(id) && np == P_COUNT) continue;   /* (0.14.0) a sound lock (a store of today's layout) */
         if (id >= np) return 0;
         if (np < P_COUNT && id >= np - 8u)
             m->event[i].param = (uint8_t)((m->event[i].param & MOTION_LOCK) | (id + P_COUNT - np));
@@ -1722,7 +1723,7 @@ static int proj_unpack(project_t *q, const uint8_t *b, uint32_t st)
             s->vel = b[pos] & 127u; meta |= (b[pos++] & 128u) << 1;      /* (RATCH bit 0 at bit 8 of meta) */
             s->hit = b[pos++]; s->acc = b[pos++];
             s->probability = b[pos] & 127u; meta |= (b[pos++] & 128u) << 2;   /* (bit 1 at bit 9) */
-            if ((meta & 255u) > 127u || s->n > 4u || s->time > ST_REST || s->probability > 101u) return 0;
+            if ((meta & 255u) > 127u || s->n > 4u || s->time > ST_REST || s->probability > TC_MAX) return 0;
             for (uint32_t j = 0; j < 4u; j++) if (s->note[j] > 127u) return 0;
             if (s->acc & ~s->hit) return 0;
             step_set_ratchet(s, (meta >> 8) + 1u);
@@ -1866,7 +1867,7 @@ static void proj_bound(project_t *q)
             step_t *s = &q->t[t].step[i];
             s->flags &= 3u | SF_RATCH | SF_MFINE;
             s->vel &= 127u;
-            if (s->probability > 101u) s->probability = 0;
+            if (s->probability > TC_MAX) s->probability = 0;
         }
         for (i = 0; i < P_COUNT; i++) {
             const param_desc_t *d = param_desc_of(q->t[t].engine % NENGINES, i);
@@ -1917,14 +1918,20 @@ static void project_capture(project_t *p)
         fm6_pack(fm6_patch[i], p->fm6[i]);
     }
     p->motion = motion;
-    memcpy(p->dx, dx_kit, sizeof p->dx);
+    {
+        uint8_t ly[8];
+        dx_kit_own(p->dx, ly);                          /* (0.14.0: the kit's own, not a sound lock's) */
+    }
     p->dx_mute = dx_mute;
     memcpy(p->dx_mot, dx_mot, sizeof p->dx_mot);
     p->dx_acoustic = dx_acoustic;
     p->dx_tone = dx_tone;
     p->dx_hands = (uint8_t)(dx_hands | dx_glue << 4);   /* (0.7.9; snd1: GLUE) */
     memcpy(p->dx_snd, dx_snd, sizeof p->dx_snd);        /* (0.6.48) */
-    memcpy(p->dx_lay, dx_lay, sizeof p->dx_lay);        /* (0.6.49) */
+    {
+        dx_lane_t kk[8];
+        dx_kit_own(kk, p->dx_lay);                      /* (0.6.49; 0.14.0: the own) */
+    }
     memcpy(p->dx_de, dx_de, sizeof p->dx_de);           /* (cursed-os) */
     memcpy(p->dx_skip, dx_skip, sizeof p->dx_skip);     /* (0.13.0) */
     {                                                   /* (0.6.52) FUGUE */
@@ -2100,7 +2107,7 @@ static void sound_put(project_t *p, uint32_t k)
         fm6_adopt(k % NTRK);
     }
     if (e == ENGI_DRUM) {
-        memcpy(dx_kit, dx_kit_ok(p->dx) ? p->dx : DX_KIT_DEF, sizeof dx_kit);
+        memcpy(dx_kit, dx_kit_ok(p->dx) ? p->dx : DX_KIT_DEF, sizeof dx_kit); dx_slk_forget();
         memcpy(dx_mot, p->dx_mot, sizeof dx_mot);
         dx_acoustic = p->dx_acoustic & 127u;
         dx_tone = p->dx_tone;
@@ -2149,7 +2156,7 @@ static int project_restore_runtime(const project_t *input)
     seq_stop();
     transport_req = 0;
     chain.ended = 0;                                    /* (a song stopped by this load: the load wins, song_poll keeps out) */
-    memcpy(dx_kit, dx_kit_ok(p->dx) ? p->dx : DX_KIT_DEF, sizeof dx_kit);   /* (the section's DRUM-X kit) */
+    memcpy(dx_kit, dx_kit_ok(p->dx) ? p->dx : DX_KIT_DEF, sizeof dx_kit);   /* (the section's DRUM-X kit) */ dx_slk_forget();
     dx_mute_set(p->dx_mute);
     memcpy(dx_mot, p->dx_mot, sizeof dx_mot);           /* (0.5.1: the kit's X-MOD) */
     dx_acoustic = p->dx_acoustic & 127u;
@@ -2291,7 +2298,7 @@ static __attribute__((noinline)) void system_init(void)   /* (snd8: out of its c
     memset(glane, 0, sizeof glane);                     /* (0.9.9-seq2f) no global component, POLY */
     gl_mono = 0;
     gl_touch();
-    memcpy(dx_kit, DX_KIT_DEF, sizeof dx_kit);
+    memcpy(dx_kit, DX_KIT_DEF, sizeof dx_kit); dx_slk_forget();
     memset(dx_mot, 0, sizeof dx_mot);
     dx_acoustic = 0;
     dx_tone = 0;

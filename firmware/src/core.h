@@ -648,8 +648,23 @@ typedef struct {                 /* a step as formats 1..4 (projects to FUN4) st
     uint8_t n, time, flags, vel;
 } step8_t;
 
-/* Probability keeps zero-initialized and legacy patterns at 100%. */
-static uint32_t step_chance(const step_t *s) { return !s->probability ? 100u : s->probability <= 100u ? s->probability : 0u; }
+/* Probability keeps zero-initialized and legacy patterns at 100%. (cursed-os 0.14.0) TC_BASE .. TC_MAX: a TRIG
+ * CONDITION in its place (the step plays when it holds: seq.c trig_cond), 1ST !1ST FILL !FILL, then N:M with M 2 3 4 8
+ * (N 1..M: the pass N of every M); its chance 100 % */
+#define TC_BASE 102u
+#define TC_N 21u
+#define TC_MAX (TC_BASE + TC_N - 1u)                    /* (122: under 128, the older layouts' 7 bits) */
+static void tc_nm(uint32_t c, uint32_t *n, uint32_t *m)  /* condition c (0..TC_N - 1, from 4) as N:M */
+{
+    static const uint8_t M0[4] = {2, 3, 4, 8}, B[4] = {4, 6, 9, 13};
+    uint32_t k = c >= 13u ? 3u : c >= 9u ? 2u : c >= 6u ? 1u : 0u;
+    *m = M0[k];
+    *n = c - B[k] + 1u;
+}
+static uint32_t step_chance(const step_t *s)
+{
+    return !s->probability || s->probability >= TC_BASE ? 100u : s->probability <= 100u ? s->probability : 0u;
+}
 static void step_set_chance(step_t *s, uint32_t chance) { s->probability = (uint8_t)(chance >= 100u ? 0u : chance ? chance : 101u); }
 /* RATCH: a NOTE step plays its notes and hits this many times (1..4), in equal parts of the step; every older
  * pattern holds 0 there, x1 */
@@ -679,6 +694,14 @@ static void step_set_ratchet(step_t *s, uint32_t hits)
  * event's; a stop or the loop's restart puts back the knob's (motion.c). Stored in FUNC's block 'M' 'G' (project.c) */
 #define MOT_DJF 127u
 _Static_assert(P_COUNT < MOT_DJF, "MOT_DJF past every track parameter");
+/* (cursed-os 0.14.0) SOUND LOCKS: a kit step's lane plays another drum sound (cos.c's SOURCE list, 1..DSRC_N): a lock
+ * (MOTION_LOCK) on a pseudo id, a lane pair each (MOT_SND0 + lane / 2), its value -64 + (lane & 1) * 96 + the source.
+ * Not a track parameter: motion.c hands it to the kit (eng_drum.c dx_slk) */
+#define MOT_SND0 123u
+#define MOT_SND(l) (MOT_SND0 + ((uint32_t)(l) & 7u) / 2u)
+#define MOT_SNDV(l, src) ((int16_t)(-64 + (int32_t)((l) & 1u) * 96 + (int32_t)(src)))
+#define MOT_IS_SND(id) ((id) >= MOT_SND0 && (id) < MOT_SND0 + 4u)
+_Static_assert(P_COUNT <= MOT_SND0 && MOT_SND0 + 4u <= MOT_DJF, "the sound locks' ids past every track parameter");
 typedef struct { uint8_t place, param; int16_t value; } motion_event_t;
 typedef struct { uint8_t count, on, rsv[2]; motion_event_t event[MOTION_MAX]; } motion_store_t;
 static void motion_at(motion_event_t *e, uint32_t place, int16_t v)   /* place: track << 6 | step; v: the value */

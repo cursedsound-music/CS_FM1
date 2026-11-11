@@ -1327,10 +1327,24 @@ static uint32_t trk_chance(const track_t *t, const step_t *s)
 /* (0.6.42) FILL: the FX button held (ui_input.c sets it each pass) */
 static volatile uint8_t seq_fill;
 /* the step's one roll: its chance (the track's scaling it). (seq2d: TRIG and FILL are conditions of a component now) */
+/* (cursed-os 0.14.0) a step's TRIG CONDITION (core.h TC_*) this pass of its track's pattern (t->loops, 0 the first) */
+static int trig_cond(const track_t *t, uint32_t c)
+{
+    uint32_t p = t->loops, n, m;
+    switch (c) {
+    case 0: return !p;
+    case 1: return p != 0u;
+    case 2: return seq_fill != 0u;
+    case 3: return !seq_fill;
+    default: tc_nm(c, &n, &m); return p % m == n - 1u;
+    }
+}
 static int step_rolls(const track_t *t, const step_t *s)
 {
     uint32_t c = trk_chance(t, s);
     if (live_drop(t))                               /* (p2) LIVE THIN */
+        return 0;
+    if (s->probability >= TC_BASE && !trig_cond(t, s->probability - TC_BASE))
         return 0;
     return c >= 100u || rng() % 100u < c;
 }
@@ -2053,6 +2067,7 @@ static void seq_stop(void)
     mo_flush();                                    /* (0.6.72) MIDI OUT ALL: nothing left hanging */
     chain_stop();
     motion_end();
+    dx_slk_back();                                 /* (0.14.0) the kit's own sounds back */
 }
 
 /* play one step: TIE extends, REST releases, NOTE (re)triggers its notes, then its lane hits (their GM
@@ -2590,6 +2605,7 @@ static void seq_tick(track_t *t, uint32_t n)
                                                      * as a JUMP's */
         nf = n < nf ? n : nf;                       /* (the PLAYHEADS: slower with it, never faster) */
     }
+    motion_slide_block(t, n);                           /* (0.14.0) PARAMETER SLIDE: a step's locks on their way */
     t->seq_pos += n;
     for (;;) {
         uint32_t cur_len = step_samples(t, period, t->seq_idx) + t->ext, start, e = seq_early(t, period, len);
@@ -2637,9 +2653,13 @@ static void seq_tick(track_t *t, uint32_t n)
             if (!step_rolls(t, s))
                 skip = SEQ_MISS;
             cx_lkhold = t->cx_lock == 1u;               /* (seq2d) LOCK: the locks held over its LENGTH, or none */
+            mo_slide = (s->flags & SF_SLIDE) != 0;      /* (0.14.0) SLIDE: its locks glide in over the step */
+            mo_slide_len = step_samples(t, period, t->seq_idx);
+            if (t->engine == ENGI_DRUM) memset(dx_slk, 0, sizeof dx_slk);   /* (0.14.0) its sound locks: this step's */
             motion_step(t, t->seq_idx, &motion, skip == SEQ_ROLLED && t->cx_lock != 2u);   /* (a song: its section's
                                                          * motion is the motion) */
             cx_lkhold = 0;
+            mo_slide = 0;
             if (t->rskip_n && t->rskip_idx == t->seq_idx) {
                 for (k = 0; k < t->rskip_n; k++) {
                     for (i = 0; i < s->n; i++)

@@ -41,7 +41,7 @@ static int motion_param(uint32_t id)
 {
     /* Sound only: transport, routing, voice allocation and discrete engine
      * changes never become automation. FX sends and continuous mix are safe. */
-    return id == MOT_DJF || (id < P_COUNT && (id <= P_REL || (id >= P_ED_FLT && id <= P_LD_AMP) ||
+    return id == MOT_DJF || MOT_IS_SND(id) || (id < P_COUNT && (id <= P_REL || (id >= P_ED_FLT && id <= P_LD_AMP) ||
         (id >= P_DIST && id <= P_REV) || id == P_GLIDE || id == P_PAN ||
         id == P_DETUNE || (id >= P_FM1_ATK && id <= P_FM4_LEVEL) || (id >= P_SOFS && id <= P_LN7) ||
         id == P_DTONE || id == P_MSSLW || id == P_FCUT || id == P_FRES || (id >= P_MS0 && id <= P_MS15) || id >= P_E0));   /* (the sequence offset OFS
@@ -50,7 +50,27 @@ static int motion_param(uint32_t id)
 /* the range of id's values on track t (MOT_DJF: the global's) */
 static const param_desc_t *motion_desc(const track_t *t, uint32_t id)
 {
-    return id == MOT_DJF ? &GP[G_DJF] : param_desc_of(eng_idx(t->eng_req), id);
+    static const param_desc_t SND = {"SOUND", F_INT, -64, 127, -64, 0, 0};   /* (0.14.0) a sound lock's */
+    return id == MOT_DJF ? &GP[G_DJF] : MOT_IS_SND(id) ? &SND : param_desc_of(eng_idx(t->eng_req), id);
+}
+/* (cursed-os 0.14.0) PARAMETER SLIDE: a step with SLIDE (SF_SLIDE; seq.c mo_slide) has its locks glide in, from the
+ * values sounding before it to its own, across the step (mo_slide_len samples; motion_slide_block each block), instead
+ * of at once. At most MS_N of a step's locks; past those, at once */
+#define MS_N 4u
+static struct { uint8_t n, id[MS_N]; int16_t from[MS_N], to[MS_N]; uint32_t pos, len; } mo_sl[NTRK];
+static uint8_t mo_slide;                         /* seq.c: the step about to apply its locks slides */
+static uint32_t mo_slide_len;                    /* .. its length, samples */
+static void motion_slide_block(track_t *t, uint32_t n)
+{
+    uint32_t k = trk_index(t), j, pos;
+    if (k >= NTRK || !mo_sl[k].n) return;
+    pos = mo_sl[k].pos + n;
+    if (pos >= mo_sl[k].len) pos = mo_sl[k].len;
+    mo_sl[k].pos = pos;
+    for (j = 0; j < mo_sl[k].n; j++)
+        t->p[mo_sl[k].id[j]] = (int16_t)(mo_sl[k].from[j] +
+                                         (int32_t)(mo_sl[k].to[j] - mo_sl[k].from[j]) * (int32_t)pos / (int32_t)mo_sl[k].len);
+    if (pos >= mo_sl[k].len) mo_sl[k].n = 0;
 }
 /* the DJ FILTER as the knob set it (what a save keeps): its records' value is the music's, not the knob's */
 static int16_t motion_djf_value(void) { return motion_djf_on ? motion_djf_base : song.g[G_DJF]; }
@@ -170,6 +190,7 @@ static void motion_restore(track_t *t)
     for (id = 0; id < P_COUNT; id++)
         if ((motion_active[k][id / 32u] >> (id % 32u)) & 1u) t->p[id] = motion_base[k][id];
     motion_djf_off(k);
+    mo_sl[k].n = 0;                                     /* (0.14.0) no slide on */
     memset(motion_active[k], 0, sizeof motion_active[k]);
     memset(motion_locked[k], 0, sizeof motion_locked[k]);
     motion_unguard(f);
@@ -427,6 +448,20 @@ static __attribute__((noinline)) void motion_step(track_t *t, uint32_t step, con
     }
     for (w = 0; w < (P_COUNT + 31u) / 32u; w++)
         any |= motion_locked[k][w];
+    mo_sl[k].n = 0;                                     /* (0.14.0) the step before's slide, done */
+    if (mo_slide && play) {                             /* .. this one's: where its locked values start, before the
+                                                         * locks of the step before go back */
+        for (i = 0; i < m->count && mo_sl[k].n < MS_N; i++) {
+            const motion_event_t *e = &m->event[i];
+            uint32_t id = MOTION_ID(e);
+            if (MOTION_TRK(e) == k && MOTION_STEP(e) == step && (e->param & MOTION_LOCK) && id < P_COUNT) {
+                mo_sl[k].id[mo_sl[k].n] = (uint8_t)id;
+                mo_sl[k].from[mo_sl[k].n++] = t->p[id];
+            }
+        }
+        mo_sl[k].pos = 0;
+        mo_sl[k].len = mo_slide_len ? mo_slide_len : 1u;
+    }
     if (!step) motion_restore(t);
     else if (any && !cx_lkhold) motion_unlock(t, step, m);   /* (seq2d: a LOCK component holds them over its LENGTH) */
     for (i = 0; i < m->count; i++) {
@@ -444,6 +479,11 @@ static __attribute__((noinline)) void motion_step(track_t *t, uint32_t step, con
             if (p && MOTION_STEP(p) > step) continue;
             v = motion_lin(p ? MOTION_VAL(p) : motion_base[k][id], v, (int32_t)step, p ? (int32_t)MOTION_STEP(p) : 0, (int32_t)se);
         }
+        if (MOT_IS_SND(id)) {                           /* (0.14.0) a sound lock: the kit's, for this step's hits */
+            uint32_t u = (uint32_t)(v + 64), l = (id - MOT_SND0) * 2u + (u >= 96u);
+            if ((e->param & MOTION_LOCK) && se == step) dx_slk[l & 7u] = (uint8_t)(u % 96u);
+            continue;
+        }
         if (id == MOT_DJF) {                            /* (0.9.1) the master DJ FILTER (a global) */
             if (!motion_djf_on) motion_djf_base = song.g[G_DJF];
             motion_djf_on |= (uint8_t)(1u << k);
@@ -453,8 +493,11 @@ static __attribute__((noinline)) void motion_step(track_t *t, uint32_t step, con
         const param_desc_t *d = param_desc_of(eng_idx(t->eng_req), id);
         t->p[id] = (int16_t)param_fit(d, v);
         motion_active[k][id / 32u] |= 1u << (id % 32u);
-        if (e->param & MOTION_LOCK)
+        if (e->param & MOTION_LOCK) {
             motion_locked[k][id / 32u] |= 1u << (id % 32u);
+            for (j = 0; j < mo_sl[k].n; j++)            /* (0.14.0) sliding: from where it was, there by the end */
+                if (mo_sl[k].id[j] == id) { mo_sl[k].to[j] = t->p[id]; t->p[id] = mo_sl[k].from[j]; }
+        }
     }
 }
 static void motion_snapshot_track(track_t *t, motion_store_t *out)

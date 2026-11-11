@@ -87,7 +87,8 @@ Planned work. Done items move to the commit log.
   transient PITCH knob (the LXR plays them faster / slower)? Left: a hi-hat choke between two FMDRUM tracks? ~~FMDRUM lanes inside the DRUM kit~~ (0.12.0: FILTER FM on a kit sound, drumx_voice.c dx_fmd). ~~Any drum sound into any drum~~ (0.12.1: EDIT > SOUND > SOURCE, 85 sounds).
 - ~~More of the LXR (GG 2026-11-11: "RING MOD + LXR reverb")~~ (0.13.1): DIST RING (TONE its carrier, DIST the mix) and
   REVERB TIGHT (the LXR's two-loop tank, its early reflections in WIDE's slot: EARLY). Left: the LXR's ring
-  modulator on the whole FX bus? GG to pick from the Elektron-style list (conditional trigs, p-locks' slide, ...).
+  modulator on the whole FX bus? GG to pick from the Elektron-style list: ~~conditions, parameter slide, sound locks~~ (0.14.0, TRIG > COND). Left:
+  ratchet velocity fade, control all, an accent lane; a kit's COND per drum (today the whole step's).
 
 ## Drums live (GG, 2026-11-10)
 
