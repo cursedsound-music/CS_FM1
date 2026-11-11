@@ -2467,6 +2467,8 @@ static struct { int32_t l[CTL], r[CTL], c[CTL], d[CTL], rv[CTL], sl[CTL], sr[CTL
  * track's own stem (the host moves it by the latency; usb.c uac_tap8 sends it with the input as it came) */
 static int32_t stem_buf[NPART + 1][CTL], stem_fx[2][CTL];
 static volatile uint8_t fx_stems, mix_skip;
+static volatile uint8_t mo_ext;                        /* (cursed-os 0.13.0) GLO > MIDI 2's SOUND EXT: tracks played by
+                                                         * another instrument (their notes out over MIDI), not heard here */
 /* (0.9.8) the parts that went into the SLICER's bus this block, a bit each (stem_slicer_bus): their dry sound was in
  * their stems and the SLICER's output in the FX return as well, so the eight summed had those parts twice */
 static uint8_t stem_sl;
@@ -2678,7 +2680,7 @@ static inline __attribute__((always_inline)) void mix_part(track_t *t, uint32_t 
             perf_mute((uint32_t)(t - trk), b, n);       /* perform.c: a black key in the FX layer */
             pm1 = pf.mg[ti];
         }
-        if ((mix_skip >> ti) & 1u) {                    /* (0.7.1) left out of the mix (rendered: its state runs) */
+        if (((mix_skip | mo_ext) >> ti) & 1u) {         /* (0.7.1) left out of the mix (rendered: its state runs; 0.13.0 EXT) */
             if (MOD.on)
                 mod_end(t);
             return;

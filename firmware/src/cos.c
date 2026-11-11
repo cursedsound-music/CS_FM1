@@ -47,7 +47,8 @@ enum { CC_OUTCH, CC_MOUT, CC_CLOCK, CC_SLOT, CC_TRKS, CC_LOAD, CC_COMP, CC_CATK,
        CC_CIN, CC_CTHR, CC_CRAT, CC_CMK, CC_CKNEE, CC_CSC, CC_CMIX, CC_LIN, CC_LREL, CC_LVL, CC_MUTEQ, CC_PCCH, CC_PCOUT, CC_VJCH, CC_EQL, CC_EQM, CC_EQH, CC_MAC0, CC_MAC3 = CC_MAC0 + 3, CC_RB0, CC_RB3 = CC_RB0 + 3, CC_MOPOS, CC_MOBARS, CC_LVLEN, CC_LVRATE, CC_LVDN, CC_LVSH, CC_MCCH, CC_MCCC, CC_MCDIR, CC_MCMAP, CC_MC0, CC_MC3 = CC_MC0 + 3, CC_MOCC,
        CC_NAME, CC_IDLE, CC_SCT, CC_SCG, CC_SCTR, CC_SPV, CC_SPR, CC_SPS, CC_SCM, CC_SPSRC, CC_SCZ, CC_LUT, CC_LUR, CC_LOCAL, CC_KPAT, CC_SCALE, CC_QUANT, CC_DJF, CC_DSEL, CC_DLV, CC_DWAV, CC_DFLT, CC_DBT, CC_DDRV, CC_DLAY, CC_DFB, CC_DSNP, CC_DSRC, CC_DE0, CC_DEE = CC_DE0 + DE_N - 1,
        CC_RRATE, CC_RRAMP, CC_RVEL, CC_DCH0, CC_DCH7 = CC_DCH0 + 7,   /* (0.13.0) LFO > DRUMS' */
-       CC_KSLOT };                                       /* (0.13.0) SAVE > KITS' slot */
+       CC_KSLOT,                                         /* (0.13.0) SAVE > KITS' slot */
+       CC_CTLM, CC_CTLCH, CC_EXT };                      /* (0.13.0) GLO > MIDI 2: the knobs as a controller; SOUND */
 _Static_assert(CC_DCH7 < 0xFBu, "the CK_COS ids fit a page's byte (0xFB..0xFF: BFINE, MUTE Q, BPM, OCTAVE, none)");
 _Static_assert(X2_N <= 16u, "CC_X2 .. CC_X2E: room for every trk_x2 field");
 #define ID_MUTEQ 0xFCu                          /* (HOME 2's: MUTE Q, cos_knob) */
@@ -185,6 +186,8 @@ static const cpg_t CZP_MIX[] = {{"MIX", CK_TRK, {P_LEVEL, P_PAN, P_GLIDE, P_MUTE
                                {"COMP 3", CK_COS, {CC_CSC, CC_CMIX, X, X}},
                                {"LIMIT", CK_COS, {CC_LIN, CC_LIM, CC_LREL, CC_LVL}},
                                {"MIDI", CK_COS, {CC_OUTCH, CC_MOUT, CC_CLOCK, CC_LOCAL}},   /* (0.9.4 LOCAL: OFF, the keys play Ableton only) */
+                               {"MIDI 2", CK_COS, {CC_CTLM, CC_CTLCH, CC_EXT, X}},   /* (0.13.0) KNOBS: the FM-1's / + MIDI / MIDI
+                                                         * only; the track's SOUND: here or another instrument's (EXT) */
                                {"LINK", CK_COS, {CC_PCCH, CC_PCOUT, CC_VJCH, X}},   /* (a Syntakt's patterns: the sections) */
                                {"LINK 2", CK_COS, {CC_MCCH, CC_MCDIR, CC_MCMAP, CC_MOCC}},   /* (the macros and MORPH as CCs, both
                                                          * ways) */
@@ -253,9 +256,9 @@ static int cos_dead(const track_t *t, uint32_t id);      /* (below: a parameter 
 static void cos_pages(uint32_t m, const cpg_t **p, uint32_t *n)
 {
     static const cpg_t *const P[CM_N] = {CZP_HOME, CZP_TRIG, CZP_SRC, CZP_AMP, CZP_DRUMS, CZP_FX, CZP_GENA, CZP_MIX, CZP_KEY, CZP_PROJ};
-    static const uint8_t N[CM_N] = {7, 4, 9, 9, 3, 9, 4, 14, 1, 3};   /* (each at most CZ_TABS: cos_tabs) */
+    static const uint8_t N[CM_N] = {7, 4, 9, 9, 3, 9, 4, 15, 1, 3};   /* (each at most CZ_TABS: cos_tabs) */
     _Static_assert(NELEM(CZP_HOME) == 7 && NELEM(CZP_TRIG) == 4 && NELEM(CZP_SRC) == 9 && NELEM(CZP_AMP) == 9 &&
-                   NELEM(CZP_DRUMS) == 3 && NELEM(CZP_FX) == 9 && NELEM(CZP_GENA) == 4 && NELEM(CZP_MIX) == 14 &&
+                   NELEM(CZP_DRUMS) == 3 && NELEM(CZP_FX) == 9 && NELEM(CZP_GENA) == 4 && NELEM(CZP_MIX) == 15 &&
                    NELEM(CZP_KEY) == 1 && NELEM(CZP_PROJ) == 3 && NELEM(CZP_SRCD) <= CZ_TABS && NELEM(CZP_GENS) <= CZ_TABS &&
                    NELEM(CZP_SRCV) == 10 && NELEM(CZP_AMPA) == 9 && NELEM(CZP_SRCN) == 9,
                    "N: the pages each mode has (0.9.2: a count past its list read past it)");
@@ -311,6 +314,19 @@ static void cos_drm_key(uint32_t k);
 static void cos_drm_poll(void);
 static void cos_body_drm(void);
 static void cos_drm_leds(uint8_t *nl, uint8_t *nb);
+/* (0.13.0) GLO > MIDI 2 KNOBS: FM-1 (as ever), +MIDI (each turn also sends the value it gave, 0..127, as a CC), MIDI
+ * (the knobs only send: a relative CC, 1 .. 63 up, 65 .. 127 down: Ableton's "Relative (2's Comp.)"; the FM-1's sound
+ * stays). The CC: 20 + the page's number x 4 + the knob (20 .. 83), on CTRL CH + the mode (HOME 0, SEQ 1, EDIT 2, ENV 3,
+ * LFO 4, FX 5, ARP 6, GLO 7, SCL 8, SAVE 9; 16 wraps to 1): every knob of every page its own, as Ableton maps them */
+static uint32_t cos_ctl_mode(void) { return favorites.factory[15][1] <= 2u ? favorites.factory[15][1] : 0u; }
+static uint32_t cos_ctl_ch(void) { uint32_t c = favorites.factory[15][2]; return (c >= 1u && c <= 16u ? c : 7u) - 1u; }
+static uint32_t cos_ctl_last;                             /* (the last sent: channel << 8 | CC, + 1 << 16; MIDI 2 shows it) */
+static void cos_ctl_send(uint32_t k, uint32_t v)
+{
+    uint32_t ch = (cos_ctl_ch() + cz.mode) % 16u, cc = 20u + (cz.tab[cz.mode] % 16u) * 4u + (k & 3u);
+    midi_out_event(0x0Bu | (0xB0u | ch) << 8 | cc << 16 | (v & 127u) << 24);
+    cos_ctl_last = 1u << 16 | ch << 8 | cc;
+}
 static void kit_scan(void);                              /* (0.13.0) the user KITS: kits.c */
 static int kit_save(uint32_t k, const char *name);
 static int kit_load(uint32_t k);
@@ -654,6 +670,20 @@ static const param_desc_t *cos_cdesc(uint32_t id, int16_t **vp)
         *vp = &cz.cc_v[3];
         return &DU;
     }
+    if (id == CC_EXT) {                                  /* (0.13.0) the selected track's SOUND: INT, EXT (settings row 15, 3) */
+        static const char *const EX[] = {"INT", "EXT", 0};
+        static const param_desc_t DEX = {"SOUND", F_ENUM, 0, 1, 0, EX, 0};
+        cz.cc_v[3] = (int16_t)((favorites.factory[15][3] >> (song.sel % NTRK)) & 1u);
+        *vp = &cz.cc_v[3];
+        return &DEX;
+    }
+    if (id == CC_CTLM || id == CC_CTLCH) {               /* (0.13.0) GLO > MIDI 2: KNOBS, CTRL CH (settings row 15, 1 and 2) */
+        static const char *const KN[] = {"FM-1", "+MIDI", "MIDI", 0};
+        static const param_desc_t DKN[2] = {{"KNOBS", F_ENUM, 0, 2, 0, KN, 0}, {"CTRL CH", F_INT, 1, 16, 7, 0, 0}};
+        cz.cc_v[3] = (int16_t)(id == CC_CTLM ? cos_ctl_mode() : (int32_t)cos_ctl_ch() + 1);
+        *vp = &cz.cc_v[3];
+        return &DKN[id == CC_CTLCH];
+    }
     if (id == CC_KSLOT) {                                /* (0.13.0) SAVE > KITS: K01 .. K16 */
         static const param_desc_t DK2 = {"KIT", F_INT, 1, 16, 1, 0, 0};
         cz.cc_v[3] = (int16_t)(cz.kslot + 1u);
@@ -943,6 +973,16 @@ static void cos_cput(uint32_t id, int32_t v)
     } else if (id == CC_USLOT) {
         cz.uslot = (uint8_t)(clamp(v, 1, UP_SLOTS - 1) - 1);
         cz.snd_ms = 0;
+    } else if (id == CC_EXT) {
+        uint8_t m = (uint8_t)(favorites.factory[15][3] & ((1u << NTRK) - 1u));
+        favorites.factory[15][3] = (uint8_t)(v ? m | 1u << t : m & ~(1u << t));
+        settings_save();
+    } else if (id == CC_CTLM) {
+        favorites.factory[15][1] = (uint8_t)clamp(v, 0, 2);
+        settings_save();
+    } else if (id == CC_CTLCH) {
+        favorites.factory[15][2] = (uint8_t)clamp(v, 1, 16);
+        settings_save();
     } else if (id == CC_KSLOT) {
         cz.kslot = (uint8_t)(clamp(v, 1, 16) - 1);
         cz.snd_ms = 0;
@@ -1989,6 +2029,7 @@ static __attribute__((noinline)) void cos_input(void)
 {
     cos_remote_poll();                                   /* (0.9.5: the phone's, the IDLE screen up or not) */
     cos_drm_poll();                                      /* (0.13.0) DRUMS: the rolls and the REPEAT held */
+    mo_ext = (uint8_t)(favorites.factory[15][3] & ((1u << NTRK) - 1u));   /* (0.13.0) GLO > MIDI 2 SOUND EXT */
     if (cos_idle_gate()) return;                         /* (the IDLE screen: shown, or its waking touch) */
     uint32_t released = 0, pressed = fm1_input_edges(&released), notes = fm1_input_note_edges(), k, b;
     int scl_held = (int)((fm1_in.buttons >> panel.btn[B_SCL]) & 1u);
@@ -2193,8 +2234,22 @@ static __attribute__((noinline)) void cos_input(void)
     for (k = 0; k < 4u; k++)
         if ((s = panel_enc(EN_K1 + k)) != 0) {
             uint64_t h = cz.mode == CM_TRIG ? cos_held() : 0u;
+            uint32_t cm = cos_ctl_mode();
+            if (cm == 2u && !cz.fx_down) {               /* (0.13.0) KNOBS MIDI: a relative CC only */
+                cos_ctl_send(k, s > 0 ? (uint32_t)clamp(s, 1, 63) : (uint32_t)(128 - clamp(-s, 1, 63)));
+                cz.hot = (uint8_t)(k + 1u); cz.hot_ms = fm1_ms;
+                continue;
+            }
             if (h) cos_lock_turn(k, s, h);                   /* (steps held: their locks) */
-            else cos_turn(k, s);
+            else {
+                cos_turn(k, s);
+                if (cm == 1u && !cz.fx_down) {           /* (0.13.0) KNOBS +MIDI: the value it gave, sent too */
+                    int16_t *vp = 0;
+                    const param_desc_t *d = cos_knob(cos_page(), k, &vp);
+                    if (d && vp && d->max > d->min)
+                        cos_ctl_send(k, (uint32_t)((clamp(*vp, d->min, d->max) - d->min) * 127 / (d->max - d->min)));
+                }
+            }
         }
     if (cz.bank >= cos_banks()) cz.bank = 0;
     if (cz.fx_down) {                                    /* the keys are the pad's (seq.c gives them to perform.c) */
@@ -3319,6 +3374,32 @@ static void cos_body_key(void)
     cos_tx(4, 146, "A KEY: THE SONG MOVES THERE", C_DIM);
 }
 
+/* (0.13.0) GLO > MIDI 2: the knobs as Ableton's controller */
+static void cos_body_ctl(void)
+{
+    char b[32];
+    uint32_t m = cos_ctl_mode();
+    cos_tx(4, 40, m == 0u ? "KNOBS: THE FM-1 ONLY" : m == 1u ? "KNOBS: THE FM-1 AND A CC OUT" : "KNOBS: A CC OUT ONLY", C_FG);
+    cos_tx(4, 56, m == 2u ? "ABLETON: RELATIVE (2'S COMP)" : "ABLETON: ABSOLUTE", C_MID);
+    cos_tx(4, 72, "CC 20 + PAGE x 4 + KNOB", C_DIM);
+    str_cpy(b, "CH ", 4); fmt_int(b + 3, (int32_t)cos_ctl_ch() + 1);
+    str_cpy(b + str_len(b), " + THE MODE (HOME 0..)", 23);
+    cos_tx(4, 86, b, C_DIM);
+    if (cos_ctl_last) {
+        str_cpy(b, "LAST: CH ", 10); fmt_int(b + 9, (int32_t)((cos_ctl_last >> 8) & 15u) + 1);
+        str_cpy(b + str_len(b), " CC ", 5); fmt_int(b + str_len(b), (int32_t)(cos_ctl_last & 127u));
+        cos_tx(4, 108, b, C_RED);
+    }
+    cos_tx(4, 128, "MAP: CMD/CTRL+M, CLICK, TURN", C_DIM);
+    str_cpy(b, "EXT (NOT HEARD HERE):", 22);
+    {
+        uint32_t k, x = favorites.factory[15][3];
+        for (k = 0; k < NTRK; k++) if ((x >> k) & 1u) { char c[4] = " T1"; c[2] = (char)('1' + k); str_cpy(b + str_len(b), c, 4); }
+        if (!(x & ((1u << NTRK) - 1u))) str_cpy(b + str_len(b), " NONE", 6);
+    }
+    cos_tx(4, 142, b, (favorites.factory[15][3] & ((1u << NTRK) - 1u)) ? C_RED : C_DIM);
+}
+
 /* GLO > MIDI: where each track goes (its MIDI OUT channel: the Syntakt's track), MIDI OUT, the clock */
 static void cos_body_midi(void)
 {
@@ -3695,6 +3776,7 @@ static void cos_scene(void)
         else if (pg->kind == CK_COS && pg->id[0] == CC_LIN) cos_body_lim();
         else if (pg->kind == CK_COS && pg->id[0] == CC_PCCH) cos_body_link();
         else if (pg->kind == CK_COS && (pg->id[0] == CC_MCCH || pg->id[0] == CC_MC0)) cos_body_link2();
+        else if (pg->kind == CK_COS && pg->id[0] == CC_CTLM) cos_body_ctl();   /* (0.13.0) */
         else cos_body_sound();
         break;
     }
