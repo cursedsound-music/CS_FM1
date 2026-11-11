@@ -148,7 +148,7 @@ static const char *why_quiet(uint32_t m, const cpg_t *p, uint32_t k)
             return "SNAP: the noise's own decay; the ENV group's SUSTAIN (on here) rules the tail (drumx_voice.c)";
     }
     if (p->kind == CK_GLO && (id == G_CLOCK || id == G_CLOCK)) return "MIDI: the clock and MIDI out";
-    if (m == CM_DRONE) return "DRONE: plays while keys hold notes";
+    if (m == CM_DRUMS && str_eq(p->tab, "ROLL")) return "DRUMS' ROLL: heard while a white key holds a roll (drm_test)";
     if (id == ID_MUTEQ) return "MUTE Q: when a mute lands";
     if (m == CM_SRC && str_eq(p->tab, "CHORD")) return "CHORD: what a key plays (live, recorded)";
     if (m == CM_GEN && (str_eq(p->tab, "ACID 3") || str_eq(p->tab, "ACID 4") || str_eq(p->tab, "DUB 3") ||

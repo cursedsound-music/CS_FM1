@@ -82,29 +82,24 @@ int main(void)
     cos_trig(2);
     CHECK(step_lanes(&trk[0].step[2]) & 2u, "a kit: the lane's hit (SD)");
 
-    /* DRONE: a key holds its note on the selected track, again lets it go; four at most; another track moves it; the audio
-     * side (seq.c cos_drone_block) sounds what is asked, STOP leaves it; a key change moves it with the song */
-    song.sel = 4; cz.mode = CM_DRONE; cz.dr_oct = 0;
-    cos_drone_key(0); cos_drone_key(7);
-    CHECK(cz.dr_n == 2 && cz.dr_note[0] == 41 && cz.dr_note[1] == 48 && cz.dr_trk == 4, "two notes held on T5 (%u)", cz.dr_n);
-    cos_drone_key(7);
-    CHECK(cz.dr_n == 1 && cz.dr_note[0] == 41, "a key again lets its note go");
-    cos_drone_key(1); cos_drone_key(2); cos_drone_key(3); cos_drone_key(4);
-    CHECK(cz.dr_n == 4 && cz.dr_note[0] == 42, "four at most, the oldest goes (%u: %u)", cz.dr_n, cz.dr_note[0]);
-    cos_drone_block();
-    CHECK(cos_dr_n == 4 && cos_dr_trk == 4 && cos_dr_gen == cos_dr.gen, "the audio side took the request");
-    seq_stop();
-    cos_drone_block();
-    CHECK(cos_dr_n == 4, "STOP leaves the drone");
+    /* (0.13.0) LFO > DRUMS, DRONE's place: white keys held roll their drums, black 1..4 the REPEAT, CHANCE per drum */
     {
-        uint8_t n0 = cz.dr_note[0];
-        cos_key_ask((uint32_t)((cos_key() + 2u + 7u) % 12u));   /* (a key two semitones up: key = pc - 5) */
-        CHECK(cz.dr_note[0] == n0 + 2u, "the key change moves the drone (%u -> %u)", n0, cz.dr_note[0]);
+        const cpg_t *pp; uint32_t pn;
+        cz.mode = CM_DRUMS; cz.fx_down = 0;
+        cos_pages(CM_DRUMS, &pp, &pn);
+        CHECK(pn == 3u && !strcmp(pp[0].tab, "ROLL") && !strcmp(pp[1].tab, "CHANCE"), "DRUMS: ROLL, CHANCE, CHANCE 2 (%u)", pn);
+        fm1_in.notes = (1u << WK[1]) | (1u << WK[3]) | (1u << BK[2]);
+        cos_drm_poll();
+        CHECK(drm_roll == 0x0Au && drm_lpn == 2u, "white 2, 4 held: SNARE, HATCL roll; black 3: REPEAT 2 (%x %u)", drm_roll, drm_lpn);
+        fm1_in.notes = 0; cos_drm_poll();
+        CHECK(!drm_roll && !drm_lpn, "let go: none");
+        cos_cput(CC_DCH0 + 1u, 25);
+        CHECK(dx_skip[1] == 75u, "SNARE CHANCE 25 %% (%u)", dx_skip[1]);
+        cos_cput(CC_DCH0 + 1u, 100);
+        cz.mode = CM_HOME;
+        fm1_in.notes = 1u << WK[1]; cos_drm_poll(); fm1_in.notes = 0;
+        CHECK(!drm_roll, "outside DRUMS: no roll");
     }
-    song.sel = 2; cos_drone_key(0);
-    CHECK(cz.dr_n == 1 && cz.dr_trk == 2, "a key on another track moves the drone there");
-    cos_drone_clear(); cos_drone_block();
-    CHECK(cz.dr_n == 0 && cos_dr_n == 0, "REC lets it go");
 
     /* GLO > MIDI: T3's MIDI OUT channel 10, kept as 10 (its own: 0); MIDI OUT ALL; the sequencer's channel follows */
     song.sel = 2; cz.mode = CM_MIX; cz.tab[CM_MIX] = 1;

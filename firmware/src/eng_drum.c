@@ -338,6 +338,12 @@ static uint8_t dx_snd[DV_NLANE];
 /* (cursed-os 0.10.3) HOME > LIVE's global sends, 0..127: added to every track's DELAY and REVERB send (fx.c), the kit's
  * hits' too (drum_feed); a performance's, not kept in the project */
 static volatile uint8_t lv_snd[2];                    /* 0 DELAY, 1 REVERB */
+/* (cursed-os 0.13.0) LFO > DRUMS (cos.c, cos_drm.c; the ISR's side pfx.c drm_roll_block, pfx_block): the drums held to
+ * ROLL (a bit a drum: 0 the kick, 1..7 the kit's), REPEAT (the drums' last 1 / 2 / 4 / 8 steps again, 0 off), ROLL's
+ * RATE (1/8 1/16 1/32 1/16T 1/32T), RAMP (FLAT UP DOWN), VEL; each drum's CHANCE, kept as 100 - it (0: always; the
+ * project's 'DC', seq.c seq_step) */
+static volatile uint8_t drm_roll, drm_lpn, drm_rate = 1, drm_ramp, drm_vel = 110;
+static uint8_t dx_skip[8];
 /* (JIANT 0.7.8) a core's own (mod.c's mod_c the same way): the two cores render two parts at once (fx.c mix_block), and
  * with one set the other core's part cleared dx_xon and the sides mid-render: the image on and off block by block (a
  * grit at the block rate, like a downsampling) and clicks on the side a sound leaned to. A core renders its parts one

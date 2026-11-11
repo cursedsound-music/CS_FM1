@@ -2256,7 +2256,8 @@ static __attribute__((noinline)) void seq_step(track_t *t, const step_t *s, uint
             t->arp_k = 0;
         }
     }
-    if (s->time == ST_REST || (!s->n && !s->hit)) {
+    if (s->time == ST_REST || (!s->n && !s->hit) ||
+        (t->engine == ENGI_KICK && dx_skip[0] && rng() % 100u < dx_skip[0])) {   /* (0.13.0: a KICK track, the kick's CHANCE) */
         seq_release(t);
         return;
     }
@@ -2306,7 +2307,7 @@ static __attribute__((noinline)) void seq_step(track_t *t, const step_t *s, uint
         m++;
     }
     for (i = 0; i < NLANE && !arp; i++)
-        if ((s->hit >> i) & 1u) {
+        if (((s->hit >> i) & 1u) && (!dx_skip[i] || rng() % 100u >= dx_skip[i])) {   /* (0.13.0: its CHANCE) */
             nn[m] = DRUM_LANE_NOTE[i];
             vv[m] = (uint8_t)((s->acc >> i) & 1u ? 127u : vel);
             sk |= ((skip >> (8u + i)) & 1u) << m;
@@ -2755,29 +2756,9 @@ static int32_t click_beat_now(void)
 }
 
 /* everything that happens between two rendered blocks */
-/* (cursedsound) cursed-os's DRONE: notes held on one track whatever the transport does (seq_stop releases only the
- * sequencer's). cos.c writes the request (its notes, then gen); here, between blocks, what sounds follows it */
-static volatile struct { uint8_t gen, trk, n, note[4]; } cos_dr;
-static uint8_t cos_dr_gen, cos_dr_trk, cos_dr_n, cos_dr_note[4];
-static __attribute__((noinline)) void cos_drone_block(void)
-{
-    uint32_t i;
-    if (cos_dr.gen == cos_dr_gen)
-        return;
-    for (i = 0; i < cos_dr_n && i < 4u; i++)
-        trk_note_off(&trk[cos_dr_trk % NTRK], cos_dr_note[i]);
-    cos_dr_trk = cos_dr.trk;
-    cos_dr_n = cos_dr.n;
-    for (i = 0; i < cos_dr_n && i < 4u; i++) {
-        cos_dr_note[i] = cos_dr.note[i];
-        trk_note_on(&trk[cos_dr_trk % NTRK], cos_dr_note[i], 96u);
-    }
-    cos_dr_gen = cos_dr.gen;
-}
 static void events_block(uint32_t n)
 {
     uint32_t i, pr, fo, seq_n = n;
-    cos_drone_block();
     uint32_t clock_mode = (uint32_t)song.g[G_CLOCK];
     blk_n = n ? n : 1u;                                /* (ctl64: ev_at) */
     ev_off = 0;

@@ -163,6 +163,7 @@ static int32_t ut_cv_w(void) { return (int32_t)cv_w; }
 #include "../firmware/src/cos.c"
 #include "../firmware/src/upreset.c"
 #include "../firmware/src/project.c"
+#include "../firmware/src/kits.c"                    /* (cursed-os 0.13.0) the user KITS */
 
 static int check(const char *what, int ok)
 {

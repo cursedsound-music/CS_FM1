@@ -198,6 +198,7 @@ static void fl_plain_window_init(void) {}
 #include "../../firmware/src/storage.c"
 #include "../../firmware/src/upreset.c"
 #include "../../firmware/src/project.c"
+#include "../../firmware/src/kits.c"         /* (cursed-os 0.13.0) the user KITS */
 
 /* ------------------------------------------------- main.c and its HAL --- */
 typedef struct { uint32_t magic, count, vec, pc, emu, dbg, rets, sp, usp, ssp, other_pc, other, cnum, bus[8], app, uptime_ms; } fm1_crash_t;   /* (0.9.9-stab: as hal/fm1_irq.h's) */

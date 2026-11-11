@@ -142,10 +142,56 @@ static void pfx_lane_put(uint32_t s, uint32_t v)
 /* each block, before the events (fx.c mix_block). held: the effects held (PF_* bits) */
 static uint32_t pfx_rec_held;                           /* (0.6.28) the effects held by hand: only they record into the
                                                          * lane (a latched one wrote itself on every step it passed) */
+/* (cursed-os 0.13.0) LFO > DRUMS' ROLL: each drum held struck on the RATE's grid (the transport's while it plays: the
+ * first hit on the next one; stopped, at once and then on its own clock), at VEL, RAMP up or down over 16 hits. The kick:
+ * the first KICK track's (else the kit's); the rest the first DRUM track's sounds */
+static uint32_t drm_ph;
+static uint8_t drm_cnt[8], drm_was;
+static void drm_hit(uint32_t l, uint32_t vel)
+{
+    uint32_t k, note = DRUM_LANE_NOTE[l & 7u];
+    track_t *t = 0;
+    for (k = 0; k < trk_live && k < NTRK && !t; k++)
+        if (l == 0u && trk[k].engine == ENGI_KICK) { t = &trk[k]; note = 36; }
+    for (k = 0; k < trk_live && k < NTRK && !t; k++)
+        if (trk[k].engine == ENGI_DRUM) t = &trk[k];
+    if (!t) return;
+    seq_note_on(t, note, vel);                           /* (as the sequencer's: MIDI OUT ALL sends it too) */
+    seq_note_off(t, note);                               /* (a hit: its own envelope) */
+}
+static __attribute__((noinline)) void drm_roll_block(uint32_t n)
+{
+    static const uint8_t DIV[5] = {2, 4, 8, 6, 12};      /* a beat / it: 1/8 1/16 1/32 1/16T 1/32T */
+    uint32_t r = drm_roll, per, fire, l, nw;
+    if (!r) { drm_was = 0; drm_ph = 0; return; }
+    per = beat_samples() / DIV[drm_rate % 5u];
+    if (per < 64u) per = 64u;
+    nw = r & ~drm_was;
+    if (song.playing && clk_pos != CLK_START)
+        fire = (clk_pos + n) % per < n;                  /* (a grid point in this block: as pfx_block's 1/16) */
+    else {
+        drm_ph += n;
+        fire = drm_ph >= per;
+        if (fire) drm_ph -= per;
+        if (nw) { drm_ph = 0; fire = 1; }               /* (stopped: at once) */
+    }
+    for (l = 0; l < 8u; l++) {
+        uint32_t c, v;
+        if ((nw >> l) & 1u) drm_cnt[l] = 0;
+        if (!((r >> l) & 1u) || !fire) continue;
+        c = drm_cnt[l] < 16u ? drm_cnt[l] : 16u;
+        v = drm_ramp == 1u ? 30u + c * 70u / 16u : drm_ramp == 2u ? 100u - c * 70u / 16u : 100u;   /* % */
+        drm_hit(l, (uint32_t)clamp((int32_t)(drm_vel * v / 100u), 1, 127));
+        if (drm_cnt[l] < 255u) drm_cnt[l]++;
+    }
+    drm_was = (uint8_t)r;
+}
+
 static __attribute__((noinline)) void pfx_block(uint32_t n, uint32_t held)
 {
     uint32_t k, b = beat_samples(), lane = 0, raw = held & pfx_rec_held, nw;
     pfx_blk++;
+    drm_roll_block(n);                                  /* (cursed-os 0.13.0) DRUMS' ROLL */
     pfx_qon &= held;                                    /* (JIANT) let go: at once; pressed: on the next 1/16 */
     nw = held & ~pfx_qon;
     if (nw) {
@@ -185,7 +231,7 @@ static __attribute__((noinline)) void pfx_block(uint32_t n, uint32_t held)
                 lane = PF_BIT(PF_OCTD + k - 1u);
         }
     }
-    if (!held && !pfx_any && !lane && !nw)
+    if (!held && !pfx_any && !lane && !nw && !drm_lpn)   /* (0.13.0: DRUMS' REPEAT) */
         return;
     pfx_any = 0;
     for (k = 0; k < NTRK; k++) {
@@ -198,6 +244,9 @@ static __attribute__((noinline)) void pfx_block(uint32_t n, uint32_t held)
         t->pfx_pit = (int16_t)(((on >> PF_OCTU) & 1u) * 192 - ((on >> PF_OCTD) & 1u) * 192);
         uint32_t lpn = (on >> PF_LP3) & 1u ? 3u : (on >> PF_LP5) & 1u ? 5u : (on >> PF_LP7) & 1u ? 7u : 0u;   /* (snd2) LOOP
                                                          * 3 / 5 / 7 (the shortest held wins) */
+        if (drm_lpn && (drum || t->engine == ENGI_KICK))  /* (cursed-os 0.13.0) DRUMS' REPEAT: the kit and the KICK, the
+                                                         * last 1 / 2 / 4 / 8 steps (a LOOP's way) */
+            lpn = drm_lpn;
         f = ((on >> PF_RND) & 1u ? PFX_RND : 0u) | ((on >> PF_HALF) & 1u ? PFX_HALF : 0u) | (rep ? PFX_REP : 0u) |
             (on & (PF_BIT(PF_DSHT) | PF_BIT(PF_DLNG)) ? PFX_DEC : 0u) | ((on >> PF_ATK) & 1u ? PFX_ATK : 0u) |
             (lpn && song.playing ? PFX_LOOP : 0u);

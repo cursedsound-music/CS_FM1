@@ -15,7 +15,8 @@
  *         cos_si_*), EUCLID, MODES (JIANT's euclid on the track, OCT+ a new one)
  *   EDIT  SRC 1 / SRC 2: the engine (VOICE: and WORDS, the talking synth: LANG LYRIC THEME ARTIC, OCT+ new words)
  *   ENV   AMP / FLTR / LFO / LFO 2      FX  SEND / DIST
- *   LFO   DRONE: the keys hold notes on the track (up to four), sounding whatever the transport does; REC lets them go
+ *   LFO   DRUMS (0.13.0; DRONE before): white 1..8 held roll that drum, black 1..4 held repeat the drums' last 8 / 4 / 2 / 1
+ *         steps; ROLL's RATE and RAMP, each drum's CHANCE (cos_drm.c)
  *   GLO   MIX / MIDI: the track's MIDI OUT channel (the Syntakt's track), MIDI OUT, the clock (TRS: the Syntakt's)
  *   ARP   GEN: ACID (a synth) or EUCLID (a kit); OCT+ a new line, OCT- the one before (ACID 3 / MUTATE: mutate, anchor)
  *   SCL   KEY: a key pressed is the song's new key (HYP-1's way): every synth track's notes and root move by the nearest
@@ -38,14 +39,16 @@
 #define C_DIM 0x6B6Du                           /* (110, 110, 110): idle */
 #define C_DARK 0x2965u                          /* (45, 45, 45): empty cells, the arcs' tracks */
 
-enum { CM_HOME, CM_TRIG, CM_SRC, CM_AMP, CM_DRONE, CM_FX, CM_GEN, CM_MIX, CM_KEY, CM_PROJ, CM_N };
+enum { CM_HOME, CM_TRIG, CM_SRC, CM_AMP, CM_DRUMS, CM_FX, CM_GEN, CM_MIX, CM_KEY, CM_PROJ, CM_N };
 enum { CK_NONE, CK_TRK, CK_GLO, CK_AC, CK_EU, CK_COS, CK_DB };
 enum { CC_OUTCH, CC_MOUT, CC_CLOCK, CC_SLOT, CC_TRKS, CC_LOAD, CC_COMP, CC_CATK, CC_CREL, CC_LIM, CC_PF0, CC_PF3 = CC_PF0 + 3,
        CC_X2, CC_X2E = CC_X2 + 15, CC_OCT, CC_KICK, CC_KICKE = CC_KICK + 4, CC_LN0, CC_LNE = CC_LN0 + 7, CC_KDRV, CC_BT,
        CC_L1SYNC, CC_L1RATE, CC_L1WAVE, CC_L1MODE, CC_L1PH, CC_L1FADE, CC_L2SYNC, CC_L2RATE, CC_BPM, CC_BFINE, CC_USLOT, CC_LVDLY, CC_LVREV, CC_LVFB,
        CC_CIN, CC_CTHR, CC_CRAT, CC_CMK, CC_CKNEE, CC_CSC, CC_CMIX, CC_LIN, CC_LREL, CC_LVL, CC_MUTEQ, CC_PCCH, CC_PCOUT, CC_VJCH, CC_EQL, CC_EQM, CC_EQH, CC_MAC0, CC_MAC3 = CC_MAC0 + 3, CC_RB0, CC_RB3 = CC_RB0 + 3, CC_MOPOS, CC_MOBARS, CC_LVLEN, CC_LVRATE, CC_LVDN, CC_LVSH, CC_MCCH, CC_MCCC, CC_MCDIR, CC_MCMAP, CC_MC0, CC_MC3 = CC_MC0 + 3, CC_MOCC,
-       CC_NAME, CC_IDLE, CC_SCT, CC_SCG, CC_SCTR, CC_SPV, CC_SPR, CC_SPS, CC_SCM, CC_SPSRC, CC_SCZ, CC_LUT, CC_LUR, CC_LOCAL, CC_KPAT, CC_SCALE, CC_QUANT, CC_DJF, CC_DSEL, CC_DLV, CC_DWAV, CC_DFLT, CC_DBT, CC_DDRV, CC_DLAY, CC_DFB, CC_DSNP, CC_DSRC, CC_DE0, CC_DEE = CC_DE0 + DE_N - 1 };
-_Static_assert(CC_DEE < 0xFEu, "the CK_COS ids fit a page's byte (0xFE, 0xFF: OCTAVE, none)");
+       CC_NAME, CC_IDLE, CC_SCT, CC_SCG, CC_SCTR, CC_SPV, CC_SPR, CC_SPS, CC_SCM, CC_SPSRC, CC_SCZ, CC_LUT, CC_LUR, CC_LOCAL, CC_KPAT, CC_SCALE, CC_QUANT, CC_DJF, CC_DSEL, CC_DLV, CC_DWAV, CC_DFLT, CC_DBT, CC_DDRV, CC_DLAY, CC_DFB, CC_DSNP, CC_DSRC, CC_DE0, CC_DEE = CC_DE0 + DE_N - 1,
+       CC_RRATE, CC_RRAMP, CC_RVEL, CC_DCH0, CC_DCH7 = CC_DCH0 + 7,   /* (0.13.0) LFO > DRUMS' */
+       CC_KSLOT };                                       /* (0.13.0) SAVE > KITS' slot */
+_Static_assert(CC_DCH7 < 0xFBu, "the CK_COS ids fit a page's byte (0xFB..0xFF: BFINE, MUTE Q, BPM, OCTAVE, none)");
 _Static_assert(X2_N <= 16u, "CC_X2 .. CC_X2E: room for every trk_x2 field");
 #define ID_MUTEQ 0xFCu                          /* (HOME 2's: MUTE Q, cos_knob) */
 #define ID_BFINE 0xFBu                          /* (0.10.1) PERFORM's K2: the tempo's hundredths, .00 .. .99 */
@@ -144,7 +147,9 @@ static const cpg_t CZP_AMPA[] = {{"AMP", CK_TRK, {P_ATK, P_DEC, P_SUS, P_REL}},
                                 {"LFO 1+", CK_COS, {CC_L1PH, CC_L1FADE, X, X}},
                                 {"LFO 2", CK_COS, {CC_L2SYNC, CC_L2RATE, CC_X2 + X2_WAVE, CC_X2 + X2_L2MODE}},
                                 {"LFO 2+", CK_COS, {CC_X2 + X2_L2PH, CC_X2 + X2_F2L, X, X}}};
-static const cpg_t CZP_DRONE[] = {{"DRONE", CK_TRK, {P_LEVEL, P_FCUT, P_LRATE, P_LD_FLT}}, {"SPACE", CK_TRK, {P_ATK, P_REL, P_DLY, P_REV}}};
+static const cpg_t CZP_DRUMS[] = {{"ROLL", CK_COS, {CC_RRATE, CC_RRAMP, CC_RVEL, X}},   /* (0.13.0) LFO: DRUMS (cos_drm.c) */
+                                 {"CHANCE", CK_COS, {CC_DCH0, CC_DCH0 + 1u, CC_DCH0 + 2u, CC_DCH0 + 3u}},
+                                 {"CHANCE 2", CK_COS, {CC_DCH0 + 4u, CC_DCH0 + 5u, CC_DCH0 + 6u, CC_DCH7}}};
 #define CZ_TABS 16u                                 /* (the most pages a mode may have: cos_tabs's names) */
 static const cpg_t CZP_FX[] = {{"DJ", CK_COS, {CC_DJF, CC_EQL, CC_EQM, CC_EQH}},   /* (the mixer's: DJ FILTER, the ISOLATOR) */
                               {"SEND", CK_TRK, {P_DIST, P_CHOR, P_DLY, P_REV}}, {"DIST", CK_TRK, {P_DTYPE, P_DTONE, X, X}},
@@ -189,10 +194,11 @@ static const cpg_t CZP_KEY[] = {{"KEY", CK_COS, {CC_SCALE, CC_QUANT, X, X}}};   
                                                          * whichever track is picked: cos_mel) */
 static const cpg_t CZP_PERF[] = {{"FX PAD", CK_COS, {CC_PF0, CC_PF0 + 1u, CC_PF0 + 2u, CC_PF3}}};   /* (FX held) */
 static const cpg_t CZP_PROJ[] = {{"PROJECT", CK_COS, {CC_SLOT, CC_NAME, X, X}},
-                                {"SOUNDS", CK_COS, {CC_USLOT, X, X, X}}};   /* (0.10.2) the user presets: KNOB 1 the slot */   /* (KNOB 1 the slot, every song's: 1A ..
+                                {"SOUNDS", CK_COS, {CC_USLOT, X, X, X}},
+                                {"KITS", CK_COS, {CC_KSLOT, X, X, X}}};   /* (0.13.0) the user kits: kits.c */   /* (0.10.2) the user presets: KNOB 1 the slot */   /* (KNOB 1 the slot, every song's: 1A ..
                                                          * 8D; white keys 1..4 this song's, 9..16 the songs; KNOB 2 a name) */
 #undef X
-static const char *const CM_NAME[CM_N] = {"HOME", "TRIG", "SRC", "AMP", "DRONE", "FX", "GEN", "MIX", "KEY", "SAVE"};
+static const char *const CM_NAME[CM_N] = {"HOME", "TRIG", "SRC", "AMP", "DRUMS", "FX", "GEN", "MIX", "KEY", "SAVE"};
 static const uint8_t CM_BTN[CM_N] = {B_HOME, B_SEQ, B_EDIT, B_ENV, B_LFO, B_FX, B_ARP, B_GLO, B_SCL, B_SAVE};
 static const uint8_t WK[16] = {0, 2, 4, 6, 7, 9, 11, 12, 14, 16, 18, 19, 21, 23, 24, 26};   /* the white keys */
 static const uint8_t BK[11] = {1, 3, 5, 8, 10, 13, 15, 17, 20, 22, 25};                    /* the black keys */
@@ -207,12 +213,10 @@ static struct {
     char msg[24];
     uint8_t key_next, scl_down, scl_used;              /* key_next: 1 + the key asked for (0 C .. 11 B) */
     uint32_t key_bar;                                   /* (bar_n when it was asked for) */
-    uint8_t dr_trk, dr_n, dr_note[4];                   /* DRONE: its track, its notes (seq.c cos_dr sounds them) */
     uint32_t new_ms;                                    /* (0.9.3) SAVE's REC: when it was pressed (a second within 3 s: NEW) */
     uint8_t lk_mode, lk_tab, lk_used;                   /* LOCK: the sound page used last; a knob turned while steps held */
     uint32_t tg_down, notes0;                           /* TRIG: the white keys down since their press; the keys a frame ago */
     uint8_t ly_prev;                                    /* WORDS: the lyric before OCT+ */
-    int8_t dr_oct;
     int16_t cc_v[16];                                   /* (CK_COS: the knobs' views) */
     uint8_t fx_down, fx_used;                           /* FX held: the pad (keys: perform.c's effects, knobs its macros) */
     uint8_t ed_down, ed_used;                           /* EDIT held (+ PRESETS: the next engine); its tap acts let go */
@@ -228,6 +232,7 @@ static struct {
     uint32_t set_ms;                                    /* a setting turned (MASTER): saved 2 s after, not every detent */
     uint8_t slot, pn_ok;                                /* SAVE: the slot picked (0..3); the names below read */
     uint8_t uslot;                                      /* (0.10.2) SAVE > SOUNDS: the user preset picked (0..UP_SLOTS-2) */
+    uint8_t kslot, kit_seen;                            /* (0.13.0) SAVE > KITS: the kit picked (0..15); its names read */
     uint32_t snd_ms;                                    /* .. OCT+ on a used one / REC: when asked (again within 3 s: done) */
     uint8_t idle_up, idle_eat, batt_low;                /* the IDLE screen up; its waking touch swallowed; LOW said */
     uint32_t act_ms, idle_t;                            /* the last touch; the IDLE frame's time (every strip the same) */
@@ -247,11 +252,11 @@ static int cos_hits(const track_t *t) { return trk_hits(t); }
 static int cos_dead(const track_t *t, uint32_t id);      /* (below: a parameter the track's engine does not use) */
 static void cos_pages(uint32_t m, const cpg_t **p, uint32_t *n)
 {
-    static const cpg_t *const P[CM_N] = {CZP_HOME, CZP_TRIG, CZP_SRC, CZP_AMP, CZP_DRONE, CZP_FX, CZP_GENA, CZP_MIX, CZP_KEY, CZP_PROJ};
-    static const uint8_t N[CM_N] = {7, 4, 9, 9, 2, 9, 4, 14, 1, 2};   /* (each at most CZ_TABS: cos_tabs) */
+    static const cpg_t *const P[CM_N] = {CZP_HOME, CZP_TRIG, CZP_SRC, CZP_AMP, CZP_DRUMS, CZP_FX, CZP_GENA, CZP_MIX, CZP_KEY, CZP_PROJ};
+    static const uint8_t N[CM_N] = {7, 4, 9, 9, 3, 9, 4, 14, 1, 3};   /* (each at most CZ_TABS: cos_tabs) */
     _Static_assert(NELEM(CZP_HOME) == 7 && NELEM(CZP_TRIG) == 4 && NELEM(CZP_SRC) == 9 && NELEM(CZP_AMP) == 9 &&
-                   NELEM(CZP_DRONE) == 2 && NELEM(CZP_FX) == 9 && NELEM(CZP_GENA) == 4 && NELEM(CZP_MIX) == 14 &&
-                   NELEM(CZP_KEY) == 1 && NELEM(CZP_PROJ) == 2 && NELEM(CZP_SRCD) <= CZ_TABS && NELEM(CZP_GENS) <= CZ_TABS &&
+                   NELEM(CZP_DRUMS) == 3 && NELEM(CZP_FX) == 9 && NELEM(CZP_GENA) == 4 && NELEM(CZP_MIX) == 14 &&
+                   NELEM(CZP_KEY) == 1 && NELEM(CZP_PROJ) == 3 && NELEM(CZP_SRCD) <= CZ_TABS && NELEM(CZP_GENS) <= CZ_TABS &&
                    NELEM(CZP_SRCV) == 10 && NELEM(CZP_AMPA) == 9 && NELEM(CZP_SRCN) == 9,
                    "N: the pages each mode has (0.9.2: a count past its list read past it)");
     int vo = m == CM_SRC && trk_engp(TSEL) == &ENG_FORMANT;
@@ -300,6 +305,18 @@ static void cos_back(int up);
 static int cos_on_live(void) { return cz.mode == CM_HOME && !cz.fx_down && str_eq(cos_page()->tab, "LIVE"); }   /* (0.10.3) */
 static int cos_on_words(void) { return cz.mode == CM_SRC && trk_engp(TSEL) == &ENG_FORMANT && str_eq(cos_page()->tab, "WORDS"); }
 static void cos_say(const char *s) { str_cpy(cz.msg, s, sizeof cz.msg); cz.msg_ms = fm1_ms; }
+static const param_desc_t *cos_drm_desc(uint32_t id, int16_t **vp);   /* (0.13.0) LFO > DRUMS: cos_drm.c (after the drawing) */
+static void cos_drm_put(uint32_t id, int32_t v);
+static void cos_drm_key(uint32_t k);
+static void cos_drm_poll(void);
+static void cos_body_drm(void);
+static void cos_drm_leds(uint8_t *nl, uint8_t *nb);
+static void kit_scan(void);                              /* (0.13.0) the user KITS: kits.c */
+static int kit_save(uint32_t k, const char *name);
+static int kit_load(uint32_t k);
+static int kit_erase(uint32_t k);
+static int kit_is_used(uint32_t k);
+static const char *kit_name(uint32_t k);
 static uint32_t cos_ext10(void);                        /* (below: an external clock's tempo) */
 /* (cursed-os) the delay's TIME, right is longer: the divisions shortest to longest (1/32 .. 1/1, the dotted and the
  * triplets in their places), then the free times 5 ms .. (JIANT's own order: 4BAR down to 1/32, then 5 ms up). 2BAR and
@@ -401,34 +418,6 @@ static void cos_words(int up)
     }
 }
 
-/* DRONE: the request to the audio side (seq.c cos_dr): its notes first, then gen, so a block in between sees the old */
-static void cos_drone_send(void)
-{
-    uint32_t i;
-    cos_dr.trk = cz.dr_trk;
-    cos_dr.n = cz.dr_n;
-    for (i = 0; i < 4u; i++) cos_dr.note[i] = cz.dr_note[i];
-    cos_dr.gen = (uint8_t)(cos_dr.gen + 1u);
-}
-/* a key on DRONE: its note held on the selected track, or let go when held already (four at most: the oldest goes);
- * a key on another track moves the drone there */
-static void cos_drone_key(uint32_t key)
-{
-    uint32_t note = (uint32_t)clamp(41 + (int32_t)key + 12 * cz.dr_oct, 12, 108), i, j;   /* (from F2: a drone sits low) */
-    if (cz.dr_n && cz.dr_trk != song.sel) cz.dr_n = 0;
-    cz.dr_trk = song.sel;
-    for (i = 0; i < cz.dr_n && cz.dr_note[i] != note; i++) {}
-    if (i < cz.dr_n) {                                    /* held: let it go */
-        for (j = i; j + 1u < cz.dr_n; j++) cz.dr_note[j] = cz.dr_note[j + 1u];
-        cz.dr_n--;
-    } else {
-        if (cz.dr_n == 4u) { for (j = 0; j < 3u; j++) cz.dr_note[j] = cz.dr_note[j + 1u]; cz.dr_n = 3; }
-        cz.dr_note[cz.dr_n++] = (uint8_t)note;
-    }
-    cos_drone_send();
-}
-static void cos_drone_clear(void) { cz.dr_n = 0; cos_drone_send(); }
-
 /* the song into key pc (0..11): the nearest interval (-6 .. +5), every synth track's notes and root moved by it (the
  * notes as stored: MIDI OUT, ACID and the scale all agree; a kit's lanes stay) */
 static void cos_key_apply(uint32_t pc)
@@ -444,10 +433,6 @@ static void cos_key_apply(uint32_t pc)
             for (c = 0; c < s->n && c < 4u; c++) s->note[c] = (uint8_t)clamp((int32_t)s->note[c] + d, 0, 127);
         }
         t->p[P_ROOT] = (int16_t)((t->p[P_ROOT] + d + 120) % 12);
-    }
-    if (d && cz.dr_n && !cos_hits(&trk[cz.dr_trk % NTRK])) {   /* (the drone moves with the song) */
-        for (k = 0; k < cz.dr_n; k++) cz.dr_note[k] = (uint8_t)clamp((int32_t)cz.dr_note[k] + d, 12, 108);
-        cos_drone_send();
     }
     cz.key_next = 0;
     cos_say(COS_NN[pc % 12u]);
@@ -658,6 +643,7 @@ static const param_desc_t *cos_cdesc(uint32_t id, int16_t **vp)
     static const param_desc_t D[2] = {{"OUT CH", F_INT, 1, 16, 1, 0, 0}, {"SENDS", F_ENUM, 0, 3, 0, MO, 0}};
     static const param_desc_t DS = {"SLOT", F_INT, 1, COS_NSONG * 4, 1, 0, 0}, DN = {"NAME", F_INT, 0, 999, 0, 0, 0};
     uint32_t t = song.sel % NTRK, v = favorites.factory[15][8u + t];
+    if (id >= CC_RRATE && id <= CC_DCH7) return cos_drm_desc(id, vp);   /* (0.13.0) LFO > DRUMS */
     static const char *const LD[] = {"ECO", "LITE", "FULL", 0};
     static const param_desc_t DT = {"TRACKS", F_INT, 4, NTRK, 5, 0, 0}, DL = {"LOAD", F_ENUM, 0, 2, 2, LD, 0};
     if (id == CC_SLOT) { cz.cc_v[3] = (int16_t)(song_cur * 4u + cz.slot + 1u); *vp = &cz.cc_v[3]; return &DS; }
@@ -667,6 +653,12 @@ static const param_desc_t *cos_cdesc(uint32_t id, int16_t **vp)
         cz.cc_v[3] = (int16_t)(cz.uslot + 1u);
         *vp = &cz.cc_v[3];
         return &DU;
+    }
+    if (id == CC_KSLOT) {                                /* (0.13.0) SAVE > KITS: K01 .. K16 */
+        static const param_desc_t DK2 = {"KIT", F_INT, 1, 16, 1, 0, 0};
+        cz.cc_v[3] = (int16_t)(cz.kslot + 1u);
+        *vp = &cz.cc_v[3];
+        return &DK2;
     }
     if (id >= CC_SCT && id <= CC_LUR) {                  /* (GLO > SCOPE .. LOUDNESS: how they show, not kept) */
         static const char *const TM[] = {"5MS", "11MS", "44MS", "87MS", 0}, *const GN[] = {"AUTO", "X1", "X2", "X4", "X8", 0};
@@ -922,6 +914,7 @@ static const param_desc_t *cos_cdesc(uint32_t id, int16_t **vp)
 static void cos_cput(uint32_t id, int32_t v)
 {
     uint32_t t = song.sel % NTRK;
+    if (id >= CC_RRATE && id <= CC_DCH7) { cos_drm_put(id, v); return; }   /* (0.13.0) LFO > DRUMS */
     if (id == CC_OUTCH) {
         v = clamp(v, 1, 16);
         favorites.factory[15][8u + t] = (uint8_t)((uint32_t)v == t + 1u ? 0u : (uint32_t)v);   /* (its own: 0, as JIANT) */
@@ -949,6 +942,9 @@ static void cos_cput(uint32_t id, int32_t v)
         cos_proj_scan();
     } else if (id == CC_USLOT) {
         cz.uslot = (uint8_t)(clamp(v, 1, UP_SLOTS - 1) - 1);
+        cz.snd_ms = 0;
+    } else if (id == CC_KSLOT) {
+        cz.kslot = (uint8_t)(clamp(v, 1, 16) - 1);
         cz.snd_ms = 0;
     } else if (id == CC_NAME) {
         cz.nm_n = (uint16_t)clamp(v, 0, 999);
@@ -1742,8 +1738,45 @@ static __attribute__((noinline)) void cos_snd_erase(void)
     cz.snd_ms = 0;
     up_ui_named(1, k, 0);
 }
+/* (0.13.0) SAVE > KITS: OCT+ the kit into the slot (a used one: again to replace; stopped only), OCT- the slot's kit in
+ * (playing too), REC twice erases */
+static __attribute__((noinline)) void cos_kit_oct(int up)
+{
+    uint32_t k = cz.kslot % 16u;
+    if (!up) {
+        cz.snd_ms = 0;
+        cos_say(!kit_is_used(k) ? "EMPTY SLOT" : kit_load(k) ? "NOT A KIT" : "KIT LOADED");
+        return;
+    }
+    if (song.playing) { cos_say("STOP TO SAVE"); return; }
+    if (kit_is_used(k) && (!cz.snd_ms || fm1_ms - cz.snd_ms > 3000u)) {
+        cz.snd_ms = fm1_ms ? fm1_ms : 1u;
+        cos_say("OCT+ AGAIN: REPLACE");
+        return;
+    }
+    {
+        char n[24];
+        uint32_t i, t;
+        for (t = 0; t < NTRK && trk[t].engine != ENGI_DRUM; t++) {}
+        if (t < NTRK) sound_name(&trk[t], n); else str_cpy(n, "KIT", 4);
+        n[10] = 0;
+        for (i = 0; n[i]; i++) if (n[i] >= 'a' && n[i] <= 'z') n[i] = (char)(n[i] - 32);
+        cz.snd_ms = 0;
+        cos_say(kit_save(k, n) ? "NOT SAVED" : "KIT SAVED");
+    }
+}
+static __attribute__((noinline)) void cos_kit_erase(void)
+{
+    uint32_t k = cz.kslot % 16u;
+    if (!kit_is_used(k)) { cos_say("EMPTY SLOT"); return; }
+    if (song.playing) { cos_say("STOP TO ERASE"); return; }
+    if (!cz.snd_ms || fm1_ms - cz.snd_ms > 3000u) { cz.snd_ms = fm1_ms ? fm1_ms : 1u; cos_say("REC AGAIN: ERASE"); return; }
+    cz.snd_ms = 0;
+    cos_say(kit_erase(k) ? "NOT ERASED" : "ERASED");
+}
 static __attribute__((noinline)) void cos_proj_oct(int up)
 {
+    if (cz.tab[CM_PROJ] == 2u) { cos_kit_oct(up); return; }
     if (cz.tab[CM_PROJ] == 1u) { cos_snd_oct(up); return; }
     if (up) cos_name_auto();                             /* (a music with no name: one drawn for it) */
     if (up && song.playing) section_store(cz.slot);      /* (playing: kept now, written once stopped) */
@@ -1766,7 +1799,6 @@ static __attribute__((noinline)) void cos_proj_new(void)
     undo_mark();
     if (song.playing) transport_req = 2;
     system_init();
-    cos_drone_clear();
     cos_say("NEW PROJECT");
     cos_proj_scan();
 }
@@ -1786,7 +1818,7 @@ static void cos_mode(uint32_t m)
 /* the keys are the interface's (silent) on HOME, TRIG and a kit's GEN; elsewhere they play the track */
 static int cos_keys_ui(void)
 {
-    return cz.mode == CM_HOME || (cz.mode == CM_TRIG && !cz.si) || cz.mode == CM_KEY || cz.mode == CM_PROJ || cz.mode == CM_DRONE || (cz.mode == CM_GEN && cos_kit()) ||
+    return cz.mode == CM_HOME || (cz.mode == CM_TRIG && !cz.si) || cz.mode == CM_KEY || cz.mode == CM_PROJ || cz.mode == CM_DRUMS || (cz.mode == CM_GEN && cos_kit()) ||
            ((fm1_in.buttons >> panel.btn[B_SCL]) & 1u);
 }
 
@@ -1956,6 +1988,7 @@ static int cos_idle_gate(void);                          /* (the IDLE screen, be
 static __attribute__((noinline)) void cos_input(void)
 {
     cos_remote_poll();                                   /* (0.9.5: the phone's, the IDLE screen up or not) */
+    cos_drm_poll();                                      /* (0.13.0) DRUMS: the rolls and the REPEAT held */
     if (cos_idle_gate()) return;                         /* (the IDLE screen: shown, or its waking touch) */
     uint32_t released = 0, pressed = fm1_input_edges(&released), notes = fm1_input_note_edges(), k, b;
     int scl_held = (int)((fm1_in.buttons >> panel.btn[B_SCL]) & 1u);
@@ -1996,8 +2029,8 @@ static __attribute__((noinline)) void cos_input(void)
         if (b == B_PLAY) transport_req = song.playing || seq_counting() ? 2u : 1u;
         else if (b == B_REC && ((fm1_in.buttons >> panel.btn[B_SEQ]) & 1u)) { cz.sq_used = 1; cos_clear(); }   /* SEQ held +
                                                          * REC, twice */
-        else if (b == B_REC && cz.mode == CM_DRONE) { cos_drone_clear(); cos_say("DRONE OFF"); }
         else if (b == B_REC && cz.mode == CM_PROJ && cz.tab[CM_PROJ] == 1u) cos_snd_erase();   /* (0.10.2) SOUNDS: x2 erase */
+        else if (b == B_REC && cz.mode == CM_PROJ && cz.tab[CM_PROJ] == 2u) cos_kit_erase();   /* (0.13.0) KITS: x2 erase */
         else if (b == B_REC && cz.mode == CM_PROJ) cos_proj_new();   /* (0.9.3) SAVE: REC twice = a new, empty project */
         else if (b == B_REC && cz.mode == CM_TRIG && cos_held()) {   /* a step held + REC: its locks go */
             uint64_t h = cos_held();
@@ -2073,7 +2106,6 @@ static __attribute__((noinline)) void cos_input(void)
             else if (cz.mode == CM_GEN && cos_kit()) eu_oct(up, cz.tab[CM_GEN] == 2u);
             else if (cz.mode == CM_GEN && cos_page()->kind == CK_DB) db_oct(up, cos_page()->id[0] == DK_ROOT);
             else if (cz.mode == CM_GEN) ac_oct(up, cos_page()->id[0] == AK_EVERY);
-            else if (cz.mode == CM_DRONE) cz.dr_oct = (int8_t)clamp(cz.dr_oct + (up ? 1 : -1), -2, 2);
             else song.octave = (int8_t)clamp(song.octave + (up ? 1 : -1), -3, 3);
         } else
             for (s = 0; s < CM_N; s++)
@@ -2178,8 +2210,8 @@ static __attribute__((noinline)) void cos_input(void)
         if (scl_held || cz.mode == CM_KEY) {               /* the song's new key */
             cz.scl_used = (uint8_t)scl_held;
             cos_key_ask(k);
-        } else if (cz.mode == CM_DRONE) {
-            cos_drone_key(k);
+        } else if (cz.mode == CM_DRUMS) {
+            cos_drm_key(k);                              /* (0.13.0: a press shown; holding rolls / repeats: cos_drm_poll) */
         } else if (cz.mode == CM_TRIG && cz.si) {
             cos_si_key(k);                               /* (STEP INPUT: the note into the cursor's step) */
         } else if (cz.mode == CM_PROJ) {
@@ -2284,6 +2316,8 @@ static void cos_px(int32_t x, int32_t y, const char *s, uint16_t c, uint32_t tal
 }
 static int32_t cos_w(const char *s) { return 8 * (int32_t)str_len(s); }
 static void cos_tx(int32_t x, int32_t y, const char *s, uint16_t c) { cos_px(x, y, s, c, CZ_LBL); }
+static int cos_drum_out(uint32_t s);
+#include "cos_drm.c"                                     /* (0.13.0) LFO > DRUMS: rolls, the drums' REPEAT, CHANCE */
 static void cos_txr(int32_t xr, int32_t y, const char *s, uint16_t c) { cos_px(xr - cos_w(s), y, s, c, CZ_LBL); }
 static void cos_txc(int32_t xc, int32_t y, uint32_t tall, const char *s, uint16_t c) { cos_px(xc - cos_w(s) / 2, y, s, c, tall); }
 static void cos_up(char *b) { for (; *b; b++) if (*b >= 'a' && *b <= 'z') *b = (char)(*b - 32); }
@@ -2954,7 +2988,6 @@ static void cos_body_home(void)
         if (t == song.sel) cv_frame(0, y - 3, 240, 16, C_FG);
         b[0] = (char)('1' + t); b[1] = 0;
         cos_tx(4, y + 1, b, t == song.sel ? C_RED : C_FG);
-        if (cz.dr_n && cz.dr_trk == t) cv_rect(236, y + 1, 3, 7, C_FG);   /* (its drone holds) */
         cos_trk_label(tr, b);
         cos_up(b);
         cos_tx(14, y + 1, b, ((live_qmute >> t) & 1u) && (fm1_ms & 256u) ? C_RED : mute ? C_DIM : C_FG);   /* (a mute
@@ -3286,42 +3319,6 @@ static void cos_body_key(void)
     cos_tx(4, 146, "A KEY: THE SONG MOVES THERE", C_DIM);
 }
 
-/* DRONE: the track and its held notes large, an octave and a half of keys (the held ones lit), the octave; the drone
- * plays on through PLAY and STOP */
-static void cos_body_drone(void)
-{
-    const uint8_t *BL = COS_BLF;
-    char b[24];
-    uint32_t i, k, wi;
-    int32_t base = 41 + 12 * cz.dr_oct;
-    if (!cz.dr_n) {
-        cos_px(20, 44, "PRESS KEYS", C_DIM, CZ_TALL);
-        cos_tx(20, 70, "THEY HOLD. AGAIN: LET GO", C_DIM);
-    } else {
-        b[0] = 'T'; b[1] = (char)('1' + cz.dr_trk % NTRK); b[2] = 0;
-        cos_px(4, 44, b, C_FG, CZ_TALL);
-        for (i = 0, b[0] = 0; i < cz.dr_n; i++) {
-            if (i) str_cpy(b + str_len(b), " ", 2);
-            str_cpy(b + str_len(b), COS_NN[cz.dr_note[i] % 12u], 3);
-            fmt_int(b + str_len(b), (int32_t)cz.dr_note[i] / 12 - 1);
-        }
-        cos_px(40, 44, b, C_FG, CZ_TALL);
-        cos_tx(40, 66, song.playing ? "FREE RUNNING  REC: LET GO" : "HOLDING  REC: LET GO", C_DIM);
-    }
-    for (k = 0, wi = 0; k < 20u; k++) {                  /* F .. C, an octave and a half */
-        int32_t note = base + (int32_t)k, on = 0;
-        for (i = 0; i < cz.dr_n; i++) on |= cz.dr_note[i] == (uint32_t)note && cz.dr_trk == song.sel;
-        if (BL[k % 12u]) cv_rect(8 + (int32_t)wi * 19 - 6, 86, 12, 26, on ? C_RED : C_DARK);
-        else {
-            cv_frame(8 + (int32_t)wi * 19, 86, 18, 50, C_DIM);
-            if (on) cv_rect(10 + (int32_t)wi * 19, 116, 14, 18, C_RED);
-            wi++;
-        }
-    }
-    b[0] = 0; str_cpy(b, "OCT ", sizeof b); fmt_int(b + 4, cz.dr_oct);
-    cos_tx(4, 142, b, C_MID);
-}
-
 /* GLO > MIDI: where each track goes (its MIDI OUT channel: the Syntakt's track), MIDI OUT, the clock */
 static void cos_body_midi(void)
 {
@@ -3417,10 +3414,30 @@ static __attribute__((noinline)) void cos_body_snd(void)
     cos_txc(120, 140, CZ_LBL, cz.snd_ms && fm1_ms - cz.snd_ms < 3000u ? "AGAIN TO CONFIRM" :
                               "OCT+ SAVE OCT- LOAD REC2 DEL", cz.snd_ms && fm1_ms - cz.snd_ms < 3000u ? C_RED : C_DIM);
 }
+static __attribute__((noinline)) void cos_body_kits(void)   /* (0.13.0) SAVE > KITS: K01 .. K16, two columns */
+{
+    uint32_t k;
+    char b[16];
+    if (!cz.kit_seen) { kit_scan(); cz.kit_seen = 1; }
+    for (k = 0; k < 16u; k++) {
+        int32_t x = (int32_t)(k / 8u) * 120, y = 36 + (int32_t)(k % 8u) * 11;
+        int pick = k == cz.kslot % 16u;
+        if (pick) cv_rect(x, y - 2, 120, 11, C_DARK);
+        b[0] = 'K'; b[1] = (char)('0' + (k + 1u) / 10u); b[2] = (char)('0' + (k + 1u) % 10u); b[3] = 0;
+        cos_tx(x + 2, y, b, pick ? C_FG : C_MID);
+        str_cpy(b, kit_is_used(k) ? kit_name(k) : "-", 11);
+        b[10] = 0;
+        cos_tx(x + 30, y, b, kit_is_used(k) ? (pick ? C_FG : C_MID) : C_DIM);
+    }
+    cos_txc(120, 128, CZ_LBL, "SOUNDS LEVELS ENV SENDS CHANCE", C_DIM);
+    cos_txc(120, 140, CZ_LBL, cz.snd_ms && fm1_ms - cz.snd_ms < 3000u ? "AGAIN TO CONFIRM" :
+                              "OCT+ SAVE OCT- LOAD REC2 DEL", cz.snd_ms && fm1_ms - cz.snd_ms < 3000u ? C_RED : C_DIM);
+}
 static void cos_body_proj(void)
 {
     uint32_t i;
     char b[24];
+    if (cz.tab[CM_PROJ] == 2u) { cos_body_kits(); return; }
     if (cz.tab[CM_PROJ] == 1u) { cos_body_snd(); return; }
     for (i = 0; i < 4u; i++) {
         int32_t y = 34 + (int32_t)i * 20;
@@ -3665,7 +3682,7 @@ static void cos_scene(void)
     case CM_GEN: cos_body_gen(); break;
     case CM_KEY: cos_body_key(); break;
     case CM_PROJ: cos_body_proj(); break;
-    case CM_DRONE: cos_body_drone(); break;
+    case CM_DRUMS: cos_body_drm(); break;
     case CM_MIX: {
         const cpg_t *pg = cos_page();
         if (pg->kind == CK_COS && pg->id[0] == CC_OUTCH) cos_body_midi();
@@ -3702,7 +3719,7 @@ dials:
 /* the splash (ui_draw.c draw_splash / splash_write under COS_SLIM; main.c's boot loop calls it every ~4 ms for
  * SPL_WRITE + SPL_HOLD ms): black, a few still stars, the name 2x, the version, a 16-block bar filling like a pattern
  * (the block being filled red), READY. Drawn whole once, then only the bar's strip when a block fills */
-#define COS_VERSION "0.12.5"
+#define COS_VERSION "0.13.0"
 static void cos_px2(int32_t x, int32_t y, const char *s, uint16_t c)      /* (the face 2 x 2) */
 {
     int32_t r, b, b0;
@@ -3840,12 +3857,8 @@ static __attribute__((noinline)) void cos_leds(void)
                 if (wait) led_put(nb, 14u + WK[k], 1);
             }
         }
-    } else if (cz.mode == CM_DRONE) {
-        for (k = 0; k < 27u; k++) {
-            uint32_t i, on = 0;
-            for (i = 0; i < cz.dr_n; i++) on |= cz.dr_trk == song.sel && (int32_t)cz.dr_note[i] == 41 + (int32_t)k + 12 * cz.dr_oct;
-            led_put(nl, 14u + k, (int)on);
-        }
+    } else if (cz.mode == CM_DRUMS) {
+        cos_drm_leds(nl, nb);
     } else
         for (k = 0; k < 27u; k++) led_put(nl, 14u + k, (int)((fm1_in.notes >> k) & 1u));
     if (cos_scale_view()) {                              /* (the keys play a melodic track in a scale: only its notes lit,

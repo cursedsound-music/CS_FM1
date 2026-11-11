@@ -117,6 +117,7 @@
 #endif
 #include "upreset.c"             /* user presets (RAM mirror; flash with FELUCCA_FLASH) */
 #include "project.c"
+#include "kits.c"                /* (cursed-os 0.13.0) the user KITS (SAVE > KITS) */
 #if FELUCCA_OTA
 #include "ota.c"
 #include "ota_hw.c"
