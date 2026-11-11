@@ -361,7 +361,7 @@ int main(void)
         song.sel = 0; set_engine_of(TSEL, ENGI_DRUM);
         CHECK(!cos_cdesc(CC_OCT, &vp), "a kit: no OCTAVE");
         cos_pages(CM_SRC, &pp, &n);
-        CHECK(!strcmp(pp[0].tab, "DRUM") && !strcmp(pp[6].tab, "LEVELS"), "a kit's EDIT: DRUM first, LEVELS");
+        CHECK(!strcmp(pp[0].tab, "DRUM") && !strcmp(pp[1].tab, "SOUND") && !strcmp(pp[7].tab, "LEVELS"), "a kit's EDIT: DRUM first, SOUND (0.12.1), LEVELS");
         {
             int32_t a0 = dx_kit[0].a[DXP_DECAY], b0 = dx_kit[0].b[DXP_DECAY];
             const param_desc_t *d = cos_cdesc(CC_KICK + DXP_DECAY, &vp);

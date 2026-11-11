@@ -236,6 +236,30 @@ int main(void)
         }
         memcpy(dx_kit, DX_KIT_DEF, sizeof dx_kit);
     }
+    {   /* (0.12.1) SOUND > SOURCE: every drum sound the firmware has, into the SNARE; each sounds, bounded, named */
+        uint32_t i, n = 0;
+        char nm[24];
+        solo(0);
+        track_select(0);
+        dx_ui_lane = DV_SNARE;
+        trk[0].p[P_LN0 + DV_SNARE] = 100;
+        for (i = 1; i <= DSRC_N; i++) {
+            cos_cput(CC_DSRC, (int32_t)i);
+            cos_dsrc_name(i, nm);
+            CHECK(str_len(nm) <= 7u && str_len(nm) >= 3u, "source %u named (%s)", i, nm);
+            CHECK(cos_dsrc_same(DV_SNARE), "source %s loaded as it is", nm);
+            e = hit(0, 38, 0, &pk);
+            CHECK(e > 1e8 && pk < 32700, "source %s in the SNARE: sounds, bounded (%.3g %d)", nm, e, pk);
+            n += e > 1e8;
+        }
+        CHECK(n == DSRC_N, "all %u sources sound (%u)", DSRC_N, n);
+        cos_cput(CC_DSRC, 1 + 3 * DX_NKIT + 1);           /* 909's closed hat */
+        cos_dsrc_name(1 + 3 * DX_NKIT + 1, nm);
+        CHECK(!strcmp(nm, "909 HHC") && !memcmp(&dx_kit[DV_SNARE], &DX_KITS[1].lane[DV_HATC], sizeof(dx_lane_t)), "909 HHC into the snare (%s)", nm);
+        cos_cput(CC_KICK + DXP_DECAY, 90);
+        CHECK(!cos_dsrc_same(DV_SNARE), "edited: OWN shown");
+        memcpy(dx_kit, DX_KIT_DEF, sizeof dx_kit);
+    }
     {   /* projects: engine 9 of before 0.11 (phys 2) is PHYS's, ANALOG now; written since (PROJ_FMD), FMDRUM */
         static project_t q;
         memset(&q, 0, sizeof q);

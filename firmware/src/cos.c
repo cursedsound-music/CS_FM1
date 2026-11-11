@@ -44,7 +44,7 @@ enum { CC_OUTCH, CC_MOUT, CC_CLOCK, CC_SLOT, CC_TRKS, CC_LOAD, CC_COMP, CC_CATK,
        CC_X2, CC_X2E = CC_X2 + 15, CC_OCT, CC_KICK, CC_KICKE = CC_KICK + 4, CC_LN0, CC_LNE = CC_LN0 + 7, CC_KDRV, CC_BT,
        CC_L1SYNC, CC_L1RATE, CC_L1WAVE, CC_L1MODE, CC_L1PH, CC_L1FADE, CC_L2SYNC, CC_L2RATE, CC_BPM, CC_BFINE, CC_USLOT, CC_LVDLY, CC_LVREV, CC_LVFB,
        CC_CIN, CC_CTHR, CC_CRAT, CC_CMK, CC_CKNEE, CC_CSC, CC_CMIX, CC_LIN, CC_LREL, CC_LVL, CC_MUTEQ, CC_PCCH, CC_PCOUT, CC_VJCH, CC_EQL, CC_EQM, CC_EQH, CC_MAC0, CC_MAC3 = CC_MAC0 + 3, CC_RB0, CC_RB3 = CC_RB0 + 3, CC_MOPOS, CC_MOBARS, CC_LVLEN, CC_LVRATE, CC_LVDN, CC_LVSH, CC_MCCH, CC_MCCC, CC_MCDIR, CC_MCMAP, CC_MC0, CC_MC3 = CC_MC0 + 3, CC_MOCC,
-       CC_NAME, CC_IDLE, CC_SCT, CC_SCG, CC_SCTR, CC_SPV, CC_SPR, CC_SPS, CC_SCM, CC_SPSRC, CC_SCZ, CC_LUT, CC_LUR, CC_LOCAL, CC_KPAT, CC_SCALE, CC_QUANT, CC_DJF, CC_DSEL, CC_DLV, CC_DWAV, CC_DFLT, CC_DBT, CC_DDRV, CC_DLAY, CC_DFB, CC_DSNP, CC_DE0, CC_DEE = CC_DE0 + DE_N - 1 };
+       CC_NAME, CC_IDLE, CC_SCT, CC_SCG, CC_SCTR, CC_SPV, CC_SPR, CC_SPS, CC_SCM, CC_SPSRC, CC_SCZ, CC_LUT, CC_LUR, CC_LOCAL, CC_KPAT, CC_SCALE, CC_QUANT, CC_DJF, CC_DSEL, CC_DLV, CC_DWAV, CC_DFLT, CC_DBT, CC_DDRV, CC_DLAY, CC_DFB, CC_DSNP, CC_DSRC, CC_DE0, CC_DEE = CC_DE0 + DE_N - 1 };
 _Static_assert(CC_DEE < 0xFEu, "the CK_COS ids fit a page's byte (0xFE, 0xFF: OCTAVE, none)");
 _Static_assert(X2_N <= 16u, "CC_X2 .. CC_X2E: room for every trk_x2 field");
 #define ID_MUTEQ 0xFCu                          /* (HOME 2's: MUTE Q, cos_knob) */
@@ -112,6 +112,7 @@ static const cpg_t CZP_SRCV[] = {{"SRC 1", CK_TRK, {P_E0, P_E1, P_E2, P_E3}}, {"
  * MORPH ends moved together; its AHDSR and sends), the eight sounds' levels, then the kit's (KIT, KIT 2: the engine's
  * E1 .. E8), the matrix */
 static const cpg_t CZP_SRCD[] = {{"DRUM", CK_COS, {CC_DSEL, CC_KICK + DXP_PITCH, CC_KICK + DXP_PMOD, CC_DLV}},
+                                {"SOUND", CK_COS, {CC_DSEL, CC_DSRC, CC_DWAV, CC_DFLT}},   /* (0.12.1) any drum sound into it */
                                 {"TONE", CK_COS, {CC_KICK + DXP_NOISE, CC_KICK + DXP_COLOR, CC_DWAV, CC_DFLT}},
                                 {"TONE 2", CK_COS, {CC_DBT, CC_DDRV, CC_DLAY, CC_DFB}},
                                 {"ENV", CK_COS, {CC_DE0 + DE_ATK, CC_KICK + DXP_DECAY, CC_DE0 + DE_SUS, CC_DE0 + DE_REL}},
@@ -477,6 +478,86 @@ static uint32_t cos_lsync_pos(uint32_t idx) { return idx >= 12u ? 14u - (idx % 1
 static const char *const COS_DRUM[] = {"KICK", "SNARE", "CLAP", "HAT CL", "HAT OP", "TOM", "RIM", "BELL", 0};
 static const char *const COS_DRUM5[] = {"KICK", "SNARE", "CLAP", "HH CL", "HH OP", "TOM", "RIM", "BELL", 0};   /* (a knob's
                                                          * value: five letters at most, param_format) */
+/* (0.12.1) SOUND > SOURCE: any drum sound the firmware has, loaded into the drum picked (then its own to shape): 1..72
+ * every factory kit's eight (by sound, then kit: the snares of all nine together), 73..75 KICK's own (DEEP PUNCH RUMBLE),
+ * 76..85 FMDRUM's presets on the FM voice (FILTER FM, drumx_voice.c dx_fmd). 0 OWN: as it is (nothing loaded). The
+ * load copies the sound (its mode, A and B, LAYER / FEEDBK); its LEVEL, AHDSR and sends stay the drum's */
+#define DSRC_KITS (DX_NKIT * 8u)
+#define DSRC_FMD (DSRC_KITS + 3u)
+#define DSRC_N (DSRC_FMD + (uint32_t)NELEM(FMD_PRESETS))
+static const char *const DSRC_KIT3[] = {"DX", "909", "808", "LFI", "IND", "ACO", "DUB", "TEC", "BRK"};
+static const char *const DSRC_LANE3[8] = {"KCK", "SNR", "CLP", "HHC", "HHO", "TOM", "RIM", "BEL"};
+static const char *const DSRC_FMDN[] = {"FM KICK", "FM TOM", "FM SNR", "FM CLAP", "FM RIDE", "FM CRSH", "FM HHC", "FM HHO",
+                                        "FM COW", "FM ZAP"};
+static const uint8_t DSRC_FMDP[] = {18, 40, 46, 52, 70, 66, 80, 80, 62, 30};   /* (their PITCH on the kit's scale) */
+_Static_assert(NELEM(DSRC_KIT3) == DX_NKIT && NELEM(DSRC_FMDN) == NELEM(FMD_PRESETS) && NELEM(DSRC_FMDP) == NELEM(FMD_PRESETS),
+               "a short name for every kit and FMDRUM preset");
+static uint8_t dx_src[8];                                /* (RAM: the last loaded, + 1; 0 none: the knob turns on from it) */
+static void cos_dsrc_name(uint32_t i, char *b)           /* (7 letters at most: a knob's value) */
+{
+    if (!i || i > DSRC_N) { str_cpy(b, "OWN", 8); return; }
+    i--;
+    if (i < DSRC_KITS) {
+        str_cpy(b, DSRC_KIT3[i % DX_NKIT], 8);
+        str_cpy(b + str_len(b), " ", 8 - str_len(b));
+        str_cpy(b + str_len(b), DSRC_LANE3[i / DX_NKIT], 8 - str_len(b));
+    } else if (i < DSRC_FMD) {
+        str_cpy(b, KICK_N[KICK_NKIT + (i - DSRC_KITS)], 8);
+    } else {
+        str_cpy(b, DSRC_FMDN[i - DSRC_FMD], 8);
+    }
+}
+/* source i (1..DSRC_N) as a sound: *L, its LAYER / FEEDBK *lay; 0: none */
+static __attribute__((noinline)) int cos_dsrc_get(uint32_t i, dx_lane_t *L, uint8_t *lay)
+{
+    if (!i || i > DSRC_N)
+        return 0;
+    i--;
+    *lay = 0;
+    if (i < DSRC_KITS) {
+        const dx_kit_t *K = &DX_KITS[i % DX_NKIT];
+        *L = K->lane[i / DX_NKIT];
+        *lay = K->lay[i / DX_NKIT];
+    } else if (i < DSRC_FMD) {
+        *L = KICK_OWN[i - DSRC_KITS];
+    } else {                                             /* an FMDRUM preset, its values on the kit's scales */
+        const preset_t *P = &FMD_PRESETS[i - DSRC_FMD];
+        uint32_t k, ti = 0, kind = P->xp & 15u;
+        for (k = 0; k < 8u; k++) if (DXF_TRN[k] == kind) ti = k;
+        L->mode = (uint8_t)(((uint32_t)P->e[0] & 3u) | DXF_FM << 2 | ti << 4);
+        L->a[DXP_PITCH] = DSRC_FMDP[i - DSRC_FMD];
+        L->a[DXP_PMOD] = (uint8_t)clamp(P->e[2], 0, 127);
+        L->a[DXP_DECAY] = (uint8_t)clamp(P->env[1] * 3 / 2 - 50, 0, 127);   /* (its DEC, as DRUM-X's tau: ~ the same length) */
+        L->a[DXP_NOISE] = (uint8_t)clamp(P->e[6], 0, 127);
+        L->a[DXP_COLOR] = (uint8_t)clamp(P->e[4], 0, 127);
+        for (k = 0; k < DXP_N; k++) L->b[k] = L->a[k];
+    }
+    return 1;
+}
+static void cos_dsrc_load(uint32_t l, uint32_t i)
+{
+    dx_lane_t L;
+    uint8_t lay;
+    dx_src[l & 7u] = (uint8_t)(i > DSRC_N ? 0u : i);
+    if (cos_dsrc_get(i, &L, &lay)) {
+        dx_kit[l & 7u] = L;
+        dx_lay[l & 7u] = lay;
+    }
+}
+/* the drum still the source last loaded (not edited since, nor a kit loaded over it) */
+static int cos_dsrc_same(uint32_t l)
+{
+    dx_lane_t L;
+    uint8_t lay;
+    const dx_lane_t *K = &dx_kit[l & 7u];
+    uint32_t k;
+    if (!cos_dsrc_get(dx_src[l & 7u], &L, &lay) || L.mode != K->mode || lay != dx_lay[l & 7u])
+        return 0;
+    for (k = 0; k < DXP_N; k++)
+        if (L.a[k] != K->a[k] || L.b[k] != K->b[k])
+            return 0;
+    return 1;
+}
 static __attribute__((noinline)) const param_desc_t *cos_ddesc(uint32_t id, int16_t **vp)
 {
     static const char *const WV[] = {"SINE", "FM", "METAL", "BELL", 0}, *const FT[] = {"LP", "BP", "HP", "FM", 0};
@@ -496,6 +577,11 @@ static __attribute__((noinline)) const param_desc_t *cos_ddesc(uint32_t id, int1
     if (fm && (id == CC_DSNP || id == CC_DBT)) { *c = (int16_t)((m >> 4) & 7u); return &DF[1]; }
     switch (id) {
     case CC_DSEL: *c = (int16_t)l; return &D[0];
+    case CC_DSRC: {
+        static const param_desc_t SR = {"SOURCE", F_INT, 0, (int16_t)DSRC_N, 0, 0, 0};
+        *c = (int16_t)dx_src[l];
+        return &SR;
+    }
     case CC_DLV: {                                       /* (its LEVEL: LEVELS' knob, named so) */
         static param_desc_t lv;
         lv = *track_desc(TSEL, P_LN0 + l);
@@ -528,6 +614,7 @@ static __attribute__((noinline)) void cos_dput(uint32_t id, int32_t v)
     }
     switch (id) {
     case CC_DSEL: dx_ui_lane = (uint8_t)clamp(v, 0, 7); break;
+    case CC_DSRC: cos_dsrc_load(l, (uint32_t)clamp(v, 0, (int32_t)DSRC_N)); return;
     case CC_DLV: TSEL->p[P_LN0 + l] = (int16_t)clamp(v, 0, 127); break;
     case CC_DWAV: m = (m & ~3u) | (uint32_t)clamp(v, 0, 3); break;
     case CC_DFLT: m = (m & ~0x0Cu) | (uint32_t)clamp(v, 0, 3) << 2; break;
@@ -2702,6 +2789,10 @@ static void cos_dial(int32_t cx, int32_t cy, uint32_t k)
     if (p->id[k & 3u] == ID_BPM) fmt_int(val, v / 100);   /* (0.10.1: the whole BPM; its hundredths on FINE) */
     if (p->id[k & 3u] == ID_BFINE) { val[0] = '.'; val[1] = (char)('0' + v / 10 % 10); val[2] = (char)('0' + v % 10); val[3] = 0; }
     if (p->kind == CK_COS && p->id[k & 3u] == CC_MOCC && v < 0) { str_cpy(val, "OFF", sizeof val); unit = 0; }
+    if (p->kind == CK_COS && p->id[k & 3u] == CC_DSRC) {   /* (0.12.1) its name; edited since (or another kit): OWN */
+        cos_dsrc_name(cos_dsrc_same(dx_ui_lane) ? (uint32_t)v : 0u, val);
+        unit = 0;
+    }
     if (p->kind == CK_COS && p->id[k & 3u] == CC_IDLE) {   /* (OFF, else "5 MIN") */
         if (v <= 0) str_cpy(val, "OFF", sizeof val);
         else { fmt_int(val, v); str_cpy(val + str_len(val), " MIN", 5); }
@@ -3496,7 +3587,7 @@ dials:
 /* the splash (ui_draw.c draw_splash / splash_write under COS_SLIM; main.c's boot loop calls it every ~4 ms for
  * SPL_WRITE + SPL_HOLD ms): black, a few still stars, the name 2x, the version, a 16-block bar filling like a pattern
  * (the block being filled red), READY. Drawn whole once, then only the bar's strip when a block fills */
-#define COS_VERSION "0.12.0"
+#define COS_VERSION "0.12.1"
 static void cos_px2(int32_t x, int32_t y, const char *s, uint16_t c)      /* (the face 2 x 2) */
 {
     int32_t r, b, b0;
