@@ -61,9 +61,9 @@ Planned work. Done items move to the commit log.
 ## A drum synth's voices (GG, 2026-11-11)
 
 - ~~Engines and effects after the LXR drum machine~~ (0.11.0): FMDRUM (engine 9: DRUM / SNARE / CYMBAL / HAT by FM, a
-  pitch sweep, noise; 10 presets), the TRANSIENT layer on FMDRUM and KICK (SNAP and eight attacks synthesised here:
-  xr_tables.h; the LXR's own samples are recordings, not taken), DIST TUBE (ECC83) and RAT (op-amp + 1N914) from its
-  curves. Left: a hi-hat choke between two FMDRUM tracks? FMDRUM lanes inside the DRUM kit?
+  pitch sweep, noise; 10 presets), the TRANSIENT layer on FMDRUM and KICK (SNAP and the LXR's twelve transient
+  samples, GG 2026-11-11: xr_tables.h), DIST TUBE (ECC83) and RAT (op-amp + 1N914) from its curves. Left: a
+  transient PITCH knob (the LXR plays them faster / slower)? Left: a hi-hat choke between two FMDRUM tracks? FMDRUM lanes inside the DRUM kit?
 
 ## Drums live (GG, 2026-11-10)
 

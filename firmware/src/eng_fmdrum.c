@@ -12,8 +12,8 @@
  * The amplitude is the track's ADSR (the presets: SUS 0, the hit's length DEC = REL). The keys play it chromatic: a
  * tom's or a kick's notes.
  * TRANSIENT (P_DXIMG the kind, P_MORPH its level; KICK's too, eng_drum.c drum_render): a short attack added to the
- * hit: SNAP a pitch spike (+55 st falling in ~4 ms), or one of eight sounds of cursed-os's own (xr_tables.h, made by
- * tools/gen_xr_tables.py: CLICK TICK WOOD METAL NOISE ZAP THUMP CRACK; the LXR's are recordings, not taken).
+ * hit: SNAP a pitch spike (+55 st falling in ~4 ms), or one of the LXR's twelve transient samples (~50 ms each, as its
+ * firmware has them: xr_tables.h by tools/gen_xr_tables.py; names of our own, its sources' in the table's comments).
  * State: ph[0] the carrier, ph[1] the modulator, ph[2] the second modulator (CYMBAL HAT) or partial (SNARE); s[0] the
  * pitch envelope (Q24), s[1] the noise, s[2] SNAP's envelope (Q15), s[3] s[4] the high-passes, s[5] the transient's
  * place (samples) */
@@ -25,9 +25,10 @@ static const uint16_t FMD_RATIO[12] = {128, 256, 384, 512, 768, 1024, 1280, 2048
 #define FMD_NRATIO 12
 
 /* the TRANSIENT layer, FMDRUM's and KICK's: P_DXIMG the kind, P_MORPH its level (params.c track_desc) */
-static const char *const N_TRN[] = {"OFF", "SNAP", "CLICK", "TICK", "WOOD", "METAL", "NOISE", "ZAP", "THUMP", "CRACK", 0};
+static const char *const N_TRN[] = {"OFF", "SNAP", "CLICK", "CLICK 2", "ATTACK", "ACOUST", "RIM", "DRIP", "PEDAL", "CLAP",
+                                    "TOY", "DIGI 1", "DIGI 2", "DIGI 3", 0};
 #define TRN_SNAP 1
-#define TRN_N 10
+#define TRN_N 14
 static const param_desc_t TRN_DESC[2] = {{"TRANS", F_ENUM, 0, TRN_N - 1, 0, N_TRN, 0}, {"T.AMT", F_PCT, 0, 127, 0, 0, 0}};
 _Static_assert(TRN_N - 2 == XR_TRN_N, "a transient name each table");
 /* a sample transient (kind 2..) from *pos into y[0..n), level lv 0..127 */
@@ -159,14 +160,14 @@ static void fmd_render(track_t *t, voice_t *v, int32_t *out, uint32_t n, const v
 static const preset_t FMD_PRESETS[] = {
     {"FM KICK", {FMD_DRUM, 0, 70, 30, 30, 1, 0, 0}, {0, 72, 0, 72}, 0, TAG(DRUM), FX(0, 0, 0, 0), PAT(0), TRN(2, 80)},
     {"FM TOM", {FMD_DRUM, 0, 40, 40, 20, 2, 10, 0}, {0, 70, 0, 70}, 0, TAG(DRUM), FX(0, 0, 0, 20), PAT(0), TRN(1, 60)},
-    {"FM SNARE", {FMD_SNARE, 1, 30, 20, 25, 9, 90, 0}, {0, 62, 0, 62}, 0, TAG(DRUM), FX(0, 0, 0, 25), PAT(0), TRN(9, 70)},
+    {"FM SNARE", {FMD_SNARE, 1, 30, 20, 25, 9, 90, 0}, {0, 62, 0, 62}, 0, TAG(DRUM), FX(0, 0, 0, 25), PAT(0), TRN(6, 70)},
     {"CLAP-ISH", {FMD_SNARE, 0, 10, 10, 10, 10, 120, 0}, {0, 58, 0, 58}, 0, TAG(DRUM), FX(0, 0, 0, 40), PAT(0), TRN(9, 110)},
-    {"RIDE", {FMD_CYM, 3, 0, 60, 90, 9, 30, 3}, {0, 95, 0, 95}, 0, TAG(DRUM), FX(0, 0, 0, 30), PAT(0), TRN(5, 50)},
-    {"CRASH", {FMD_CYM, 3, 10, 70, 110, 11, 70, 3}, {0, 102, 0, 102}, 0, TAG(DRUM), FX(0, 0, 0, 40), PAT(0), TRN(6, 60)},
-    {"CLOSED HAT", {FMD_HAT, 3, 0, 20, 100, 10, 60, 3}, {0, 40, 0, 40}, 0, TAG(DRUM), FX(0, 0, 0, 10), PAT(0), TRN(3, 60)},
-    {"OPEN HAT", {FMD_HAT, 3, 0, 40, 100, 10, 60, 3}, {0, 78, 0, 78}, 0, TAG(DRUM), FX(0, 0, 0, 15), PAT(0), TRN(3, 50)},
-    {"COWBELL", {FMD_DRUM, 3, 4, 20, 40, 8, 0, 0}, {0, 60, 0, 60}, 0, TAG(DRUM), FX(0, 0, 0, 15), PAT(0), TRN(4, 40)},
-    {"ZAP PERC", {FMD_DRUM, 0, 110, 25, 60, 6, 0, 0}, {0, 55, 0, 55}, 0, TAG(DRUM), FX(0, 0, 20, 20), PAT(0), TRN(7, 70)},
+    {"RIDE", {FMD_CYM, 3, 0, 60, 90, 9, 30, 3}, {0, 95, 0, 95}, 0, TAG(DRUM), FX(0, 0, 0, 30), PAT(0), TRN(8, 50)},
+    {"CRASH", {FMD_CYM, 3, 10, 70, 110, 11, 70, 3}, {0, 102, 0, 102}, 0, TAG(DRUM), FX(0, 0, 0, 40), PAT(0), TRN(4, 60)},
+    {"CLOSED HAT", {FMD_HAT, 3, 0, 20, 100, 10, 60, 3}, {0, 40, 0, 40}, 0, TAG(DRUM), FX(0, 0, 0, 10), PAT(0), TRN(8, 60)},
+    {"OPEN HAT", {FMD_HAT, 3, 0, 40, 100, 10, 60, 3}, {0, 78, 0, 78}, 0, TAG(DRUM), FX(0, 0, 0, 15), PAT(0), TRN(8, 50)},
+    {"COWBELL", {FMD_DRUM, 3, 4, 20, 40, 8, 0, 0}, {0, 60, 0, 60}, 0, TAG(DRUM), FX(0, 0, 0, 15), PAT(0), TRN(6, 40)},
+    {"ZAP PERC", {FMD_DRUM, 0, 110, 25, 60, 6, 0, 0}, {0, 55, 0, 55}, 0, TAG(DRUM), FX(0, 0, 20, 20), PAT(0), TRN(11, 70)},
 };
 
 static const engine_t ENG_FMDRUM = {
