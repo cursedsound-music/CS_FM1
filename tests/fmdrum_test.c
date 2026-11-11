@@ -260,6 +260,45 @@ int main(void)
         CHECK(!cos_dsrc_same(DV_SNARE), "edited: OWN shown");
         memcpy(dx_kit, DX_KIT_DEF, sizeof dx_kit);
     }
+    {   /* (0.13.0) T.PITCH (P_WRDEP) on FMDRUM and KICK; an FM kit sound's RATIO, WAVE, S.TIME */
+        static int32_t base[2048];
+        int16_t *vp;
+        CHECK(trn_rate(0) == 16u && trn_rate(-12) == 8u && trn_rate(12) == 32u && trn_rate(127) == 16u,
+              "T.PITCH: 0 as recorded, -12 half speed, +12 double, 127 (WHEEL's) as recorded (%u %u %u)", trn_rate(0), trn_rate(-12), trn_rate(12));
+        CHECK(!strcmp(track_desc(&trk[1], P_WRDEP)->label, "T.PITCH"), "KICK: P_WRDEP is T.PITCH");
+        apply_preset_to(&trk[1], 0);
+        CHECK(trk[1].p[P_WRDEP] == 0, "a preset: T.PITCH 0");
+        solo(1);
+        hit(1, 36, 0, 0);
+        memcpy(base, first, sizeof base);
+        trk[1].p[P_WRDEP] = -12;
+        hit(1, 36, 0, 0);
+        CHECK(diff_first(base) > 512.0 * 50, "T.PITCH -12: the click lower (%.3g)", diff_first(base));
+        trk[1].p[P_WRDEP] = 0;
+        solo(0);
+        track_select(0);
+        dx_ui_lane = DV_SNARE;
+        trk[0].p[P_LN0 + DV_SNARE] = 100;
+        cos_cput(CC_DFLT, 3);
+        CHECK(!strcmp(cos_ddesc(CC_DLAY, &vp)->label, "RATIO") && !strcmp(cos_ddesc(CC_DFB, &vp)->label, "WAVE") &&
+              !strcmp(cos_ddesc(CC_DBT, &vp)->label, "S.TIME"), "FM: LAYER RATIO, FEEDBK WAVE, BENDTYP S.TIME");
+        cos_cput(CC_DWAV, 1);
+        hit(0, 38, 0, 0);
+        memcpy(base, first, sizeof base);
+        cos_cput(CC_DLAY, 8);                            /* (RATIO 8) */
+        hit(0, 38, 0, 0);
+        CHECK(DXF_LR(dx_lay[DV_SNARE]) == 8u && diff_first(base) > 512.0 * 200, "RATIO 8: another sound (%.3g)", diff_first(base));
+        memcpy(base, first, sizeof base);
+        cos_cput(CC_DFB, 3);                             /* (WAVE SAW) */
+        hit(0, 38, 0, &pk);
+        CHECK(DXF_LW(dx_lay[DV_SNARE]) == 3u && diff_first(base) > 512.0 * 200 && pk < 32700, "WAVE SAW: another, bounded (%.3g %d)", diff_first(base), pk);
+        cos_cput(CC_DBT, 1);
+        CHECK(DXF_LT(dx_lay[DV_SNARE]) == 1u && ((dx_kit[DV_SNARE].mode >> 4) & 7u) == ((dx_kit[DV_SNARE].mode >> 4) & 7u), "S.TIME LONG");
+        cos_cput(CC_DFLT, 1);
+        CHECK(dx_lay[DV_SNARE] == 0u, "back to BP: its LAYER byte its own again (%x)", dx_lay[DV_SNARE]);
+        memcpy(dx_kit, DX_KIT_DEF, sizeof dx_kit);
+        memcpy(dx_lay, DX_LAY_DEF, sizeof dx_lay);
+    }
     {   /* projects: engine 9 of before 0.11 (phys 2) is PHYS's, ANALOG now; written since (PROJ_FMD), FMDRUM */
         static project_t q;
         memset(&q, 0, sizeof q);

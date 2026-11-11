@@ -87,7 +87,8 @@ static const cpg_t CZP_SRC[] = {{"SRC 1", CK_TRK, {P_E0, P_E1, P_E2, P_E3}}, {"S
                                {"VOICE", CK_TRK, {P_VOICE, P_GLIDE, P_DETUNE, ID_OCT}},
                                {"CHORD", CK_TRK, {P_CHRD, P_CVOI, P_CSTR, X}},   /* (a key plays a chord: seq.c chord_build) */
                                CZ_MOD(1), CZ_MOD(2), CZ_MOD(3), CZ_MOD(4)};
-#define CZ_TRN {"TRANSIENT", CK_TRK, {P_DXIMG, P_MORPH, X, X}}   /* (0.11.0) FMDRUM's, KICK's (eng_fmdrum.c) */
+#define CZ_TRN {"TRANSIENT", CK_TRK, {P_DXIMG, P_MORPH, P_WRDEP, X}}   /* (0.11.0) FMDRUM's, KICK's (eng_fmdrum.c; 0.13.0
+                                                         * T.PITCH: P_WRDEP) */
 static const cpg_t CZP_SRCK[] = {{"KICK", CK_TRK, {P_E0, P_E1, P_E2, P_E3}}, {"KICK 2", CK_TRK, {P_E4, P_E5, P_E6, P_E7}},
                                 CZ_TRN, CZ_FILT, CZ_MOD(1), CZ_MOD(2), CZ_MOD(3), CZ_MOD(4)};   /* (0.10.0) a KICK: hits, no VOICE / CHORD */
 static const cpg_t CZP_SRCF[] = {{"FMDRUM", CK_TRK, {P_E0, P_E1, P_E2, P_E3}}, {"FMDRUM 2", CK_TRK, {P_E4, P_E5, P_E6, P_E7}},
@@ -534,6 +535,8 @@ static __attribute__((noinline)) int cos_dsrc_get(uint32_t i, dx_lane_t *L, uint
         L->a[DXP_NOISE] = (uint8_t)clamp(P->e[6], 0, 127);
         L->a[DXP_COLOR] = (uint8_t)clamp(P->e[4], 0, 127);
         for (k = 0; k < DXP_N; k++) L->b[k] = L->a[k];
+        *lay = (uint8_t)(((uint32_t)clamp(P->e[5], 0, 11) + 1u) | ((uint32_t)clamp(P->e[1], 0, 3) + 1u) << 4 |
+                         (uint32_t)(P->e[3] > 50) << 7);   /* (0.13.0: its RATIO, WAVE, a long S.TIME) */
     }
     return 1;
 }
@@ -577,7 +580,17 @@ static __attribute__((noinline)) const param_desc_t *cos_ddesc(uint32_t id, int1
     int16_t *c = &cz.cc_v[14];
     *vp = c;
     if (fm && id == CC_DWAV) { *c = (int16_t)(m & 3u); return &DF[0]; }
-    if (fm && (id == CC_DSNP || id == CC_DBT)) { *c = (int16_t)((m >> 4) & 7u); return &DF[1]; }
+    if (fm && id == CC_DSNP) { *c = (int16_t)((m >> 4) & 7u); return &DF[1]; }
+    if (fm && (id == CC_DBT || id == CC_DLAY || id == CC_DFB)) {   /* (0.13.0) FM: S.TIME, RATIO, WAVE in its LAYER byte
+                                                         * (drumx_voice.c DXF_*: 0 each the TYPE's own) */
+        static const char *const ST[] = {"SHORT", "LONG", 0}, *const RT[] = {"AUTO", "0.5", "1", "1.5", "2", "3", "4", "5", "8",
+                                         "1.41", "2.76", "3.73", "5.33", 0}, *const WV2[] = {"AUTO", "SINE", "TRI", "SAW", "SQUARE", 0};
+        static const param_desc_t DG[3] = {{"S.TIME", F_ENUM, 0, 1, 0, ST, 0}, {"RATIO", F_ENUM, 0, 12, 0, RT, 0},
+                                           {"WAVE", F_ENUM, 0, 4, 0, WV2, 0}};
+        uint32_t y = dx_lay[l];
+        *c = (int16_t)(id == CC_DBT ? DXF_LT(y) : id == CC_DLAY ? DXF_LR(y) : DXF_LW(y));
+        return &DG[id == CC_DBT ? 0 : id == CC_DLAY ? 1 : 2];
+    }
     switch (id) {
     case CC_DSEL: *c = (int16_t)l; return &D[0];
     case CC_DSRC: {
@@ -611,8 +624,16 @@ static __attribute__((noinline)) void cos_dput(uint32_t id, int32_t v)
     uint32_t l = dx_ui_lane & 7u;
     dx_lane_t *L = &dx_kit[l];
     uint32_t m = L->mode;
-    if (((m >> 2) & 3u) == DXF_FM && (id == CC_DSNP || id == CC_DBT)) {   /* (0.12.0) FM: the TRANSIENT, bits 4..6 */
+    if (((m >> 2) & 3u) == DXF_FM && id == CC_DSNP) {   /* (0.12.0) FM: the TRANSIENT, bits 4..6 */
         L->mode = (uint8_t)((m & ~0x70u) | (uint32_t)clamp(v, 0, 7) << 4);
+        return;
+    }
+    if (((m >> 2) & 3u) == DXF_FM && (id == CC_DBT || id == CC_DLAY || id == CC_DFB)) {   /* (0.13.0) FM: S.TIME RATIO WAVE */
+        uint32_t y = dx_lay[l];
+        if (id == CC_DBT) y = (y & 0x7Fu) | (uint32_t)(v > 0) << 7;
+        else if (id == CC_DLAY) y = (y & 0xF0u) | (uint32_t)clamp(v, 0, 12);
+        else y = (y & 0x8Fu) | (uint32_t)clamp(v, 0, 4) << 4;
+        dx_lay[l] = (uint8_t)y;
         return;
     }
     switch (id) {
@@ -620,7 +641,11 @@ static __attribute__((noinline)) void cos_dput(uint32_t id, int32_t v)
     case CC_DSRC: cos_dsrc_load(l, (uint32_t)clamp(v, 0, (int32_t)DSRC_N)); return;
     case CC_DLV: TSEL->p[P_LN0 + l] = (int16_t)clamp(v, 0, 127); break;
     case CC_DWAV: m = (m & ~3u) | (uint32_t)clamp(v, 0, 3); break;
-    case CC_DFLT: m = (m & ~0x0Cu) | (uint32_t)clamp(v, 0, 3) << 2; break;
+    case CC_DFLT:
+        if ((((m >> 2) & 3u) == DXF_FM) != (clamp(v, 0, 3) == DXF_FM)) dx_lay[l] = 0;   /* (0.13.0: to or from FM, its LAYER
+                                                         * byte the other's meaning: back to its own defaults) */
+        m = (m & ~0x0Cu) | (uint32_t)clamp(v, 0, 3) << 2;
+        break;
     case CC_DBT: m = (m & ~0x60u) | (uint32_t)clamp(v, 0, 3) << 5; break;
     case CC_DDRV: m = v > 0 ? m | DX_DRIVE : m & ~DX_DRIVE; break;
     case CC_DSNP: m = v > 0 ? m | 0x10u : m & ~0x10u; break;

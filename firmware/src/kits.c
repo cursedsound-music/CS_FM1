@@ -59,7 +59,7 @@ static void kit_scan(void)
     for (k = 0; k < KIT_N; k++) {
         int u = b->r[k].used == KIT_USED && dx_kit_ok(b->r[k].lane);
         kit_used |= (uint16_t)((uint32_t)u << k);
-        memcpy(kit_nm[k], u ? b->r[k].name : "", 10);
+        if (u) memcpy(kit_nm[k], b->r[k].name, 10); else memset(kit_nm[k], 0, 10);
     }
 }
 static int kit_save(uint32_t k, const char *name)

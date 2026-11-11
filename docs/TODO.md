@@ -58,6 +58,18 @@ Planned work. Done items move to the commit log.
   later.
 - ~~Own LFO shapes from the phone~~ (0.10.2): USER1..4, 32 points, U32's record. Left: LFO 2 and the autopan with them?
 
+## 0.13.0 (GG, 2026-11-11: "do all 5 of them", "remove the drone")
+
+- ~~DRONE~~ removed; LFO > DRUMS: rolls (white keys held), REPEAT (black 1..4 held), CHANCE per drum (project 'DC')
+- ~~User kits~~: SAVE > KITS K01..K16 (kits.c, flash 0xDA000 / 0xDB000)
+- ~~Ableton controller~~: GLO > MIDI 2 KNOBS FM-1 / +MIDI / MIDI (relative), CC 20 + page x 4 + knob on CTRL CH + mode
+- ~~ACID to a VST~~: SOUND EXT per track (out of the mix, notes still out; accents 127, slides legato)
+- ~~Cleaner drums~~: the kick and the tom upsampled by a 4-point half-band (images -3 .. -6 dB at 14..22 kHz; the rest of
+  the hash is the sound's own CLICK and drive)
+- ~~FMDRUM more in the kit~~: FM sounds' S.TIME, RATIO, WAVE (their LAYER byte); T.PITCH on FMDRUM / KICK (P_WRDEP)
+- Left: a per-sound transient pitch for FM kit sounds (no byte left there); CPU baseline rewritten (the limiter's
+  look-ahead since 0.12.2: +46 instructions a sample idle)
+
 ## Kick noise (GG, 2026-11-11)
 
 - ~~"Noise mixed with aliasing" on the kicks, not on the other drums~~ (0.12.2): the master LIMITER rode the kick's

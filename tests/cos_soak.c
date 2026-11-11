@@ -54,6 +54,18 @@ int main(int argc, char **argv)
             if (r == 224u && trk_live) cos_drum_flip(rnd(8u));   /* (0.10.0) a drum sound in / out (HOME + white 1..8) */
             if (r == 225u) cos_back(rnd(4u) == 0u);              /* (0.10.3) LIVE: BACK TO NORMAL, now and then THIS IS NORMAL */
             if (r == 226u) cos_cput(rnd(2u) ? CC_LVREV : CC_LVDLY, (int32_t)rnd(128u));
+            if (r == 228u) {                             /* (0.13.0) DRUMS: rolls and REPEATs held and let go; CHANCE; a
+                                                         * kit saved and loaded; the knobs as a controller; a SOUND EXT */
+                drm_roll = (uint8_t)(rnd(3u) ? 0u : rnd(256u));
+                drm_lpn = (uint8_t)(rnd(3u) ? 0u : 1u << rnd(4u));
+                cos_cput(CC_RRATE + rnd(3u), (int32_t)rnd(128u));
+                cos_cput(CC_DCH0 + rnd(8u), (int32_t)rnd(101u));
+                dx_lay[rnd(8u)] = (uint8_t)rnd(256u);
+                if (rnd(16u) == 0u) { cos_cput(CC_KSLOT, 1 + (int32_t)rnd(16u)); cos_kit_oct((int)rnd(2u)); cos_kit_oct(1); }
+                if (rnd(16u) == 0u) cos_cput(CC_CTLM, (int32_t)rnd(3u));
+                if (rnd(16u) == 0u) cos_cput(CC_EXT, (int32_t)rnd(2u));
+                trk[rnd(NTRK)].p[P_WRDEP] = (int16_t)((int32_t)rnd(200u) - 60);
+            }
             if (r == 227u && rnd(8u) == 0u) {            /* (0.11.0) a track to FMDRUM, any values; a KICK's TRANSIENT;
                                                          * DIST TUBE / RAT */
                 track_t *t = &trk[rnd(NTRK)];

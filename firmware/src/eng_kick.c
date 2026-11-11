@@ -35,6 +35,7 @@ static void kick_note_on(track_t *t, voice_t *v)
     if (!K || i >= NVOICE)
         return;
     L = &K[DV_KICK];
+    if (t->p[P_WRDEP] < -24 || t->p[P_WRDEP] > 24) t->p[P_WRDEP] = 0;   /* (0.13.0 T.PITCH: an older sound's WHEEL 127) */
     L->st = (int8_t)clamp((int32_t)v->note - 36 + t->pfx_rpit / 16 + t->dpit, -36, 36);   /* (the first C: as struck) */
     L->bc = 0;
     L->bd = t->dbend;

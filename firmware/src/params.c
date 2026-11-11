@@ -305,6 +305,8 @@ static const param_desc_t *track_desc(const track_t *t, uint32_t id)
     if ((id == P_DXIMG || id == P_MORPH) && ENG_TRN(ENGINES[eng_idx(t->eng_req)]))   /* (cursed-os 0.11.0) FMDRUM, KICK:
                                                          * the TRANSIENT (eng_fmdrum.c) */
         return &TRN_DESC[id == P_MORPH];
+    if (id == P_WRDEP && ENG_TRN(ENGINES[eng_idx(t->eng_req)]))   /* (0.13.0) .. its T.PITCH */
+        return &TRN_DESC[2];
     if (id == MOT_DJF)                                /* (0.9.1) a DJ FILTER record (motion.c): the global's */
         return &GP[G_DJF];
     if ((id == P_VLANG || id == P_VLYR) && ENGINES[eng_idx(t->eng_req)] == &ENG_FORMANT)

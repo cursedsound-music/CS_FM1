@@ -148,6 +148,8 @@ static const char *why_quiet(uint32_t m, const cpg_t *p, uint32_t k)
             return "SNAP: the noise's own decay; the ENV group's SUSTAIN (on here) rules the tail (drumx_voice.c)";
     }
     if (p->kind == CK_GLO && (id == G_CLOCK || id == G_CLOCK)) return "MIDI: the clock and MIDI out";
+    if (p->kind == CK_COS && id == CC_KSLOT) return "SAVE > KITS: the slot picked (OCT- loads it: kit_test)";
+    if (p->kind == CK_COS && (id == CC_CTLM || id == CC_CTLCH)) return "MIDI 2: what the knobs send over MIDI (ctl_test)";
     if (m == CM_DRUMS && str_eq(p->tab, "ROLL")) return "DRUMS' ROLL: heard while a white key holds a roll (drm_test)";
     if (id == ID_MUTEQ) return "MUTE Q: when a mute lands";
     if (m == CM_SRC && str_eq(p->tab, "CHORD")) return "CHORD: what a key plays (live, recorded)";

@@ -29,19 +29,27 @@ static const char *const N_TRN[] = {"OFF", "SNAP", "CLICK", "CLICK 2", "ATTACK",
                                     "TOY", "DIGI 1", "DIGI 2", "DIGI 3", 0};
 #define TRN_SNAP 1
 #define TRN_N 14
-static const param_desc_t TRN_DESC[2] = {{"TRANS", F_ENUM, 0, TRN_N - 1, 0, N_TRN, 0}, {"T.AMT", F_PCT, 0, 127, 0, 0, 0}};
+static const param_desc_t TRN_DESC[3] = {{"TRANS", F_ENUM, 0, TRN_N - 1, 0, N_TRN, 0}, {"T.AMT", F_PCT, 0, 127, 0, 0, 0},
+                                         {"T.PITCH", F_SEMI, -24, 24, 0, 0, 0}};   /* (0.13.0: P_WRDEP, WHEEL's own) */
 _Static_assert(TRN_N - 2 == XR_TRN_N, "a transient name each table");
-/* a sample transient (kind 2..) from *pos into y[0..n), level lv 0..127 */
-static void trn_add(int32_t *y, uint32_t n, int32_t kind, int32_t lv, int32_t *pos)
+/* (0.13.0) T.PITCH (semitones, -24 .. 24; outside it, as an older sound kept WHEEL's 127 there: 0) as a sample step, Q4 */
+static uint32_t trn_rate(int32_t st)
+{
+    uint32_t i0 = pitch_inc(60u * 16u) >> 8;
+    if (st < -24 || st > 24) st = 0;
+    return (pitch_inc((uint32_t)(60 + st) * 16u) >> 4) / (i0 ? i0 : 1u);   /* (16 x inc / inc0: 32 bits) */
+}
+/* a sample transient (kind 2..) from *pos (Q4) into y[0..n), level lv 0..127, a step of rate (Q4: 16 as recorded) */
+static void trn_add(int32_t *y, uint32_t n, int32_t kind, int32_t lv, int32_t *pos, uint32_t rate)
 {
     uint32_t p = (uint32_t)*pos, i;
     int32_t g = lv * 258;                                /* Q15 */
     const int8_t *w;
-    if (kind < 2 || kind >= TRN_N || lv <= 0 || p >= XR_TRN_LEN)
+    if (kind < 2 || kind >= TRN_N || lv <= 0 || (p >> 4) >= XR_TRN_LEN)
         return;
     w = XR_TRN[kind - 2];
-    for (i = 0; i < n && p < XR_TRN_LEN; i++, p++)
-        y[i] += (w[p] * g) >> 6;                         /* (x 512: up to twice full scale, into the knee) */
+    for (i = 0; i < n && (p >> 4) < XR_TRN_LEN; i++, p += rate)
+        y[i] += (w[p >> 4] * g) >> 6;                    /* (x 512: up to twice full scale, into the knee) */
     *pos = (int32_t)p;
 }
 /* SNAP: the pitch added (1/16 st) at SNAP's envelope e (Q15), level lv */
@@ -53,8 +61,8 @@ static int32_t trn_snap(int32_t e, int32_t lv)
 
 static void fmd_note_on(track_t *t, voice_t *v)
 {
+    if (t->p[P_WRDEP] < -24 || t->p[P_WRDEP] > 24) t->p[P_WRDEP] = 0;   /* (0.13.0 T.PITCH: an older sound's WHEEL 127) */
     uint32_t seed = (v->note + 1u) * 0x9E3779B9u ^ (uint32_t)v->fine * 0x85EBCA6Bu;
-    (void)t;
     v->s[0] = 1 << 24;
     v->s[1] = (int32_t)(seed ? seed : 1u);
     v->s[2] = 32767;
@@ -140,7 +148,7 @@ static void fmd_render(track_t *t, voice_t *v, int32_t *out, uint32_t n, const v
         se = (se * ks) >> 15;
     }
     if (kind >= 2)
-        trn_add(y, n, kind, lv, &tp);
+        trn_add(y, n, kind, lv, &tp, trn_rate(p[P_WRDEP]));
     for (i = 0; i < n; i++)
         out[i] += voice_amp(soft_knee(y[i], 28000), m, i);
     v->s[0] = eg;

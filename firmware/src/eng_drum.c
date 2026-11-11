@@ -590,7 +590,7 @@ static void drum_render(track_t *t, voice_t *v, int32_t *out, uint32_t n, const 
                L->st * 16 + L->rt + L->bc + (p[P_E1] - 64) * 3 + t->pfx_pit + lfo_pit + sn,
                p[P_E3] - 64 + DXO_DEC[L->dm & 3u], p[P_E2] - 64 + DXO_TON[L->dm & 3u], p[P_E4] - 64, p[P_E6], p[P_E5], y, n);
         if (tk >= 2)                                     /* .. or a sound added to the hit */
-            trn_add(y, n, tk, tl >> 1, &v->s[7]);
+            trn_add(y, n, tk, tl >> 1, &v->s[7], trn_rate(p[P_WRDEP]));   /* (0.13.0: T.PITCH) */
     }
     {                                                    /* PUNCH: the boost before the knee (driven into it, as
                                                           * Drum Buss), the tail's cut on the amplitude ramp */

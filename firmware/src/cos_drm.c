@@ -72,22 +72,22 @@ static void cos_body_drm(void)
     uint32_t k;
     cos_tx(4, 36, "HOLD A WHITE KEY: ROLL", C_MID);
     for (k = 0; k < 8u; k++) {
-        int32_t x = 4 + (int32_t)(k % 4u) * 59, y = 50 + (int32_t)(k / 4u) * 22;
+        int32_t x = 4 + (int32_t)(k % 4u) * 59, y = 50 + (int32_t)(k / 4u) * 24;
         int on = (drm_roll >> k) & 1u;
         if (on) cv_rect(x - 2, y - 3, 57, 15, C_RED);
         cos_tx(x, y, D[k], on ? C_BG : cos_drum_out(k) ? C_DIM : C_FG);
         if (dx_skip[k]) {                                  /* (its CHANCE, under 100 %) */
             fmt_int(b, 100 - (int32_t)dx_skip[k]);
             str_cpy(b + str_len(b), "%", 2);
-            cos_tx(x + 40, y, b, on ? C_BG : C_MID);
+            cos_tx(x, y + 11, b, C_MID);                  /* (under its name) */
         }
     }
-    cos_tx(4, 100, "HOLD BLACK 1-4: REPEAT", C_MID);
+    cos_tx(4, 100, "HOLD BLACK 1-4: REPEAT STEPS", C_MID);
     for (k = 0; k < 4u; k++) {
         int32_t x = 4 + (int32_t)k * 59, on = drm_lpn == DRM_LPN[k];
         if (on) cv_rect(x - 2, 111, 57, 15, C_RED);
         str_cpy(b, R[k], 4);
-        str_cpy(b + str_len(b), k == 3u ? " STEP" : " STEPS", 7);
+        str_cpy(b + str_len(b), " ST", 4);
         cos_tx(x, 114, b, on ? C_BG : song.playing ? C_FG : C_DIM);
     }
     str_cpy(b, "ROLL ", 6);
