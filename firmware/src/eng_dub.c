@@ -11,9 +11,19 @@
  *          denser), each fading in and out on its own slow wave; NOISE (air) in it; the low-pass COLOR (darker ..
  *          brighter) drifting with MOTION (DECAY's knob). Its presets come with the REVERB send (CLOUD or TIGHT: REV >
  *          TYPE) and the track's slow envelope
+ *   BLEEP  (0.15.1, GG: "bleep bloop sounds ... random but consistent") one ping a note, modular style: WAVE (SINE TRI
+ *          SQUARE FM FOLD) phase-modulated by a sine at RATIO (FM its depth, falling with the ping), its own fall
+ *          (DECAY), a pitch drop or rise into the note (BLOOP: + from above, - from below), through the low-pass
+ *          (COLOR). RANDOM: each note's own FM, DECAY, BLOOP and now and then RATIO, from a hash of its key and its
+ *          step: random, and the same every pass. Its patterns: GEN > BLEEP (ui_bleep.c)
  * The amplitude is the track's ADSR. State: ph[0..2] and s[0] the four tones' phases, s[1] s[2] the filter (low,
- * band), s[3] STAB's envelope (Q15), s[4] the noise, s[5] the drift's phase, s[6] the tones' fades' phase */
-static const char *const N_DUB_TYPE[] = {"STAB", "ATMOS", 0};
+ * band), s[3] STAB's envelope (Q15), s[4] the noise, s[5] the drift's phase, s[6] the tones' fades' phase; BLEEP:
+ * ph[0] the carrier, ph[1] the modulator, s[0] the pitch's envelope, s[3] the ping's, s[5] the note's dice */
+static const char *const N_DUB_TYPE[] = {"STAB", "ATMOS", "BLEEP", 0};
+enum { DUB_STAB, DUB_ATMOS, DUB_BLEEP };
+static const char *const N_BLP_WAVE[] = {"SINE", "TRI", "SQUARE", "FM", "FOLD", 0};
+static const char *const N_BLP_RATIO[] = {"0.5", "1", "1.5", "2", "3", "3.5", "4", "7", 0};
+static const uint16_t BLP_RATIO[8] = {128, 256, 384, 512, 768, 896, 1024, 1792};   /* Q8 */
 static const char *const N_DUB_CHORD[] = {"MIN7", "MIN9", "MIN", "MIN11", "SUS4", "5TH", 0};
 static const int8_t DUB_CHORD[6][4] = {{0, 3, 7, 10}, {0, 3, 10, 14}, {0, 3, 7, 12}, {0, 5, 10, 15}, {0, 5, 7, 12}, {0, 7, 12, 19}};
 static const int8_t DUB_DET[4] = {0, 5, -4, 7};          /* (each tone's own cents: the chord breathes) */
@@ -24,7 +34,15 @@ static void dub_note_on(track_t *t, voice_t *v)
     uint32_t seed = (v->note + 7u) * 0x9E3779B9u ^ v->age * 0x85EBCA6Bu ^ (uint32_t)t->loops * 0xC2B2AE35u;
     int32_t thr = clamp(t->p[P_E6], 0, 127);
     if (!v->s[4]) v->s[4] = (int32_t)(seed | 1u);
-    v->s[3] = 32767;                                     /* (STAB: the envelope from the top) */
+    v->s[3] = 32767;                                     /* (STAB: the envelope from the top; BLEEP: the ping's) */
+    if (clamp(t->p[P_E0], 0, 2) == DUB_BLEEP) {          /* BLEEP: from the top, the note's dice (its key, its step) */
+        uint32_t h = (v->note + 1u) * 0x9E3779B9u ^ ((uint32_t)t->seq_idx + 1u) * 0x85EBCA6Bu;
+        h ^= h >> 15; h *= 0x2C1B3C6Du; h ^= h >> 12;
+        v->s[5] = (int32_t)h;
+        v->s[0] = 32767;
+        v->ph[0] = v->ph[1] = 0;
+        return;
+    }
     if (!clamp(t->p[P_E0], 0, 1) && thr && (noise32(&v->s[4]) >> 25) < (uint32_t)thr)   /* (STAB: thrown, THROW's chance) */
         trk_throw[(uint32_t)(t - trk) % NTRK] = 127;
 }
@@ -36,10 +54,63 @@ static int32_t dub_f(int32_t c16)
     return clamp(f, 40, 26000);
 }
 
+/* BLEEP's render */
+static __attribute__((noinline)) void dub_bleep(track_t *t, voice_t *v, int32_t *out, uint32_t n, const vmod_t *m)
+{
+    const int16_t *p = t->p;
+    uint32_t wv = (uint32_t)clamp(p[P_E1], 0, 4), rt = (uint32_t)clamp(p[P_E5], 0, 7), h = (uint32_t)v->s[5], i, c;
+    int32_t col = clamp(p[P_E2], 0, 127), fm = clamp(p[P_E3], 0, 127), dec = clamp(p[P_E4], 0, 127);
+    int32_t bl = clamp(p[P_E6], -64, 63), rnd = clamp(p[P_E7], 0, 127);
+    int32_t lo = v->s[1], bd = v->s[2], eg = v->s[3], pe = v->s[0], ka, kp, y[CTL];
+    uint32_t ph0 = v->ph[0], ph1 = v->ph[1];
+    if (rnd) {                                           /* RANDOM: the note's own, the same each pass */
+        fm = clamp(fm + ((((int32_t)(h & 255u) - 128) * rnd) >> 7), 0, 127);
+        dec = clamp(dec + ((((int32_t)((h >> 8) & 255u) - 128) * rnd) >> 8), 0, 127);
+        bl = clamp(bl + ((((int32_t)((h >> 16) & 255u) - 128) * rnd) >> 8), -64, 63);
+        if ((int32_t)((h >> 24) & 127u) < rnd >> 1) rt = (rt + 1u + (h >> 30)) % 8u;
+    }
+    ka = fmd_fall(TIME_MS_X10[clamp(10 + dec, 0, 127)]);
+    kp = fmd_fall(TIME_MS_X10[clamp(dec / 3, 0, 127)]);  /* (the BLOOP quicker than the ping) */
+    if (n > CTL)
+        n = CTL;
+    for (c = 0; c < n; c += 16u) {
+        uint32_t e = c + 16u < n ? c + 16u : n, inc, mi;
+        int32_t idx = (fm * (6000 + ((eg * 3) >> 2))) >> 13, f;   /* (the FM falls with the ping: 0 .. ~470) */
+        inc = cents_inc(m->pitch16 + ((bl * 6 * pe) >> 15), 0, m->fine);   /* (BLOOP: +-24 st at the top) */
+        mi = (inc >> 8) * BLP_RATIO[rt];
+        f = dub_f((40 + col * 80 / 127) * 16 + (eg >> 7) * 3);   /* (the ping a little brighter at its start) */
+        for (i = c; i < e; i++) {
+            int32_t mo = osc_sine(ph1), s, hi;
+            uint32_t pm = ph0 + ((uint32_t)(mo * idx) << (wv == 3u ? 10 : 9));
+            switch (wv) {
+            case 1: s = osc_tri(pm); break;
+            case 2: s = clamp(osc_sine(pm) * 3, -32767, 32767); break;   /* (a soft square) */
+            case 4: s = osc_sine(pm) * (2 + fm / 24);   /* FOLD: driven, folded back at full scale */
+                    while (s > 32767 || s < -32767) s = s > 32767 ? 65534 - s : -65534 - s;
+                    break;
+            default: s = osc_sine(pm); break;
+            }
+            s = (s * eg) >> 15;
+            hi = clamp(s - lo - ((bd >> 8) * 18000 >> 7), -600000, 600000);
+            bd = clamp(bd + (((hi >> 3) * f) >> 12), -262144, 262144);
+            lo = clamp(lo + (((bd >> 3) * f) >> 12), -262144, 262144);
+            y[i] = lo;
+            ph0 += inc;
+            ph1 += mi;
+        }
+        eg = (eg * ka) >> 15;
+        pe = (pe * kp) >> 15;
+    }
+    for (i = 0; i < n; i++)
+        out[i] += voice_amp(soft_knee(y[i] + (y[i] >> 1), 28000), m, i);
+    v->s[0] = pe; v->s[1] = lo; v->s[2] = bd; v->s[3] = eg;
+    v->ph[0] = ph0; v->ph[1] = ph1;
+}
+
 static void dub_render(track_t *t, voice_t *v, int32_t *out, uint32_t n, const vmod_t *m)
 {
     const int16_t *p = t->p;
-    uint32_t at = (uint32_t)clamp(p[P_E0], 0, 1), ch = (uint32_t)clamp(p[P_E1], 0, 5), i, c, k;
+    uint32_t at = (uint32_t)clamp(p[P_E0], 0, 2), ch = (uint32_t)clamp(p[P_E1], 0, 5), i, c, k;
     int32_t col = clamp(p[P_E2], 0, 127), den = clamp(p[P_E3], 0, 127), dec = clamp(p[P_E4], 0, 127);
     int32_t res = clamp(p[P_E5], 0, 127), nz = clamp(p[P_E7], 0, 127);
     int32_t lo = v->s[1], bd = v->s[2], eg = v->s[3], rng = v->s[4];   /* (locals: out[] may alias v->s[]) */
@@ -47,6 +118,7 @@ static void dub_render(track_t *t, voice_t *v, int32_t *out, uint32_t n, const v
     int32_t q = 32767 - res * 230, ng = (nz * nz) >> 3, base = m->pitch16, y[CTL], bl = (col * col) >> 7;   /* (bl: 0 .. 126) */
     int32_t kd = fmd_fall(TIME_MS_X10[clamp(20 + dec * 3 / 4, 0, 127)]);   /* (STAB: its envelope's fall) */
     uint32_t dinc = (uint32_t)(40000 + dec * dec * 60) * 16u;   /* (ATMOS MOTION: the drift ~0.02 .. ~1.2 Hz, per chunk) */
+    if (at == DUB_BLEEP) { dub_bleep(t, v, out, n, m); return; }
     if (at) {                                            /* ATMOS: the chord on the ROOT at or below the key struck */
         int32_t r = (int32_t)v->note - clamp(p[P_ROOT], 0, 11);
         base -= ((r % 12 + 12) % 12) * 16;
@@ -120,20 +192,35 @@ static const preset_t DUB_PRESETS[] = {
     {"ATMOS WIDE", {1, 1, 56, 110, 50, 28, 0, 28}, {90, 40, 127, 116}, 0, TAG(PAD), FX(0, 30, 0, 110), PAT(0)},
     {"ATMOS VOID", {1, 5, 18, 40, 16, 12, 0, 70}, {96, 40, 127, 120}, 0, TAG(PAD), FX(0, 0, 0, 120), PAT(0)},
     {"ATMOS GLOW", {1, 4, 76, 90, 64, 40, 0, 20}, {80, 40, 127, 108}, 0, TAG(PAD), FX(0, 20, 20, 100), PAT(0)},
+    /* BLEEP: {TYPE, WAVE, COLOR, FM, DECAY, RATIO, BLOOP, RANDOM} */
+    {"BLEEP SINE", {2, 0, 90, 10, 40, 1, 6, 30}, {0, 0, 127, 46}, 0, TAG(PLUCK), FX(0, 0, 50, 30), PAT(0)},
+    {"BLOOP DROP", {2, 0, 80, 22, 52, 2, 40, 40}, {0, 0, 127, 50}, 0, TAG(PLUCK), FX(0, 0, 55, 30), PAT(0)},
+    {"FM BLIP", {2, 3, 100, 70, 30, 4, 0, 50}, {0, 0, 127, 40}, 0, TAG(PLUCK), FX(0, 0, 50, 25), PAT(0)},
+    {"GLASS PING", {2, 3, 120, 46, 60, 7, 0, 30}, {0, 0, 127, 60}, 0, TAG(BELL), FX(0, 0, 45, 40), PAT(0)},
+    {"MODULAR TRI", {2, 1, 70, 30, 44, 3, -12, 60}, {0, 0, 127, 46}, 0, TAG(PLUCK), FX(0, 0, 50, 30), PAT(0)},
+    {"FOLD PLUCK", {2, 4, 76, 60, 34, 1, 10, 40}, {0, 0, 127, 40}, 0, TAG(PLUCK), FX(0, 0, 45, 25), PAT(0)},
+    {"RANDOM PINGS", {2, 3, 90, 60, 40, 2, 20, 110}, {0, 0, 127, 46}, 0, TAG(PLUCK), FX(0, 0, 60, 35), PAT(0)},
+    {"SQUARE BLEEP", {2, 2, 64, 20, 36, 1, 4, 20}, {0, 0, 127, 40}, 0, TAG(PLUCK), FX(0, 0, 50, 25), PAT(0)},
 };
 
-/* ATMOS: DECAY's knob is its MOTION, THROW none */
+/* ATMOS: DECAY's knob is its MOTION, THROW none; BLEEP: its own seven */
 static const param_desc_t *dub_desc(const track_t *t, uint32_t k)
 {
     static const param_desc_t A[2] = {{"MOTION", F_PCT, 0, 127, 40, 0, 0}, {"-", F_PCT, 0, 127, 0, 0, 0}};
-    if (clamp(t->p[P_E0], 0, 1) != 1) return 0;
+    static const param_desc_t B[8] = {{"TYPE", F_ENUM, 0, 2, 0, N_DUB_TYPE, 0}, {"WAVE", F_ENUM, 0, 4, 0, N_BLP_WAVE, 0},
+                                      {"COLOR", F_PCT, 0, 127, 90, 0, 0}, {"FM", F_PCT, 0, 127, 10, 0, 0},
+                                      {"DECAY", F_PCT, 0, 127, 40, 0, 0}, {"RATIO", F_ENUM, 0, 7, 1, N_BLP_RATIO, 0},
+                                      {"BLOOP", F_INT, -64, 63, 0, 0, 0}, {"RANDOM", F_PCT, 0, 127, 30, 0, 0}};
+    uint32_t ty = (uint32_t)clamp(t->p[P_E0], 0, 2);
+    if (ty == DUB_BLEEP) return &B[k & 7u];
+    if (ty != DUB_ATMOS) return 0;
     return k == 4u ? &A[0] : k == 6u ? &A[1] : 0;
 }
 static const engine_t ENG_DUB = {
     .name = "DUB",
     .page_title = {"DUB", "DUB 2"},
     .edit = {
-        {"TYPE", F_ENUM, 0, 1, 0, N_DUB_TYPE, 0},
+        {"TYPE", F_ENUM, 0, 2, 0, N_DUB_TYPE, 0},
         {"CHORD", F_ENUM, 0, 5, 0, N_DUB_CHORD, 0},
         {"COLOR", F_PCT, 0, 127, 48, 0, 0},
         {"DENSITY", F_PCT, 0, 127, 64, 0, 0},

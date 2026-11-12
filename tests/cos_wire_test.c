@@ -154,7 +154,7 @@ static const char *why_quiet(uint32_t m, const cpg_t *p, uint32_t k)
     if (m == CM_DRUMS && str_eq(p->tab, "ROLL")) return "DRUMS' ROLL: heard while a white key holds a roll (drm_test)";
     if (id == ID_MUTEQ) return "MUTE Q: when a mute lands";
     if (m == CM_SRC && str_eq(p->tab, "CHORD")) return "CHORD: what a key plays (live, recorded)";
-    if (m == CM_GEN && (str_eq(p->tab, "ACID 3") || str_eq(p->tab, "ACID 4") || str_eq(p->tab, "DUB 3") ||
+    if (m == CM_GEN && (str_eq(p->tab, "ACID 3") || str_eq(p->tab, "ACID 4") || str_eq(p->tab, "DUB 3") || (str_eq(p->tab, "BLEEP 3") && k == 2u) ||
                         str_eq(p->tab, "MUTATE")) && rb_n == RB) return "GEN: the mutations, every N bars (WIRE_LONG=1)";
     if ((m == CM_GEN || m == CM_TRIG) && p->kind == CK_EU && str_eq(p->tab, "EUCLID") && k == 3u && cos_kit())
         return "EUCLID LANE: the lane the next one writes";

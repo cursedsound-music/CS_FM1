@@ -136,7 +136,7 @@ int main(void)
     static const struct { const char *eng, *pre; uint32_t notes; } E[] = {
         {"ANALOG", "FAT BASS", 8}, {"PHASE", "STRING", 8}, {"LOFI", "BYTE BENT", 8}, {"VOICE", "WOW BASS", 4},
         {"WHEEL", "ROCK DRIVE", 8}, {"DRUM", "", 8}, {"NOISE", "METAL", 8}, {"FM6", "BRASS", 8}, {"ANIMAL", "ROAR", 8},
-        {"KICK", "RUMBLE", 8}, {"FMDRUM", "CRASH", 8}, {"DUB", "DEEP CHORD", 8}, {"DUB", "ATMOS WIDE", 8}};   /* (0.10.0: one voice; 8 notes: retriggered; 0.11.0 FMDRUM; 0.15.0 DUB) */
+        {"KICK", "RUMBLE", 8}, {"FMDRUM", "CRASH", 8}, {"DUB", "DEEP CHORD", 8}, {"DUB", "ATMOS WIDE", 8}, {"DUB", "RANDOM PINGS", 8}};   /* (0.10.0: one voice; 8 notes: retriggered; 0.11.0 FMDRUM; 0.15.0 DUB) */
     static const int16_t AM[AN_NMODE][8] = {           /* (0.8.3) ANIMAL's modes, every option on, no gaps */
         {AN_CMOS, 127, 127, 64, 63, 127, 0, 40}, {AN_PULSE, 127, 127, 26, 63, 127, 0, 22},
         {AN_WHSTL, 127, 127, 40, 63, 127, 0, 22}, {AN_WING, 127, 127, 64, 63, 127, 0, 22},
@@ -150,7 +150,7 @@ int main(void)
         if (e == NENGINES) continue;
         vg_quiet();
         vg_part(0, e, vg_preset(e, E[i].pre), E[i].notes);
-        snprintf(name, sizeof name, "eng/%s%s", E[i].eng, !strcmp(E[i].pre, "ATMOS WIDE") ? ".ATMOS" : "");
+        snprintf(name, sizeof name, "eng/%s%s", E[i].eng, !strcmp(E[i].pre, "ATMOS WIDE") ? ".ATMOS" : !strcmp(E[i].pre, "RANDOM PINGS") ? ".BLEEP" : "");
         vg_section(name);
         if (!i) {                                   /* (a self-check: the part does sound) */
             uint32_t k, n = 0;

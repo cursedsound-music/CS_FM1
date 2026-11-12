@@ -2,18 +2,18 @@
 # x86-64 gcc -O2. Exact counts; the check allows +8 %. Rewritten by BUDGET_UPDATE=1.
 cho/pad 1391
 cho/pad.fast 1410
-cos/cputest.comp 3220
-cos/cputest.comp.acid 3208
+cos/cputest.comp 3221
+cos/cputest.comp.acid 3207
 cos/cputest.comp.fx8 4238
 cos/cputest.comp.iso 3859
-cos/cputest.comp.rumble 3380
+cos/cputest.comp.rumble 3379
 cos/cputest.comp.tape 3375
-dly/full 1414
-dly/full.drive 1433
+dly/full 1419
+dly/full.drive 1441
 dly/full.throw 1590
-dly/half 1583
-dly/half.drive 1594
-dly/quarter 1625
+dly/half 1587
+dly/half.drive 1597
+dly/quarter 1621
 eng/ANALOG 2200
 eng/ANIMAL 2044
 eng/ANIMAL.CMOS 1447
@@ -23,8 +23,9 @@ eng/ANIMAL.WHSTL 1310
 eng/ANIMAL.WING 1186
 eng/DRUM 1384
 eng/DRUM.FM 1661
-eng/DUB 2406
-eng/DUB.ATMOS 2206
+eng/DUB 2407
+eng/DUB.ATMOS 2208
+eng/DUB.BLEEP 1768
 eng/FM6 1596
 eng/FMDRUM 2262
 eng/KICK 922
@@ -48,7 +49,7 @@ rev/ROOM 1346
 rev/SHIMR 1442
 rev/SPRING 1444
 rev/TIGHT 1376
-seq/heavy 2538
+seq/heavy 2537
 seq/mono4 1300
 seq/plain 2366
 seqtick/live 85

@@ -690,7 +690,7 @@ int main(void)
         set_engine_of(t3, ENGI_ANALOG); t3->p[P_ROOT] = 9; t3->p[P_VOICE] = V_POLY;   /* (A; a POLY track, the pad) */
         track_select(3); cz.mode = CM_HOME; cos_mode(CM_GEN);
         cos_pages(CM_GEN, &pp, &n);
-        CHECK(n == 7u && pp[0].kind == CK_DB && pp[3].kind == CK_AC, "a synth track's GEN: DUB, then ACID");
+        CHECK(n == 10u && pp[0].kind == CK_DB && pp[3].kind == CK_BL && pp[6].kind == CK_AC, "a synth track's GEN: DUB, BLEEP (0.15.1), then ACID");
         CHECK(trk_eng(t3) == ENGI_ANALOG && t3->p[P_VOICE] == V_POLY && t3->p[P_DLY] > 0, "DUB STAB, poly, echo on it");
         for (j = 0; j < (uint32_t)t3->p[P_SLEN]; j++) {
             const step_t *st = &t3->step[j];

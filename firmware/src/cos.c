@@ -40,7 +40,7 @@
 #define C_DARK 0x2965u                          /* (45, 45, 45): empty cells, the arcs' tracks */
 
 enum { CM_HOME, CM_TRIG, CM_SRC, CM_AMP, CM_DRUMS, CM_FX, CM_GEN, CM_MIX, CM_KEY, CM_PROJ, CM_N };
-enum { CK_NONE, CK_TRK, CK_GLO, CK_AC, CK_EU, CK_COS, CK_DB };
+enum { CK_NONE, CK_TRK, CK_GLO, CK_AC, CK_EU, CK_COS, CK_DB, CK_BL };   /* (0.15.1 CK_BL: GEN > BLEEP, ui_bleep.c) */
 enum { CC_OUTCH, CC_MOUT, CC_CLOCK, CC_SLOT, CC_TRKS, CC_LOAD, CC_COMP, CC_CATK, CC_CREL, CC_LIM, CC_PF0, CC_PF3 = CC_PF0 + 3,
        CC_X2, CC_X2E = CC_X2 + 15, CC_OCT, CC_KICK, CC_KICKE = CC_KICK + 4, CC_LN0, CC_LNE = CC_LN0 + 7, CC_KDRV, CC_BT,
        CC_L1SYNC, CC_L1RATE, CC_L1WAVE, CC_L1MODE, CC_L1PH, CC_L1FADE, CC_L2SYNC, CC_L2RATE, CC_BPM, CC_BFINE, CC_USLOT, CC_LVDLY, CC_LVREV, CC_LVFB,
@@ -171,16 +171,19 @@ static const cpg_t CZP_FX[] = {{"DJ", CK_COS, {CC_DJF, CC_EQL, CC_EQM, CC_EQH}},
                               {"RUMBLE", CK_COS, {CC_RB0, CC_RB0 + 1u, CC_RB0 + 2u, CC_RB3}}};   /* (rumble.c: the kick's dark tail) */
 static const cpg_t CZP_GENA[] = {{"ACID", CK_AC, {AK_DENS, AK_SLIDE, AK_ACC, ID_OCT}}, {"ACID 2", CK_AC, {AK_STEPS, AK_NOTES, AK_TIE, AK_OCT}},
                                 {"ACID 3", CK_AC, {AK_EVERY, AK_AMT, AK_ROOT, AK_SCALE}}, {"ACID 4", CK_AC, {AK_LOCK, AK_ROT, X, X}}};
+#define CZ_BLEEP {"BLEEP", CK_BL, {BK_SEED, BK_DENS, BK_RANGE, ID_OCT}}, {"BLEEP 2", CK_BL, {BK_LEN, BK_VARY, BK_ACC, BK_SLIDE}}, \
+                 {"BLEEP 3", CK_BL, {BK_RATCH, BK_ECHO, BK_EVERY, BK_SND}}   /* (0.15.1) bleeps and bloops (ui_bleep.c) */
 /* (a POLY synth track that is not ACID, the pad: DUB's chord stabs first, ACID's lines after them; a MONO one, the
  * bass: ACID's first, DUB's after, CZP_GENM) */
 static const cpg_t CZP_GENS[] = {{"DUB", CK_DB, {DK_SHAPE, DK_DENS, DK_MOVE, DK_LEN}}, {"DUB 2", CK_DB, {DK_BARS, DK_VOIC, DK_ECHO, ID_OCT}},
                                 {"DUB 3", CK_DB, {DK_ROOT, DK_EVERY, DK_AMT, DK_DLY}},
+                                CZ_BLEEP,
                                 {"ACID", CK_AC, {AK_DENS, AK_SLIDE, AK_ACC, ID_OCT}}, {"ACID 2", CK_AC, {AK_STEPS, AK_NOTES, AK_TIE, AK_OCT}},
                                 {"ACID 3", CK_AC, {AK_EVERY, AK_AMT, AK_ROOT, AK_SCALE}}, {"ACID 4", CK_AC, {AK_LOCK, AK_ROT, X, X}}};
 static const cpg_t CZP_GENM[] = {{"ACID", CK_AC, {AK_DENS, AK_SLIDE, AK_ACC, ID_OCT}}, {"ACID 2", CK_AC, {AK_STEPS, AK_NOTES, AK_TIE, AK_OCT}},
                                 {"ACID 3", CK_AC, {AK_EVERY, AK_AMT, AK_ROOT, AK_SCALE}}, {"ACID 4", CK_AC, {AK_LOCK, AK_ROT, X, X}},
                                 {"DUB", CK_DB, {DK_SHAPE, DK_DENS, DK_MOVE, DK_LEN}}, {"DUB 2", CK_DB, {DK_BARS, DK_VOIC, DK_ECHO, ID_OCT}},
-                                {"DUB 3", CK_DB, {DK_ROOT, DK_EVERY, DK_AMT, DK_DLY}}};
+                                {"DUB 3", CK_DB, {DK_ROOT, DK_EVERY, DK_AMT, DK_DLY}}, CZ_BLEEP};
 static const cpg_t CZP_GENK[] = {{"KICK", CK_COS, {CC_KPAT, X, X, X}}};   /* (0.10.0) a KICK track's GEN */
 static const cpg_t CZP_GENE[] = {{"EUCLID", CK_EU, {EK_HITS, EK_STEPS, EK_ROT, EK_K4}}, {"MODES", CK_EU, {EK_M0, EK_M0 + 1u, EK_M0 + 2u, EK_M0 + 3u}},
                                 {"MUTATE", CK_EU, {EK_U0, EK_U0 + 1u, EK_U0 + 2u, EK_U0 + 3u}}};
@@ -1301,6 +1304,7 @@ static const param_desc_t *cos_knob(const cpg_t *p, uint32_t k, int16_t **vp)
         return &GP[id];
     case CK_AC: return ac_desc(id, vp);
     case CK_DB: return db_desc(id, vp);
+    case CK_BL: return bl_desc(id, vp);
     case CK_EU: return eu_desc(id, vp);
     case CK_COS: return cos_cdesc(id, vp);
     }
@@ -1452,6 +1456,7 @@ static void cos_turn(uint32_t k, int32_t s)
     else if (p->id[k] == ID_MUTEQ) cos_cput(CC_MUTEQ, v);
     else if (p->kind == CK_AC) ac_put(p->id[k], v);
     else if (p->kind == CK_DB) db_put(p->id[k], v);
+    else if (p->kind == CK_BL) bl_put(p->id[k], v);
     else if (p->kind == CK_EU) eu_put(p->id[k], v);
     else if (p->kind == CK_COS) cos_cput(p->id[k], v);
     else if (p->kind == CK_GLO && p->id[k] == G_DJF) motion_djf_set(TSEL, (int16_t)v);   /* (REC: recorded too) */
@@ -2283,6 +2288,7 @@ static __attribute__((noinline)) void cos_input(void)
             else if (cz.mode == CM_PROJ) cos_proj_oct(up);
             else if (cz.mode == CM_GEN && cos_kit()) eu_oct(up, cz.tab[CM_GEN] == 2u);
             else if (cz.mode == CM_GEN && cos_page()->kind == CK_DB) db_oct(up, cos_page()->id[0] == DK_ROOT);
+            else if (cz.mode == CM_GEN && cos_page()->kind == CK_BL) bl_oct(up, cos_page()->id[0] == BK_RATCH);
             else if (cz.mode == CM_GEN) ac_oct(up, cos_page()->id[0] == AK_EVERY);
             else song.octave = (int8_t)clamp(song.octave + (up ? 1 : -1), -3, 3);
         } else
@@ -3612,6 +3618,25 @@ static void cos_body_gen(void)
         cz_rtop = 40;
         return;
     }
+    if (cos_page()->kind == CK_BL) {                     /* (0.15.1) BLEEP: its seed, its key */
+        static const char *const NN[12] = {"C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"};
+        const bl_t *a = bl_of(song.sel);
+        eu_t key;
+        ac_t dm;
+        char b[24];
+        memset(&dm, 0, sizeof dm);
+        ac_key(song.sel, &dm, &key);
+        str_cpy(b, "SEED ", sizeof b);
+        fmt_int(b + 5, a->seed);
+        str_cpy(b + str_len(b), "  ", 3);
+        str_cpy(b + str_len(b), NN[key.root % 12u], 3);
+        cos_tx(4, 38, b, C_FG);
+        cos_txr(236, 38, cos_page()->id[0] == BK_RATCH ? "OCT+ MUTATE" : "OCT+ NEW", C_DIM);
+        cz_rtop = 54;
+        cos_body_trig();
+        cz_rtop = 40;
+        return;
+    }
     {
         const ac_t *a = ac_of(song.sel);
         eu_t key;
@@ -3970,7 +3995,7 @@ dials:
 /* the splash (ui_draw.c draw_splash / splash_write under COS_SLIM; main.c's boot loop calls it every ~4 ms for
  * SPL_WRITE + SPL_HOLD ms): black, a few still stars, the name 2x, the version, a 16-block bar filling like a pattern
  * (the block being filled red), READY. Drawn whole once, then only the bar's strip when a block fills */
-#define COS_VERSION "0.15.0"
+#define COS_VERSION "0.15.1"
 static void cos_px2(int32_t x, int32_t y, const char *s, uint16_t c)      /* (the face 2 x 2) */
 {
     int32_t r, b, b0;

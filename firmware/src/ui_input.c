@@ -2295,6 +2295,7 @@ static void ui_input(void)
     eu_tick();
     ac_tick();
     db_tick();                                          /* (cursedsound) DUB's mutations, on the bar */
+    bl_tick();                                          /* (cursed-os 0.15.1) BLEEP's */
     mph_tick();                                          /* (cursedsound) MORPH's glide */
     scale_link();
     return;
@@ -2307,6 +2308,7 @@ static void ui_input(void)
         eu_tick();
         ac_tick();
         db_tick();
+        bl_tick();
         mph_tick();
         scale_link();
         return;
