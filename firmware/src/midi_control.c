@@ -13,14 +13,30 @@ typedef struct {
     uint8_t rpn_msb, rpn_lsb;
 } midi_channel_t;
 static midi_channel_t midi_ch[16];
-/* A nibble per note (JIANT: two to a byte, 1 KB): low bits track + 1, bit 3 key released, held by its channel's pedal */
-static uint8_t midi_sel_on[16][64];
-static uint32_t mn_get(uint32_t ch, uint32_t note) { return (midi_sel_on[ch & 15u][(note & 127u) >> 1] >> ((note & 1u) * 4u)) & 15u; }
+/* A nibble per note sounding: low bits track + 1, bit 3 key released, held by its channel's pedal. (cursed-os 0.15.2:
+ * the notes held only, MN_MAX of them, an entry ch << 11 | note << 4 | the nibble, 0 free; JIANT's table of every note
+ * of every channel was 1 KB of the 96 KiB RAM. Full: the oldest-placed slot taken, round) */
+#define MN_MAX 96u
+static uint16_t mn_tab[MN_MAX];
+static uint8_t mn_rot;
+#define midi_sel_on mn_tab                              /* (seq.c's clear) */
+static uint32_t mn_get(uint32_t ch, uint32_t note)
+{
+    uint32_t key = (ch & 15u) << 11 | (note & 127u) << 4, i;
+    for (i = 0; i < MN_MAX; i++)
+        if ((mn_tab[i] & 0x7FF0u) == key && (mn_tab[i] & 15u)) return mn_tab[i] & 15u;
+    return 0;
+}
 static void mn_set(uint32_t ch, uint32_t note, uint32_t v)
 {
-    uint8_t *b = &midi_sel_on[ch & 15u][(note & 127u) >> 1];
-    uint32_t sh = (note & 1u) * 4u;
-    *b = (uint8_t)((*b & ~(15u << sh)) | (v & 15u) << sh);
+    uint32_t key = (ch & 15u) << 11 | (note & 127u) << 4, i, fr = MN_MAX;
+    for (i = 0; i < MN_MAX; i++) {
+        if ((mn_tab[i] & 0x7FF0u) == key && (mn_tab[i] & 15u)) { mn_tab[i] = (uint16_t)((v & 15u) ? key | (v & 15u) : 0u); return; }
+        if (!(mn_tab[i] & 15u) && fr == MN_MAX) fr = i;
+    }
+    if (!(v & 15u)) return;
+    if (fr == MN_MAX) fr = (mn_rot++) % MN_MAX;
+    mn_tab[fr] = (uint16_t)(key | (v & 15u));
 }
 static uint16_t midi_owners[NTRK];           /* avoids rescanning all 2048 entries for CC123 */
 #define MIDI_PEDAL_NOTE 0x8u
@@ -60,9 +76,9 @@ static void midi_expression_channel(uint32_t ch)
 /* a MIDI note of track t sounds note */
 static int midi_note_held(const track_t *t, uint32_t note)
 {
-    uint32_t ch, id = trk_index(t) + 1u;
-    for (ch = 0; ch < 16u; ch++)
-        if ((mn_get(ch, note) & 0x7u) == id)
+    uint32_t i, id = trk_index(t) + 1u;
+    for (i = 0; i < MN_MAX; i++)                         /* (0.15.2: the held notes' table, once) */
+        if ((mn_tab[i] & 15u) && ((mn_tab[i] >> 4) & 127u) == (note & 127u) && (mn_tab[i] & 0x7u) == id)
             return 1;
     return 0;
 }
@@ -139,9 +155,9 @@ static void midi_pedal_up(uint32_t ch)
 {
     uint32_t note;
     midi_channel(ch)->pedal = 0;
-    for (note = 0; note < 128u; note++)
-        if (mn_get(ch, note) & MIDI_PEDAL_NOTE)
-            midi_release(ch, note);
+    for (note = 0; note < MN_MAX; note++)                /* (0.15.2: the channel's held notes) */
+        if ((mn_tab[note] & MIDI_PEDAL_NOTE) && (mn_tab[note] >> 11) == ch)
+            midi_release(ch, (mn_tab[note] >> 4) & 127u);
 }
 
 /* Preset/project panic and CC120 must discard ownership so a later pedal-up
@@ -152,9 +168,9 @@ static void __attribute__((noinline)) midi_forget_track(uint32_t track)
     for (ch = 0; ch < 16u; ch++) {
         if (!(midi_ch[ch].targets & (1u << track)))
             continue;
-        for (note = 0; note < 128u; note++)
-            if ((mn_get(ch, note) & 0x7u) == track + 1u)
-                mn_set(ch, note, 0);
+        for (note = 0; note < MN_MAX; note++)            /* (0.15.2: the table's, the channel's of the track) */
+            if ((mn_tab[note] & 15u) && (mn_tab[note] >> 11) == ch && (mn_tab[note] & 0x7u) == track + 1u)
+                mn_tab[note] = 0;
         midi_ch[ch].targets &= (uint8_t)~(1u << track);
         midi_ch[ch].owned[track] = 0;
     }
@@ -315,9 +331,9 @@ static void midi_control(uint32_t ch, uint32_t cc, uint32_t value)
         break;
     case 123:                                      /* All Notes Off: normal releases, honours pedal */
         mask = midi_targets(ch);
-        for (i = 0; i < 128u; i++)
-            if (mn_get(ch, i))
-                midi_note_event(ch, i, 0);
+        for (i = 0; i < MN_MAX; i++)                     /* (0.15.2: the channel's held notes, each once) */
+            if ((mn_tab[i] & 15u) && (mn_tab[i] >> 11) == ch)
+                midi_note_event(ch, (mn_tab[i] >> 4) & 127u, 0);
         for (i = 0; i < NTRK; i++)
             if ((mask & (1u << i)) && !midi_track_held(i)) {
                 trk_all_off(&trk[i]);
@@ -368,9 +384,9 @@ static void __attribute__((noinline)) midi_route_ch14(void)
     uint32_t ch, note;
     for (ch = NPART; ch < 16u; ch++) {
         midi_channel_t *c = midi_channel(ch);
-        for (note = 0; note < 128u; note++)
-            if (mn_get(ch, note))
-                midi_release(ch, note);
+        for (note = 0; note < MN_MAX; note++)            /* (0.15.2: the channel's held notes) */
+            if ((mn_tab[note] & 15u) && (mn_tab[note] >> 11) == ch)
+                midi_release(ch, (mn_tab[note] >> 4) & 127u);
         c->pedal = c->wheel = 0;
         c->bend = 0;
         c->rpn_msb = c->rpn_lsb = 127;

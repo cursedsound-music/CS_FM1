@@ -1392,8 +1392,6 @@ static uint32_t comp_count(const track_t *t, const step_t *s, uint32_t k)
 }
 /* SHIFT: a circular, non-destructive playback map. Conditions are pass based so
  * earlier destinations can be known before their source step is reached. */
-static uint8_t shift_map[2][NTRK][NSTEP], shift_len[2][NTRK];
-static uint16_t shift_pass[2][NTRK];
 static int shift_cond(const track_t *t, const step_t *s, uint32_t k, uint32_t p)
 {
     uint32_t c = CO_COND(k ? s->comp2 : s->comp), nm = s->cnm[k];
@@ -1406,6 +1404,18 @@ static int shift_cond(const track_t *t, const step_t *s, uint32_t k, uint32_t p)
     }
     return 0; /* Conditions depending on future live events are not offered for SHIFT. */
 }
+#if COS_SLIM
+/* (cursed-os 0.15.2) no SHIFT: cursed-os writes none (JIANT's SEQ > COMP did), so its map (768 B of the 96 KiB RAM) and
+ * each step's look-ahead are left out: a JIANT project's SHIFT plays its steps where they are */
+static void shift_prepare_pass(const track_t *t, uint32_t len, uint32_t pass) { (void)t; (void)len; (void)pass; }
+static const step_t *shift_step_pass(const track_t *t, uint32_t idx, uint32_t pass)
+{
+    (void)pass;
+    return &seq_steps(t)[seq_src(t, idx)];
+}
+#else
+static uint8_t shift_map[2][NTRK][NSTEP], shift_len[2][NTRK];
+static uint16_t shift_pass[2][NTRK];
 static void shift_prepare_pass(const track_t *t, uint32_t len, uint32_t pass)
 {
     uint32_t ti = trk_index(t) % NTRK, bank = pass & 1u, i, k, j;
@@ -1440,6 +1450,7 @@ static const step_t *shift_step_pass(const track_t *t, uint32_t idx, uint32_t pa
     if (shift_valid[bank][ti]) src = shift_map[bank][ti][src];
     return src == 255u ? &rest : &seq_steps(t)[src];
 }
+#endif
 
 static const step_t *shift_step(const track_t *t, uint32_t idx)
 {
