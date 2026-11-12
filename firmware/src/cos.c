@@ -3995,7 +3995,7 @@ dials:
 /* the splash (ui_draw.c draw_splash / splash_write under COS_SLIM; main.c's boot loop calls it every ~4 ms for
  * SPL_WRITE + SPL_HOLD ms): black, a few still stars, the name 2x, the version, a 16-block bar filling like a pattern
  * (the block being filled red), READY. Drawn whole once, then only the bar's strip when a block fills */
-#define COS_VERSION "0.15.2"
+#define COS_VERSION "0.15.3"
 static void cos_px2(int32_t x, int32_t y, const char *s, uint16_t c)      /* (the face 2 x 2) */
 {
     int32_t r, b, b0;
@@ -4109,21 +4109,27 @@ static __attribute__((noinline)) void cos_leds(void)
     if (cz.fx_down) {                                    /* (FX held: the pad's keys, each lit while its effect is on,
                                                          * latched or held; the rest at the glow) */
         for (k = 0; k < 27u; k++) led_put(nl, 14u + k, cos_pad_lit(k));
-    } else if ((cz.mode == CM_TRIG && !cz.si) || cz.mode == CM_HOME) {
+    } else if ((cz.mode == CM_TRIG && !cz.si) || cz.mode == CM_HOME || cos_home_held()) {
+        int hv = cz.mode == CM_HOME || cos_home_held();  /* (0.15.3, GG: HOME held, in any mode: the tracks and the drums
+                                                         * as they sound, lit in, dark out) */
+        uint32_t so = live_qsolo_on ? live_qsolo : perf_solo;
         for (k = 0; k < 16u; k++) {
             uint32_t st = cz.bank * 16u + k;
-            int on = cz.mode == CM_HOME ? k == song.sel : st < len && (cos_step(t, st, cos_kit() ? cz.lane : NLANE) != 0u) != (st == now);
+            int on = hv ? k == song.sel && !cos_home_held() : st < len && (cos_step(t, st, cos_kit() ? cz.lane : NLANE) != 0u) != (st == now);
             led_put(nl, 14u + WK[k], on);
         }
-        for (k = 0; k < 11u; k++)
-            led_put(nl, 14u + BK[k], cz.mode == CM_HOME ? k < trk_live && !trk[k].p[P_MUTE] : cos_kit() && k == cz.lane);
-        if (cz.mode == CM_HOME) {                        /* (0.10.4) a mute queued for the beat / bar: its key breathes
+        for (k = 0; k < 11u; k++)                        /* (a track heard: not muted, and in the SOLO when one is on) */
+            led_put(nl, 14u + BK[k], hv ? k < trk_live && !trk[k].p[P_MUTE] && (!so || ((so >> k) & 1u)) : cos_kit() && k == cz.lane);
+        if (hv) {                                        /* (0.10.4) a mute queued for the beat / bar: its key breathes
                                                          * (lit now, dark next, or the other way round) */
             for (k = 0; k < NTRK && k < trk_live; k++)
                 if ((live_qmute >> k) & 1u) { led_clear(nl, 14u + BK[k]); led_put(nb, 14u + BK[k], 1); }
         }
-        if (cos_on_live()) {                             /* (0.10.4) LIVE: white 1..8 lit while the drum sound is in
-                                                         * (KICK: the KICK track playing), breathing when a flip waits */
+        if (cos_home_held() && dx_k0p)                   /* (0.14.1) white 9: the PERC */
+            led_put(nl, 14u + WK[8], !(dx_mute & DXM_LANE(0)));
+        if (cos_on_live() || cos_home_held()) {          /* (0.10.4) LIVE (0.15.3: and HOME held): white 1..8 lit while
+                                                         * the drum sound is in (KICK: the KICK track playing), breathing
+                                                         * when a flip waits */
             int kt = cos_kick_trk();
             for (k = 0; k < 8u; k++) {
                 int in = k || kt < 0 ? !(dx_mute & DXM_LANE(k)) : !trk[kt].p[P_MUTE];
