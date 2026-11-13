@@ -630,7 +630,7 @@ int main(void)
         cos_test_btn(B_HOME, 0);
         CHECK(cz.tab[CM_HOME] == 3u, "let go after a knob: MACROS again (%u)", cz.tab[CM_HOME]);
         cos_test_btn(B_HOME, 1); cos_test_btn(B_HOME, 0);
-        CHECK(cz.tab[CM_HOME] == 4u, "a tap: the next page, MORPH (%u)", cz.tab[CM_HOME]);
+        CHECK(cz.tab[CM_HOME] == 0u, "a tap: the next everyday page, PERFORM (0.16.0: MORPH by SELECT) (%u)", cz.tab[CM_HOME]);
         cz.mode = CM_FX; cz.tab[CM_HOME] = 2;
         cos_test_btn(B_HOME, 1);
         CHECK(cz.mode == CM_HOME && cz.tab[CM_HOME] == 0u, "from FX: HOME, PERFORM while held");
@@ -1421,8 +1421,10 @@ int main(void)
         CHECK(song.octave == oc + 1 && cz.bank == 0u, "STEP: OCT+ the octave, not the bank");
         song.octave = oc;
         cos_test_btn(B_SEQ, 1); cos_test_btn(B_SEQ, 0); cos_input();
-        CHECK(str_eq(cos_page()->tab, "COND") && !cz.si && song.grid == 2u, "SEQ again: COND (0.14.0), the keys the steps again");
-        cos_test_btn(B_SEQ, 1); cos_test_btn(B_SEQ, 0); cos_input();
+        CHECK(str_eq(cos_page()->tab, "EUCLID") && !cz.si && song.grid == 2u, "SEQ again: EUCLID (0.16.0: COND by SELECT), the keys the steps again");
+        host_ticks += 1000000u; host_enc[panel.enc[EN_SELECT]] = -1; cos_input();
+        CHECK(str_eq(cos_page()->tab, "COND"), "SELECT back: COND (%s)", cos_page()->tab);
+        host_ticks += 1000000u; host_enc[panel.enc[EN_SELECT]] = 1; cos_input();
         CHECK(str_eq(cos_page()->tab, "EUCLID"), "then EUCLID");
         {
             int16_t *vp;
@@ -1433,8 +1435,8 @@ int main(void)
             for (i0 = 0; i0 < NSTEP; i0++) n1 += TSEL->step[i0].time == ST_NOTE;
             CHECK(d && n1 != n0 && n1 > 0u, "EUCLID on a synth: HITS writes its notes (%u -> %u)", n0, n1);
         }
-        cos_test_btn(B_SEQ, 1); cos_test_btn(B_SEQ, 0);
-        CHECK(str_eq(cos_page()->tab, "MODES"), "then MODES");
+        host_ticks += 1000000u; host_enc[panel.enc[EN_SELECT]] = 1; cos_input();
+        CHECK(str_eq(cos_page()->tab, "MODES"), "then MODES (SELECT)");
         cos_test_btn(B_SEQ, 1); cos_test_btn(B_SEQ, 0);
         CHECK(str_eq(cos_page()->tab, "TRIG"), "and TRIG again");
         {
@@ -1447,15 +1449,12 @@ int main(void)
         track_select(i0 < trk_live ? i0 : 0); if (!drum_track(TSEL)) { set_engine_of(TSEL, ENGI_DRUM); TSEL->engine = ENGI_DRUM; }
         cz.tab[CM_TRIG] = 0;
         cos_test_btn(B_SEQ, 1); cos_test_btn(B_SEQ, 0);
-        CHECK(drum_track(TSEL) && str_eq(cos_page()->tab, "COND"), "a kit: TRIG, then COND (no STEP)");
-        cos_test_btn(B_SEQ, 1); cos_test_btn(B_SEQ, 0);
-        CHECK(drum_track(TSEL) && str_eq(cos_page()->tab, "EUCLID"), "then EUCLID");
+        CHECK(drum_track(TSEL) && str_eq(cos_page()->tab, "EUCLID"), "a kit: TRIG, then EUCLID (no STEP; COND by SELECT)");
         {                                                 /* (another track: the same page by its name) */
             uint32_t kit = song.sel;
             track_select(1); cos_input();
             CHECK(str_eq(cos_page()->tab, "EUCLID"), "a synth after the kit's EUCLID: EUCLID (%s)", cos_page()->tab);
-            cos_test_btn(B_SEQ, 1); cos_test_btn(B_SEQ, 0);   /* (MODES) */
-            cos_test_btn(B_SEQ, 1); cos_test_btn(B_SEQ, 0);   /* (TRIG) */
+            cos_test_btn(B_SEQ, 1); cos_test_btn(B_SEQ, 0);   /* (TRIG: 0.16.0, MODES by SELECT) */
             cos_test_btn(B_SEQ, 1); cos_test_btn(B_SEQ, 0);   /* (STEP) */
             CHECK(str_eq(cos_page()->tab, "STEP"), "the synth on STEP");
             track_select(kit); cos_input();

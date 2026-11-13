@@ -68,6 +68,16 @@ static inline int32_t softclip(int32_t x)
     return x < 0 ? -y : y;
 }
 
+/* (cursed-os 0.13.1, GG 2026-11-11: "hiss and artifacts, especially with limiter drive and sidechain") x (the mix, up
+ * to +-2^21, 0 dBFS at 32768) times g (Q15, up to 2^18) in 32 bits without dropping x's low bits. Before, (x >> 4) * g:
+ * the mix cut to 11 bits wherever the COMP (always, even at unity), the limiter's DRIVE or its gain reduction ran, a
+ * grainy -66 dB floor on every tail, raised by MAKEUP and DRIVE */
+static inline int32_t mix_mul(int32_t x, int32_t g)
+{
+    int32_t gq = g >> 4;
+    return (((x >> 4) * gq) >> 7) + (((x & 15) * gq + 1024) >> 11);
+}
+
 /* xorshift32 */
 static inline uint32_t noise32(int32_t *st)
 {

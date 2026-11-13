@@ -353,15 +353,6 @@ static int32_t comp_ex2(int32_t q)                      /* 2^(q / 256) * 32768, 
     int32_t e = q >> 8, f = q & 255, m = 32768 + ((32768 * f) >> 8) - ((f * (256 - f) * 43) >> 8);   /* (a bent line) */
     return e >= 0 ? (e > 6 ? m << 6 : m << e) : (-e > 30 ? 0 : m >> -e);
 }
-/* (cursed-os 0.13.1, GG 2026-11-11: "hiss and artifacts, especially with limiter drive and sidechain") x (the mix, up
- * to +-2^21, 0 dBFS at 32768) times g (Q15, up to 2^18) in 32 bits without dropping x's low bits. Before, (x >> 4) * g:
- * the mix cut to 11 bits wherever the COMP (always, even at unity), the limiter's DRIVE or its gain reduction ran, a
- * grainy -66 dB floor on every tail, raised by MAKEUP and DRIVE */
-static inline int32_t mix_mul(int32_t x, int32_t g)
-{
-    int32_t gq = g >> 4;
-    return (((x >> 4) * gq) >> 7) + (((x & 15) * gq + 1024) >> 11);
-}
 static const uint16_t COMP_RQ[8] = {384, 512, 768, 1024, 1536, 2048, 3072, 5120};   /* RATIO 1.5 2 3 4 6 8 12 20, Q8 */
 static const int16_t COMP_SCA[7] = {0, 16290, 16244, 16174, 16104, 16034, 15918};    /* SC HPF OFF 40 60 90 120 150 200 Hz:
                                                                                      * a one-pole's pole, Q14 */
@@ -1731,7 +1722,8 @@ static __attribute__((noinline)) void rev_plate(const int32_t *rev_in, int32_t *
              PLR(PB_RD1, PL_F(2111)) - PLR(PB_RA2, PL_F(335)) - PLR(PB_RD2, PL_F(121));
         m = ((yl + yr) * 19) >> 4;                        /* (ROOM's level: x 0.6 each in the paper, the -12 dB in back,
                                                          * matched by ear to a noise burst's, tests/reverb_test.c) */
-        sd = plmul(((yl - yr) * 19) >> 4, wd);
+        sd = plmul(clamp(((yl - yr) * 19) >> 4, -65535, 65535), wd);   /* (0.16.0: a hot tank's side past 2^16 overflowed
+                                                         * the multiply, a wrapped click: the soak's UBSan) */
         out[i] += (pm + m) >> 1;                          /* (back up to the full rate: between, then on) */
         out[i + 1u] += m;
         fx_sl[i] += (ps + sd) >> 1; fx_sr[i] -= (ps + sd) >> 1;
@@ -2801,7 +2793,9 @@ static inline __attribute__((always_inline)) void mix_part(track_t *t, uint32_t 
         if (ENGINES[t->engine] == &ENG_DRUM)
             c = d = r = 0;
         for (i = 0; i < n; i++, lq += dl, gl += dgl, gr += dgr) {
-            int32_t x = ((b[i] >> 2) * (lq >> 8)) >> 10, a = x < 0 ? -x : x;   /* pre-shift: 8 loud voices */
+            int32_t x = mix_mul(clamp(b[i], -(1 << 21) + 1, (1 << 21) - 1), (lq >> 8) << 3), a = x < 0 ? -x : x;   /* (cursed-os
+                                                         * 0.16.0, GG: noise on kicks and bass tails: was (b >> 2) * l, every
+                                                         * track cut to 13 bits, a floor's grain on the quiet ends) */
             int32_t xs = clamp(x, -xmax, xmax);         /* sends: mulq15 would overflow */
             if (a > pk)
                 pk = a;
@@ -2936,8 +2930,8 @@ static __attribute__((noinline)) void perf_master(int32_t *out, uint32_t n)
     uint32_t i;
     int32_t mg = fx_usb_fixed ? MASTER_FULL : (int32_t)song.master_q12;   /* (USB LEVEL FIXED: MASTER after) */
     for (i = 0; i < n; i++) {
-        mix_l[i] = (((mix_l[i] + wet[i]) >> 2) * mg) >> 10;
-        mix_r[i] = (((mix_r[i] + wet[i]) >> 2) * mg) >> 10;
+        mix_l[i] = mix_mul(clamp(mix_l[i] + wet[i], -(1 << 21) + 1, (1 << 21) - 1), mg << 3);   /* (0.16.0: all its bits; */
+        mix_r[i] = mix_mul(clamp(mix_r[i] + wet[i], -(1 << 21) + 1, (1 << 21) - 1), mg << 3);   /* was >> 2 first) */
     }
     perf_block(mix_l, mix_r, n);
     for (i = 0; i < n; i++) {
@@ -3338,8 +3332,8 @@ static __attribute__((noinline)) void mix_block(int32_t *out, uint32_t n)   /* (
         return;
     }
     for (i = 0; i < n; i++) {
-        int32_t l = (((mix_l[i] + wet[i]) >> 2) * mg) >> 10;
-        int32_t r = (((mix_r[i] + wet[i]) >> 2) * mg) >> 10;
+        int32_t l = mix_mul(clamp(mix_l[i] + wet[i], -(1 << 21) + 1, (1 << 21) - 1), mg << 3);   /* (0.16.0) */
+        int32_t r = mix_mul(clamp(mix_r[i] + wet[i], -(1 << 21) + 1, (1 << 21) - 1), mg << 3);
         master_out(&l, &r);
         out[2u * i] = l;
         out[2u * i + 1u] = r;

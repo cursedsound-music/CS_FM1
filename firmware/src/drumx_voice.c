@@ -188,6 +188,7 @@ static uint8_t dx_hands;
  * (its patches) */
 enum { DE_ATK, DE_HLD, DE_SUS, DE_REL, DE_SCH, DE_SDL, DE_SRV, DE_N };
 static uint8_t dx_de[8][DE_N];
+static const uint8_t DX_DE_NONE[DE_N];               /* (0.16.0) a KICK track's: no AHDSR (dx_run) */
 /* ATTACK / HOLD 1..127 -> half-rate samples (the ADSR's times); 0: none */
 static uint32_t dx_ahs(uint32_t x) { return x ? TIME_MS_X10[x & 127u] * 2205u / 1000u : 0u; }
 static dx_lane_t dx_kit[8];                              /* (defined below with the factory kit: the BP knows its lanes) */
@@ -241,7 +242,7 @@ static __attribute__((noinline)) void dx_fmd(const dx_lane_t *L, dx_voice_t *v, 
     uint32_t ly = ln < 8u ? dx_lay[ln] : 0u, cw = DXF_LW(ly);   /* (0.13.0) its RATIO, WAVE, S.TIME */
     int32_t tk = (int32_t)DXF_TRN_OF(L->mode), h1, h2, rng, tpos;
     uint32_t ph0, ph1, ph2;
-    const uint8_t *de = dx_de[ln & 7u];
+    const uint8_t *de = ln < 8u ? dx_de[ln] : DX_DE_NONE;   /* (0.16.0: 8, a KICK track's: no AHDSR of the kit's) */
     morph = clamp(morph, 0, 127);
     for (k = 0; k < DXP_N; k++)
         q[k] = L->a[k] + ((L->b[k] - L->a[k]) * morph) / 127;
@@ -370,14 +371,19 @@ static __attribute__((noinline)) void dx_run(const dx_lane_t *L, dx_voice_t *v, 
     tsvf_t c;
     uint32_t nf = n, ln = L >= dx_kit && L < dx_kit + 8 ? (uint32_t)(L - dx_kit) : v->lg & 7u;   /* (cursed-os: an
                                                           * ACOUSTIC copy's, the lane drum_render set; was 0) */
-    int32_t lay = (int32_t)DX_LAY_L(dx_lay[ln]), lfb = (int32_t)DX_TONE_FB(dx_tone) + (int32_t)DX_LAY_FB(dx_lay[ln]);
+    /* (cursed-os 0.16.0, GG: "crackle on kicks ... mostly with kicks and bass") a KICK track's hit (lg's 0x40, eng_drum.c
+     * drum_render): the kit's lane 0 is not its sound. It took the kit's first lane's LAYER, FEEDBK and AHDSR (since
+     * 0.14.1 the PERC: a RIDE from FMDRUM, its FM settings read as LAYER 10, FEEDBK 12 on the kick's sine, the kick a
+     * crackling, noisy FM from the first PLAY on). Its own: none of them */
+    int own = (v->lg & 0x40u) != 0u;
+    int32_t lay = own ? 0 : (int32_t)DX_LAY_L(dx_lay[ln]), lfb = own ? 0 : (int32_t)DX_TONE_FB(dx_tone) + (int32_t)DX_LAY_FB(dx_lay[ln]);
     if (!v->live && !v->trig) {
         for (i = 0; i < n; i++)
             y[i] = 0;
         return;
     }
     if (flt == DXF_FM) {                                 /* (cursed-os 0.12.0) FMDRUM's voice */
-        dx_fmd(L, v, morph, tune16, dofs, cofs, nofs, y, n, ln);
+        dx_fmd(L, v, morph, tune16, dofs, cofs, nofs, y, n, own ? 8u : ln);   /* (0.16.0: 8, none of the kit's) */
         return;
     }
     if (nf < 2u) {                                       /* (ctl64) one sample (a hit starting at a block's last sample,
@@ -422,7 +428,7 @@ static __attribute__((noinline)) void dx_run(const dx_lane_t *L, dx_voice_t *v, 
     kb = v->choke ? dv_kb(1500u) : dv_kb(ta);            /* (a choked hit: gone in ~5 ms) */
     ea1 = mulq16(v->ea, kb);
     en1 = mulq16(v->en, v->choke ? kb : dv_kb(tn));
-    const uint8_t *de = dx_de[ln];
+    const uint8_t *de = own ? DX_DE_NONE : dx_de[ln];
     uint32_t aA = dx_ahs(de[DE_ATK]), aH = dx_ahs(de[DE_HLD]);
     if (!v->choke && (aA | aH | de[DE_SUS])) {           /* (cursed-os) the drum's AHDSR around its own DECAY */
         if (v->at < aA + aH) {                 /* ATTACK, HOLD: the hit at its top, not falling yet */

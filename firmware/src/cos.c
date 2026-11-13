@@ -306,6 +306,42 @@ static void cos_pages(uint32_t m, const cpg_t **p, uint32_t *n)
         if (o != *n) { *p = keep; *n = o; }
     }
 }
+/* (cursed-os 0.16.0, GG 2026-11-13: "the ui on the synth is too cluttered and too menu divy"; SIMPLE + DEEP) each mode's
+ * everyday pages: its button's taps go round only these (and the tab bar shows only these, the deep page in use too, and
+ * how many more there are); SELECT turns through every page, as ever. Nothing gone: the rest one SELECT away. A mode of
+ * three pages or fewer: all of them */
+static const char *const CZ_ESS[CM_N] = {
+    "PERFORM|LIVE",                                     /* HOME */
+    "TRIG|STEP|EUCLID",                                 /* SEQ */
+    "DRUM|SOUND|KICK|KICK 2|SRC 1|FILTER|DEVIL|WORDS",  /* EDIT: the sound and its filter (the first page always) */
+    "AMP|FILTER 1|LFO 1",                               /* ENV */
+    "", "SEND|DELAY|REVERB",                            /* LFO: DRUMS (3), FX */
+    "ACID|DUB|BLEEP|EUCLID|KICK",                       /* GEN: each generator's first */
+    "MIX|LIMIT", "", ""};                               /* GLO; KEY, SAVE */
+static int cos_ess(uint32_t m, const cpg_t *p, uint32_t i, uint32_t n)
+{
+    const char *l = CZ_ESS[m % CM_N], *t = p[i].tab;
+    if (n <= 3u || !i) return 1;
+    while (*l) {                                        /* (each name between the bars) */
+        uint32_t j = 0;
+        while (t[j] && l[j] == t[j]) j++;
+        if (!t[j] && (l[j] == '|' || !l[j])) return 1;
+        while (*l && *l != '|') l++;
+        if (*l) l++;
+    }
+    return 0;
+}
+/* the next everyday page after page cur of mode m (a tap on its button) */
+static uint32_t cos_ess_next(uint32_t m, uint32_t cur)
+{
+    const cpg_t *p;
+    uint32_t n, j;
+    cos_pages(m, &p, &n);
+    if (!n) return 0;
+    for (j = 1; j <= n; j++)
+        if (cos_ess(m, p, (cur + j) % n, n)) return (cur + j) % n;
+    return (cur + 1u) % n;
+}
 static const cpg_t *cos_page(void)
 {
     const cpg_t *p;
@@ -1989,10 +2025,7 @@ static void cos_mode(uint32_t m)
     if (m == CM_PROJ && cz.mode != CM_PROJ) { cz.slot = proj_cur_slot() < 4u ? (uint8_t)proj_cur_slot() : cz.slot; cos_proj_scan(); }
     if (m == CM_GEN && cz.mode != CM_GEN) { cz.mode = (uint8_t)m; cz.hot = 0; cos_gen_enter(); return; }
     if (cz.mode == m) {                                 /* again: the next page (Elektron's way) */
-        const cpg_t *p;
-        uint32_t n;
-        cos_pages(m, &p, &n);
-        cz.tab[m] = (uint8_t)((cz.tab[m] + 1u) % n);
+        cz.tab[m] = (uint8_t)cos_ess_next(m, cz.tab[m]);   /* (0.16.0: the everyday pages only; SELECT: all) */
     }
     cz.mode = (uint8_t)m;
     cz.hot = 0;
@@ -2304,10 +2337,8 @@ static __attribute__((noinline)) void cos_input(void)
     if (cz.home_down && ((released >> panel.btn[B_HOME]) & 1u)) {
         cz.home_down = 0;
         if (cz.mode == CM_HOME) {
-            const cpg_t *hp;
-            uint32_t hn;
-            cos_pages(CM_HOME, &hp, &hn);
-            cz.tab[CM_HOME] = (uint8_t)(cz.home_used ? cz.home_tab : (cz.home_tab + 1u) % hn);   /* (a tap on HOME: its next page) */
+            cz.tab[CM_HOME] = (uint8_t)(cz.home_used ? cz.home_tab : cos_ess_next(CM_HOME, cz.home_tab));   /* (a tap on HOME:
+                                                         * its next everyday page, 0.16.0) */
         }
     }
     if (cz.rec_down && ((released >> panel.btn[B_REC]) & 1u)) {
@@ -3043,14 +3074,19 @@ static void cos_tabs(void)
     }
     cos_pages(cz.mode, &p, &n);
     {
-        uint32_t cur = cz.tab[cz.mode] % n, f = 0, j;
+        uint32_t cur = cz.tab[cz.mode] % n, f = 0, j, k = 0, more = 0;
         const engine_t *e = trk_engp(TSEL);
         const char *nm[CZ_TABS];                         /* (0.9.2: 16, MIX has 14; was 12, past its end) */
         int32_t span;
         if (n > CZ_TABS) n = CZ_TABS;
         cur = cz.tab[cz.mode] % n;
-        for (i = 0; i < n; i++)                /* (EDIT's first two: the engine's own names for them) */
-            nm[i] = cz.mode == CM_SRC && i < 2u && !cos_kit() && e->page_title[i] ? e->page_title[i] : p[i].tab;
+        for (i = 0, j = cur; i < n; i++) {     /* (EDIT's first two: the engine's own names for them; 0.16.0: the
+                                                         * everyday pages and the one in use, the others counted) */
+            if (!cos_ess(cz.mode, p, i, n) && i != j) { more++; continue; }
+            if (i == j) cur = k;
+            nm[k++] = cz.mode == CM_SRC && i < 2u && !cos_kit() && e->page_title[i] ? e->page_title[i] : p[i].tab;
+        }
+        n = k;
         do {                                             /* (the first one shown: the page picked fits) */
             for (span = 0, j = f; j <= cur; j++) span += cos_w(nm[j]) + 10;
         } while (span > 236 && ++f < cur);
@@ -3061,6 +3097,14 @@ static void cos_tabs(void)
             if (i == cur) { cv_rect(x, 20, w, 12, C_FG); cos_tx(x + 3, 22, nm[i], C_BG); }
             else cos_tx(x + 3, 22, nm[i], C_DIM);
             x += w + 4;
+        }
+        if (more && !(cz.mode == CM_TRIG && cos_banks() > 1u)) {   /* (the deep pages: SELECT) */
+            char b[6];
+            b[0] = '+';
+            b[1] = (char)(more >= 10u ? '0' + more / 10u : '0' + more);
+            b[2] = more >= 10u ? (char)('0' + more % 10u) : 0;
+            b[3] = 0;
+            if (x + cos_w(b) <= 238) cos_txr(238, 22, b, C_DIM);
         }
     }
     if (cz.mode == CM_TRIG && cos_banks() > 1u) {       /* the bank of 16: 1/4 */
@@ -3995,7 +4039,7 @@ dials:
 /* the splash (ui_draw.c draw_splash / splash_write under COS_SLIM; main.c's boot loop calls it every ~4 ms for
  * SPL_WRITE + SPL_HOLD ms): black, a few still stars, the name 2x, the version, a 16-block bar filling like a pattern
  * (the block being filled red), READY. Drawn whole once, then only the bar's strip when a block fills */
-#define COS_VERSION "0.15.3"
+#define COS_VERSION "0.16.0"
 static void cos_px2(int32_t x, int32_t y, const char *s, uint16_t c)      /* (the face 2 x 2) */
 {
     int32_t r, b, b0;

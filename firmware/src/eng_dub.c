@@ -61,7 +61,8 @@ static __attribute__((noinline)) void dub_bleep(track_t *t, voice_t *v, int32_t 
     uint32_t wv = (uint32_t)clamp(p[P_E1], 0, 4), rt = (uint32_t)clamp(p[P_E5], 0, 7), h = (uint32_t)v->s[5], i, c;
     int32_t col = clamp(p[P_E2], 0, 127), fm = clamp(p[P_E3], 0, 127), dec = clamp(p[P_E4], 0, 127);
     int32_t bl = clamp(p[P_E6], -64, 63), rnd = clamp(p[P_E7], 0, 127);
-    int32_t lo = v->s[1], bd = v->s[2], eg = v->s[3], pe = v->s[0], ka, kp, y[CTL];
+    int32_t lo = clamp(v->s[1], -262144, 262144), bd = clamp(v->s[2], -262144, 262144), eg = v->s[3], pe = v->s[0], ka, kp, y[CTL];   /* (0.16.0:
+                                                          * held to the filter's range: another engine's state in them) */
     uint32_t ph0 = v->ph[0], ph1 = v->ph[1];
     if (rnd) {                                           /* RANDOM: the note's own, the same each pass */
         fm = clamp(fm + ((((int32_t)(h & 255u) - 128) * rnd) >> 7), 0, 127);
@@ -113,7 +114,9 @@ static void dub_render(track_t *t, voice_t *v, int32_t *out, uint32_t n, const v
     uint32_t at = (uint32_t)clamp(p[P_E0], 0, 2), ch = (uint32_t)clamp(p[P_E1], 0, 5), i, c, k;
     int32_t col = clamp(p[P_E2], 0, 127), den = clamp(p[P_E3], 0, 127), dec = clamp(p[P_E4], 0, 127);
     int32_t res = clamp(p[P_E5], 0, 127), nz = clamp(p[P_E7], 0, 127);
-    int32_t lo = v->s[1], bd = v->s[2], eg = v->s[3], rng = v->s[4];   /* (locals: out[] may alias v->s[]) */
+    int32_t lo = clamp(v->s[1], -262144, 262144), bd = clamp(v->s[2], -262144, 262144), eg = v->s[3], rng = v->s[4];   /* (locals:
+                                                          * out[] may alias v->s[]; 0.16.0: the filter's range, another engine's
+                                                          * state left in them) */
     uint32_t ph[4] = {v->ph[0], v->ph[1], v->ph[2], (uint32_t)v->s[0]}, dph = (uint32_t)v->s[5], fph = (uint32_t)v->s[6];
     int32_t q = 32767 - res * 230, ng = (nz * nz) >> 3, base = m->pitch16, y[CTL], bl = (col * col) >> 7;   /* (bl: 0 .. 126) */
     int32_t kd = fmd_fall(TIME_MS_X10[clamp(20 + dec * 3 / 4, 0, 127)]);   /* (STAB: its envelope's fall) */

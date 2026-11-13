@@ -646,7 +646,8 @@ static void drum_render(track_t *t, voice_t *v, int32_t *out, uint32_t n, const 
     }
     dx_lane_t acoustic_patch;
     const dx_lane_t *patch = kick ? kick_patch(t) : &dx_kit[(uint32_t)v->s[0] & (DV_NLANE-1u)];
-    L->x.lg = (uint8_t)(((uint32_t)v->s[0] & (DV_NLANE - 1u)) | (v->gate ? 0x80u : 0u));   /* (cursed-os: its AHDSR's) */
+    L->x.lg = (uint8_t)(((uint32_t)v->s[0] & (DV_NLANE - 1u)) | (v->gate ? 0x80u : 0u) | (kick ? 0x40u : 0u));   /* (cursed-os:
+                                                          * its AHDSR's; 0.16.0: 0x40 a KICK track's, none of the kit's) */
     if(dx_acoustic) { dx_acoustic_patch(&acoustic_patch,patch,(uint32_t)v->s[0],v->vel);patch=&acoustic_patch; }
     {
         int32_t tk = kick ? clamp(p[P_DXIMG], 0, TRN_N - 1) : 0, tl = clamp(p[P_MORPH], 0, 127), sn = 0;
@@ -734,8 +735,8 @@ static __attribute__((noinline)) void drum_bus(const track_t *t, int32_t *out, u
                                                          * on the side it leaned to), so L and R are the curve's exactly */
             if ((s > 256 || s < -256) && !(i & 3u))      /* (0.7.9: the gain every 4th sample: a divide's cost) */
                 k = clamp((y << 12) / s, 0, 16384);   /* (y within +-41000: y << 12 fits 32 bits) */
-            sl[i] = ((sl[i] >> 2) * k) >> 10;
-            sr[i] = ((sr[i] >> 2) * k) >> 10;
+            sl[i] = mix_mul(clamp(sl[i], -(1 << 21) + 1, (1 << 21) - 1), k << 3);   /* (0.16.0: was >> 2: 13 bits) */
+            sr[i] = mix_mul(clamp(sr[i], -(1 << 21) + 1, (1 << 21) - 1), k << 3);   /* (0.16.0: was >> 2: 13 bits) */
         }
     }
     if (dx_glue)                                        /* (0.9.9-snd1) GLUE, on */
@@ -780,8 +781,8 @@ static __attribute__((noinline)) void drum_glue(uint32_t ti, int32_t *out, uint3
         if (side) {
             if ((s > 256 || s < -256) && !(i & 3u))
                 k = clamp((y << 12) / s, 0, 16384);
-            sl[i] = ((sl[i] >> 2) * k) >> 10;
-            sr[i] = ((sr[i] >> 2) * k) >> 10;
+            sl[i] = mix_mul(clamp(sl[i], -(1 << 21) + 1, (1 << 21) - 1), k << 3);   /* (0.16.0: was >> 2: 13 bits) */
+            sr[i] = mix_mul(clamp(sr[i], -(1 << 21) + 1, (1 << 21) - 1), k << 3);   /* (0.16.0: was >> 2: 13 bits) */
         }
     }
     glue_g[ti] = g1;
