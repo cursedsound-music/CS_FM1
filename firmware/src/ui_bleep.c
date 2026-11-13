@@ -4,21 +4,35 @@
  * of pings in the key, from a SEED (the same seed: the same line, always), on a synth track (its sound: DUB's BLEEP
  * presets, eng_dub.c; SOUND loads one). Included by ui_graph.c after ui_dub.c (ac_h, ac_key's way).
  * BLEEP    KNOB 1 SEED (1 .. 999), 2 DENSITY, 3 RANGE (how many of the scale's notes: 2 .. 14), 4 OCTAVE (the track's)
- * BLEEP 2  KNOB 1 LENGTH (1, 2, 4 bars), 2 VARY (the bars after the first: their steps thrown again, VARY %),
+ * BLEEP 2  (0.15.1) KNOB 1 LENGTH (1, 2, 4 bars), 2 VARY (the bars after the first: their steps thrown again, VARY %),
  *          3 ACCENT, 4 SLIDE (the pitch gliding into the next ping)
- * BLEEP 3  KNOB 1 RATCHET (pings twice), 2 ECHO (the track's DELAY send; REVERB a third of it), 3 EVERY (OFF, 1 .. 16
- *          bars: a mutation on the bar, VARY % of the steps), 4 SOUND (KEEP or one of DUB's BLEEP sounds)
+ * (0.16.1, GG: "a short motif repeating all the time (often 3, 5 or 6 notes instead of the usual 4), shifting against a
+ * straight 4/4 techno beat (polyrhythm) ... the sound stays almost the same but changes microscopically slowly over
+ * minutes (the filter opens a little, the echo gets denser)": the pages as now)
+ * BLEEP 2  KNOB 1 MOTIF (OFF, 3, 5, 6, 7: the line that many steps long, looping against the bar; OFF the bars as
+ *          before), 2 LENGTH (1, 2, 4 bars; MOTIF OFF), 3 VARY, 4 ACCENT
+ * BLEEP 3  KNOB 1 EVERY (OFF, 1 .. 16 bars: a mutation on the bar, VARY % of the steps), 2 SLIDE, 3 RATCHET (pings
+ *          twice), 4 ECHO (the track's DELAY send; REVERB nine tenths of it)
+ * BLEEP 4  KNOB 1 DRIFT (over ~96 bars and back: COLOR opening, DECAY a little longer, the echo denser; DRIFT how far;
+ *          from the top at each PLAY), 2 SPACE (KEEP, or the shared delay to PING-PONG at 1/8D, 1/4D, 1/8 or 1/16D,
+ *          FEEDBK at least 65), 3 SOUND (KEEP or one of DUB's BLEEP sounds)
+ * Every BLEEP sound's pitch wanders a few cents, slowly (trk_wob, bl_tick)
  * The rhythm: the offbeat sixteenths likelier than the beat (the kick's), never the same density twice in a row; the
  * notes: a walk in the key that comes back (a repeat likelier than a leap, the root the commonest). OCT+ a new seed,
  * OCT- back through the last four; on BLEEP 3 OCT+ a mutation now, OCT- the line as thrown. Every knob writes it again
  * (the same seed: the same line). The settings are the session's (RAM) */
 #define BL_HIST 2u
 typedef struct {
-    uint8_t on, dens, range, len, vary, acc, slide, ratch, echo, every, bar, nh, snd, rsv;
-    uint16_t seed, ms, hist[BL_HIST];
+    uint8_t on, dens, range, len, vary, acc, slide, ratch, echo, every, bar, nh, snd, motif;
+    uint8_t drift, space, lb, rsv;                      /* (0.16.1) DRIFT, SPACE, the beat last counted */
+    uint16_t seed, ms, hist[BL_HIST], beats;            /* (0.16.1 beats: DRIFT's clock, since PLAY) */
 } bl_t;
 static bl_t bl[NTRK] COS_RAM;
-enum { BK_SEED, BK_DENS, BK_RANGE, BK_LEN, BK_VARY, BK_ACC, BK_SLIDE, BK_RATCH, BK_ECHO, BK_EVERY, BK_SND, BK_N };
+enum { BK_SEED, BK_DENS, BK_RANGE, BK_LEN, BK_VARY, BK_ACC, BK_SLIDE, BK_RATCH, BK_ECHO, BK_EVERY, BK_SND, BK_MOTIF, BK_DRIFT,
+       BK_SPACE, BK_N };
+static const uint8_t BL_MOT[5] = {0, 3, 5, 6, 7};      /* (MOTIF: its steps) */
+static const char *const BL_SPN[] = {"KEEP", "1/8D", "1/4D", "1/8", "1/16D", 0};
+static const uint8_t BL_SPT[5] = {0, DT_DOT, DT_DOT + 2u, 1, DT_DOT + 1u};   /* (SPACE: G_DTIME, as DUB 3's DELAY) */
 
 static bl_t *bl_of(uint32_t k)
 {
@@ -26,6 +40,8 @@ static bl_t *bl_of(uint32_t k)
     if (!a->on) {
         a->on = 1;
         a->dens = 45; a->range = 5; a->len = 1; a->vary = 20; a->acc = 25; a->slide = 15; a->ratch = 8; a->echo = 50;
+        a->motif = 2; a->drift = 40; a->vary = 12; a->slide = 10; a->ratch = 4; a->echo = 60;   /* (0.16.1: a 5-step motif,
+                                                          * drifting, deep in the echoes) */
         a->seed = (uint16_t)(101u + k * 37u);
     }
     return a;
@@ -50,7 +66,7 @@ static void bl_gen(uint32_t k, uint32_t hand)
 {
     track_t *t = &trk[k % NTRK];
     bl_t *a = bl_of(k);
-    uint32_t n = 16u << (a->len % 3u), i, np = 0, deg0 = 0, cnt = 0, tot = 0;
+    uint32_t mo = BL_MOT[a->motif % 5u], n = mo ? mo : 16u << (a->len % 3u), i, np = 0, deg0 = 0, cnt = 0, tot = 0;
     uint32_t sd = (uint32_t)a->seed * 2654435761u;
     int32_t sc[14], prev = 0;
     eu_t key;
@@ -73,14 +89,15 @@ static void bl_gen(uint32_t k, uint32_t hand)
         uint32_t p = i % 16u, mut = i >= 16u && a->vary && ac_ch(sd ^ (i / 16u) * 0x9E37u, p, 0xB0u, a->vary);
         uint32_t s0 = mut ? sd ^ (i / 16u + 1u) * 0x85EBu : sd;   /* (a varied step: thrown again, the bar's own) */
         uint32_t ms = a->ms && ac_ch(a->ms, i, 0xB9u, a->vary) ? a->ms : 0u;   /* (EVERY's mutation) */
-        int32_t w = (int32_t)W[p & 3u] * (int32_t)a->dens / 45, d;
+        int32_t w = mo ? (i ? 18 + (int32_t)a->dens * 3 / 4 : 100) : (int32_t)W[p & 3u] * (int32_t)a->dens / 45, d;   /* (a MOTIF:
+                                                          * its first step always, the rest DENSITY's) */
         step_t *s = &t->step[i];
         if (!p) { prev = 0; cnt = 0; }                   /* (each bar its own walk: VARY 0, the bars the same) */
         if (ms) s0 ^= ms;
-        if (!a->dens || !ac_ch(s0, p, 0xB1u, clamp(w, 0, 92))) continue;
+        if ((!a->dens && !(mo && !i)) || (w < 100 && !ac_ch(s0, p, 0xB1u, clamp(w, 0, 92)))) continue;
         {                                                /* the note: a walk (repeat, a step, a leap), the root likeliest */
             uint32_t r = ac_h(s0, p, 0xB2u) % 100u, rng = clamp(a->range, 2, 14) < np ? (uint32_t)clamp(a->range, 2, 14) : np;
-            if (!cnt || r < 18u) d = 0;
+            if (!cnt || r < (mo ? 10u : 18u)) d = 0;
             else if (r < 46u) d = prev;
             else if (r < 80u) d = prev + ((ac_h(s0, p, 0xB3u) & 1u) ? 1 : -1);
             else d = (int32_t)(ac_h(s0, p, 0xB4u) % rng);
@@ -103,7 +120,7 @@ static void bl_gen(uint32_t k, uint32_t hand)
     }
     if (hand) {                                          /* ECHO: the sends */
         t->p[P_DLY] = (int16_t)((int32_t)a->echo * 127 / 100);
-        t->p[P_REV] = (int16_t)((int32_t)a->echo * 42 / 100);
+        t->p[P_REV] = (int16_t)((int32_t)a->echo * 90 / 100);   /* (0.16.1: the room as much: was a third) */
     }
     load_end(t);
     pat_sig[k % NTRK] = ~steps_sig(t);
@@ -111,13 +128,13 @@ static void bl_gen(uint32_t k, uint32_t hand)
 }
 
 /* the knob views */
-#define bl_v db_v                                       /* (DUB's views: one page shown at a time) */
-#define bl_d db_d
-_Static_assert(BK_N <= DK_N, "BLEEP's views in DUB's");
+static int16_t bl_v[BK_N] COS_RAM;                     /* (0.16.1: its own, BK_N past DUB's DK_N) */
+#define bl_d db_d                                       /* (DUB's desc: one page shown at a time) */
 static __attribute__((noinline)) const param_desc_t *bl_desc(uint32_t k, int16_t **valp)
 {
     static const char *const LB[BK_N] = {"SEED", "DENSITY", "RANGE", "LENGTH", "VARY", "ACCENT", "SLIDE", "RATCHET", "ECHO",
-                                         "EVERY", "SOUND"};
+                                         "EVERY", "SOUND", "MOTIF", "DRIFT", "SPACE"};
+    static const char *const MO[] = {"OFF", "3", "5", "6", "7", 0};
     static const char *const BR[] = {"1 BAR", "2 BARS", "4 BARS", 0};
     static const char *const EV[] = {"OFF", "1 BAR", "2 BARS", "4 BARS", "8 BARS", "16 BARS", 0};
     static const char *SN[12];                          /* (.bss: the pool's room is the sound's) */
@@ -135,6 +152,9 @@ static __attribute__((noinline)) const param_desc_t *bl_desc(uint32_t k, int16_t
     case BK_RATCH: bl_v[k] = a->ratch; break;
     case BK_ECHO: bl_v[k] = a->echo; break;
     case BK_EVERY: bl_d.fmt = F_ENUM; bl_d.max = 5; bl_d.names = EV; bl_v[k] = a->every; break;
+    case BK_MOTIF: bl_d.fmt = F_ENUM; bl_d.max = 4; bl_d.names = MO; bl_v[k] = a->motif; break;
+    case BK_DRIFT: bl_v[k] = a->drift; break;
+    case BK_SPACE: bl_d.fmt = F_ENUM; bl_d.max = 4; bl_d.names = BL_SPN; bl_v[k] = a->space; break;
     default: {
         uint32_t j, ns = bl_nsnd();
         SN[0] = "KEEP";
@@ -152,6 +172,17 @@ static __attribute__((noinline)) void bl_put(uint32_t k, int32_t v)
 {
     bl_t *a = bl_of(song.sel);
     k %= BK_N;
+    if (k == BK_DRIFT) { a->drift = (uint8_t)clamp(v, 0, 100); ui.force = 1; return; }
+    if (k == BK_SPACE) {                                 /* (the delay is everyone's: only when turned, KEEP leaves it) */
+        a->space = (uint8_t)clamp(v, 0, 4);
+        if (a->space) {
+            song.g[G_DTIME] = (int16_t)BL_SPT[a->space];
+            song.g[G_DPING] = 1;
+            if (song.g[G_DFDBK] < 65) song.g[G_DFDBK] = 65;
+        }
+        ui.force = 1;
+        return;
+    }
     if (drum_track(TSEL)) { ui_message("BLEEP: PICK A SYNTH TRACK"); return; }
     if (chain_busy()) { ui_message("SONG PLAYS: STOP IT TO EDIT"); return; }
     switch (k) {
@@ -165,6 +196,7 @@ static __attribute__((noinline)) void bl_put(uint32_t k, int32_t v)
     case BK_RATCH: a->ratch = (uint8_t)clamp(v, 0, 100); break;
     case BK_ECHO: a->echo = (uint8_t)clamp(v, 0, 100); break;
     case BK_EVERY: a->every = (uint8_t)clamp(v, 0, 5); ui.force = 1; return;
+    case BK_MOTIF: a->motif = (uint8_t)clamp(v, 0, 4); break;
     default:                                             /* SOUND: one of DUB's BLEEP sounds onto the track */
         a->snd = (uint8_t)clamp(v, 0, (int32_t)bl_nsnd());
         if (a->snd) {
@@ -206,11 +238,23 @@ static __attribute__((noinline)) void bl_oct(int up, int mu)
     }
     bl_gen(song.sel, 1);
 }
-/* every UI frame: playing, each track with EVERY on mutates in the last beat of every EVERY bars (as db_tick) */
+/* every UI frame: the wander of every BLEEP sound's pitch (two slow sines, a few cents, each track its own); DRIFT's
+ * reach (0.16.1); playing, each track with EVERY on mutates in the last beat of every EVERY bars (as db_tick) */
 static __attribute__((noinline)) void bl_tick(void)
 {
     uint32_t k, b = bar_n;
-    for (k = 0; !song.playing && k < NTRK; k++) bl[k].bar = 0;
+    for (k = 0; k < NTRK; k++) {
+        bl_t *a = &bl[k];
+        int32_t w = osc_sine(fm1_ms * 976128u + k * 0x2AAAAAABu) * 4 + osc_sine(fm1_ms * 605000u + k * 0x5A5A5A5Au) * 2;
+        trk_wob[k] = (int8_t)(w / 32767);               /* (+-6 cents, ~4.4 s and ~7.1 s) */
+        if (!song.playing) { a->bar = 0; a->beats = 0; a->lb = 0xFF; trk_drift[k] = 0; continue; }
+        if (!a->on || !a->drift) { trk_drift[k] = 0; continue; }
+        if (a->lb != (uint8_t)beat_n) { a->lb = (uint8_t)beat_n; a->beats++; }
+        {
+            uint32_t ph = a->beats % 384u, tri = ph < 192u ? ph : 384u - ph;   /* (up over 48 bars, back over 48) */
+            trk_drift[k] = (uint8_t)(((uint32_t)a->drift * 127u / 100u) * tri / 192u);
+        }
+    }
     if (!song.playing || chain_busy() || beat_n != 3u || beat_pos < beat_samples() / 2u) return;
     for (k = 0; k < NTRK; k++) {
         bl_t *a = &bl[k];

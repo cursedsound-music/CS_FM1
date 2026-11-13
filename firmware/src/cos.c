@@ -171,8 +171,9 @@ static const cpg_t CZP_FX[] = {{"DJ", CK_COS, {CC_DJF, CC_EQL, CC_EQM, CC_EQH}},
                               {"RUMBLE", CK_COS, {CC_RB0, CC_RB0 + 1u, CC_RB0 + 2u, CC_RB3}}};   /* (rumble.c: the kick's dark tail) */
 static const cpg_t CZP_GENA[] = {{"ACID", CK_AC, {AK_DENS, AK_SLIDE, AK_ACC, ID_OCT}}, {"ACID 2", CK_AC, {AK_STEPS, AK_NOTES, AK_TIE, AK_OCT}},
                                 {"ACID 3", CK_AC, {AK_EVERY, AK_AMT, AK_ROOT, AK_SCALE}}, {"ACID 4", CK_AC, {AK_LOCK, AK_ROT, X, X}}};
-#define CZ_BLEEP {"BLEEP", CK_BL, {BK_SEED, BK_DENS, BK_RANGE, ID_OCT}}, {"BLEEP 2", CK_BL, {BK_LEN, BK_VARY, BK_ACC, BK_SLIDE}}, \
-                 {"BLEEP 3", CK_BL, {BK_RATCH, BK_ECHO, BK_EVERY, BK_SND}}   /* (0.15.1) bleeps and bloops (ui_bleep.c) */
+#define CZ_BLEEP {"BLEEP", CK_BL, {BK_SEED, BK_DENS, BK_RANGE, ID_OCT}}, {"BLEEP 2", CK_BL, {BK_MOTIF, BK_LEN, BK_VARY, BK_ACC}}, \
+                 {"BLEEP 3", CK_BL, {BK_EVERY, BK_SLIDE, BK_RATCH, BK_ECHO}}, {"BLEEP 4", CK_BL, {BK_DRIFT, BK_SPACE, BK_SND, ID_OCT}}
+                 /* (0.15.1) bleeps and bloops (ui_bleep.c; 0.16.0: MOTIF, DRIFT, SPACE; BLEEP 3 the mutations') */
 /* (a POLY synth track that is not ACID, the pad: DUB's chord stabs first, ACID's lines after them; a MONO one, the
  * bass: ACID's first, DUB's after, CZP_GENM) */
 static const cpg_t CZP_GENS[] = {{"DUB", CK_DB, {DK_SHAPE, DK_DENS, DK_MOVE, DK_LEN}}, {"DUB 2", CK_DB, {DK_BARS, DK_VOIC, DK_ECHO, ID_OCT}},
@@ -2321,7 +2322,7 @@ static __attribute__((noinline)) void cos_input(void)
             else if (cz.mode == CM_PROJ) cos_proj_oct(up);
             else if (cz.mode == CM_GEN && cos_kit()) eu_oct(up, cz.tab[CM_GEN] == 2u);
             else if (cz.mode == CM_GEN && cos_page()->kind == CK_DB) db_oct(up, cos_page()->id[0] == DK_ROOT);
-            else if (cz.mode == CM_GEN && cos_page()->kind == CK_BL) bl_oct(up, cos_page()->id[0] == BK_RATCH);
+            else if (cz.mode == CM_GEN && cos_page()->kind == CK_BL) bl_oct(up, cos_page()->id[0] == BK_EVERY);
             else if (cz.mode == CM_GEN) ac_oct(up, cos_page()->id[0] == AK_EVERY);
             else song.octave = (int8_t)clamp(song.octave + (up ? 1 : -1), -3, 3);
         } else
@@ -3675,7 +3676,7 @@ static void cos_body_gen(void)
         str_cpy(b + str_len(b), "  ", 3);
         str_cpy(b + str_len(b), NN[key.root % 12u], 3);
         cos_tx(4, 38, b, C_FG);
-        cos_txr(236, 38, cos_page()->id[0] == BK_RATCH ? "OCT+ MUTATE" : "OCT+ NEW", C_DIM);
+        cos_txr(236, 38, cos_page()->id[0] == BK_EVERY ? "OCT+ MUTATE" : "OCT+ NEW", C_DIM);
         cz_rtop = 54;
         cos_body_trig();
         cz_rtop = 40;
@@ -4039,7 +4040,7 @@ dials:
 /* the splash (ui_draw.c draw_splash / splash_write under COS_SLIM; main.c's boot loop calls it every ~4 ms for
  * SPL_WRITE + SPL_HOLD ms): black, a few still stars, the name 2x, the version, a 16-block bar filling like a pattern
  * (the block being filled red), READY. Drawn whole once, then only the bar's strip when a block fills */
-#define COS_VERSION "0.16.0"
+#define COS_VERSION "0.16.1"
 static void cos_px2(int32_t x, int32_t y, const char *s, uint16_t c)      /* (the face 2 x 2) */
 {
     int32_t r, b, b0;

@@ -5,6 +5,10 @@
  *   the bars the same, VARY: some steps their own; OCT+ a new seed, OCT- back; SOUND loads a BLEEP sound.
  *   BLEEP: every preset pings and falls, bounded; RANDOM: a note on a step the same each time, another step another
  *   ping; BLOOP: the pitch glides into the note.
+ * (0.16.1, GG: "they should sound like a modular synthesizer ... the typical random sequences heard in hypnotic
+ * techno") MOTIF 3/5/6/7: the line that long, against the bar, its first step a ping; DRIFT: up over 48 bars and back,
+ * 0 when stopped; SPACE: the shared delay PING-PONG; the wander a few cents; DROP rises, the gate darkens as it falls,
+ * the onset at once.
  *   cc -O1 -w -DCOS_SLIM=1 -Ibuild/gen -Ifirmware/src -Itests -o build/t/bleep_test tests/bleep_test.c -lm */
 #include <stdio.h>
 #include <stdlib.h>
@@ -46,6 +50,8 @@ int main(void)
     set_engine_of(&trk[TK], ENGI_ANALOG);
     trk[TK].p[P_ROOT] = 9; trk[TK].p[P_SCALE] = 2;    /* (A minor) */
     a = bl_of(TK);
+    CHECK(a->motif == 2u && a->drift > 0u, "0.16.1: a 5-step MOTIF and DRIFT by default");
+    bl_put(BK_MOTIF, 0);                                 /* (0.15.1's bars first) */
     /* the same seed, the same line */
     bl_put(BK_SEED, 321);
     memcpy(bkeep, trk[TK].step, sizeof bkeep);
@@ -137,6 +143,74 @@ int main(void)
         for (i = 1; i < 1024u; i++) z0 += 2u * ((r[i - 1] < 0) != (r[i] < 0));   /* (the first 23 ms, x 2) */
         for (i = 12289; i < 14336u; i++) z1 += (r[i - 1] < 0) != (r[i] < 0);
         CHECK(z0 * 2u > z1 * 3u && z1 > 0u, "BLOOP 60: the pitch from above (%u crossings first, %u later)", z0, z1);
+    }
+    /* MOTIF */
+    {
+        static const uint8_t L[5] = {0, 3, 5, 6, 7};
+        uint32_t m;
+        trk[TK].engine = ENGI_DUB; set_engine_of(&trk[TK], ENGI_DUB);
+        for (m = 1, ok = 1; m < 5u; m++) {
+            bl_put(BK_MOTIF, (int32_t)m);
+            ok &= trk[TK].p[P_SLEN] == L[m] && trk[TK].step[0].time == ST_NOTE;
+            for (i = 0; i < L[m]; i++) {
+                const step_t *s = &trk[TK].step[i];
+                if (s->time == ST_NOTE) ok &= (SCALE_MASK[2] >> ((s->note[0] + 12u - 9u) % 12u)) & 1u;
+            }
+        }
+        CHECK(ok, "MOTIF 3 5 6 7: the line that many steps, a ping first, in the key");
+        bl_put(BK_MOTIF, 2); bl_put(BK_SEED, 55);
+        memcpy(bkeep, trk[TK].step, sizeof bkeep);
+        bl_put(BK_SEED, 56); bl_put(BK_SEED, 55);
+        CHECK(!memcmp(bkeep, trk[TK].step, sizeof bkeep), "MOTIF 5, SEED 55 again: the same motif");
+    }
+    /* SPACE */
+    song.g[G_DPING] = 0; song.g[G_DFDBK] = 20;
+    bl_put(BK_SPACE, 1);
+    CHECK(song.g[G_DPING] == 1 && song.g[G_DFDBK] >= 65 && song.g[G_DTIME] == DT_DOT, "SPACE 1/8D: the delay PING-PONG, 1/8D, FEEDBK 65");
+    /* DRIFT and the wander */
+    {
+        int32_t lo = 127, hi = -127;
+        uint32_t b, top = 0;
+        bl_put(BK_DRIFT, 100);
+        song.playing = 1; a->beats = 0; a->lb = 0xFF;
+        for (b = 0; b < 384u; b++) {
+            beat_n = b & 3u; beat_pos = 0;
+            fm1_ms += 300u; bl_tick();
+            if (trk_drift[TK] > top) top = trk_drift[TK];
+            if (b == 10u) k = trk_drift[TK];
+            if (trk_wob[TK] < lo) lo = trk_wob[TK];
+            if (trk_wob[TK] > hi) hi = trk_wob[TK];
+        }
+        CHECK(k < 12u && top >= 120u && trk_drift[TK] < 8u, "DRIFT 100: from 0 (%u at beat 10) up to %u over 48 bars, back (%u)", k, top, trk_drift[TK]);
+        CHECK(lo < -2 && hi > 2 && lo >= -6 && hi <= 6, "the wander: a few cents (%d .. %d)", lo, hi);
+        song.playing = 0; bl_tick();
+        CHECK(!trk_drift[TK], "stopped: DRIFT from the top");
+    }
+    /* the sounds: struck at once; DROP rises; the gate darkens as the ping falls */
+    {
+        static int32_t r[16384];
+        uint32_t z0 = 0, z1 = 0, pk = 0;
+        double h0 = 0, e0 = 0, h1 = 0, e1 = 0;
+        for (k = 0; k < ENG_DUB.npresets && strcmp(ENG_DUB.presets[k].name, "SONAR PING"); k++) {}
+        apply_preset_to(&trk[TK], k);
+        trk[TK].p[P_DLY] = trk[TK].p[P_REV] = 0;
+        ping(69, 0, r, 16384);
+        for (i = 1; i < 4096u; i++) if (abs(r[i]) > abs(r[pk])) pk = i;
+        CHECK(pk < FS * 4u / 1000u, "SONAR PING: full at once (its peak at %.1f ms)", pk * 1000.0 / FS);
+        for (k = 0; k < ENG_DUB.npresets && strcmp(ENG_DUB.presets[k].name, "WATER DROP"); k++) {}
+        apply_preset_to(&trk[TK], k);
+        trk[TK].p[P_DLY] = trk[TK].p[P_REV] = 0; trk[TK].p[P_E7] = 0; trk[TK].p[P_E4] = 60;
+        ping(57, 0, r, 16384);
+        for (i = 1; i < 2048u; i++) z0 += (r[i - 1] < 0) != (r[i] < 0);
+        for (i = 8193; i < 10240u; i++) z1 += (r[i - 1] < 0) != (r[i] < 0);
+        CHECK(z1 * 4u > z0 * 5u, "DROP: the pitch rising as it falls (%u crossings first, %u later)", z0, z1);
+        for (k = 0; k < ENG_DUB.npresets && strcmp(ENG_DUB.presets[k].name, "WOOD BLOCK"); k++) {}
+        apply_preset_to(&trk[TK], k);
+        trk[TK].p[P_DLY] = trk[TK].p[P_REV] = 0; trk[TK].p[P_E7] = 0; trk[TK].p[P_E4] = 50;
+        ping(69, 0, r, 16384);
+        for (i = 64; i < 1024u; i++) { double d = r[i] - r[i - 1]; h0 += d * d; e0 += (double)r[i] * r[i]; }
+        for (i = 6144; i < 8192u; i++) { double d = r[i] - r[i - 1]; h1 += d * d; e1 += (double)r[i] * r[i]; }
+        CHECK(e1 > 0 && h0 / e0 > 1.5 * h1 / e1, "WOOD: brighter struck, darker as it falls (%.3g -> %.3g)", h0 / e0, h1 / (e1 + 1));
     }
     printf(fails ? "bleep: %d FAILED\n" : "bleep: all ok\n", fails);
     return fails != 0;

@@ -112,8 +112,9 @@ int main(void)
     trk[TK].p[P_E2] = 110; settle(); play(48, 1.0, 10, &hf1);
     CHECK(hf1 > hf0 * 2.0, "COLOR 20 -> 110: brighter (%.3g -> %.3g)", hf0, hf1);
     trk[TK].p[P_E2] = 60;
-    trk[TK].p[P_E3] = 0; settle(); e0 = play(48, 1.0, 10, 0);
-    trk[TK].p[P_E3] = 127; settle(); e1 = play(48, 1.0, 10, 0);
+    trk[TK].p[P_E3] = 0; settle(); memset(trk[TK].v, 0, sizeof trk[TK].v); e0 = play(48, 1.0, 10, 0);   /* (0.16.1: the voices
+                                                          * from the top: the tones' phases a BLEEP's left them) */
+    trk[TK].p[P_E3] = 127; settle(); memset(trk[TK].v, 0, sizeof trk[TK].v); e1 = play(48, 1.0, 10, 0);
     CHECK(e1 > e0 * 1.5, "DENSITY 0 -> 127: denser (%.3g -> %.3g)", e0, e1);
     /* THROW */
     apply_preset_to(&trk[TK], 0); settle();
