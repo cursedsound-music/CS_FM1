@@ -132,6 +132,7 @@ static const char *why_quiet(uint32_t m, const cpg_t *p, uint32_t k)
         if (id == CC_MCCH || id == CC_MCDIR || id == CC_MCMAP || (id >= CC_MC0 && id <= CC_MC3) || id == CC_MOCC)
             return "LINK 2/3: the macros' and MORPH's MIDI CCs";
         if (id == CC_PCCH || id == CC_PCOUT || id == CC_VJCH) return "LINK: program changes and the VJ notes";
+        if (id >= CC_STON && id <= CC_STLEN) return "SYNTAKT: the clock and the patterns it follows (syntakt_test)";
         if (id == CC_MUTEQ) return "MUTE Q: when a mute lands";
         if (id == CC_MOUT || id == CC_CLOCK || id == CC_BT || id == CC_LOAD) return "MIDI / SYSTEM settings";
         if (id == CC_MOBARS) return "MORPH BARS: a glide's length";

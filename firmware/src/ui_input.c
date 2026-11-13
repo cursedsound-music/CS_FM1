@@ -2181,6 +2181,7 @@ static void scale_link(void)
 
 /* (cursedsound) what every frame keeps doing, JIANT's interface's or cursed-os's: one call site each (inlined here, as
  * they were into ui_input_frame), so the compiler builds them, and what they call, as before */
+static uint8_t cos_st_boot;                             /* (0.17.0) GLO > SYNTAKT's ON read at power-on (ui_polls) */
 static __attribute__((noinline)) void ui_polls(void)
 {
     fm6_poll();                                         /* FM6: PTCH turned -> its patch */
@@ -2222,6 +2223,15 @@ static __attribute__((noinline)) void ui_polls(void)
         cos_mq = (uint8_t)(x[10] && x[10] <= 3u ? x[10] - 1u : 2u);   /* (MUTE Q: byte 18; 0 there, BAR) */
         cos_pc_ch = (uint8_t)(x[11] <= 16u ? x[11] : 0u);          /* (LINK: byte 19 the channel, 20 PC OUT) */
         cos_pc_out = (uint8_t)(x[12] == 1u);
+        {                                                /* (0.17.0) GLO > SYNTAKT: ON (the clock the Syntakt's), PAT LEN */
+            static const uint8_t PL[5] = {1, 2, 4, 8, 16};
+            uint8_t st = favorites.factory[8][31];
+            cos_pc_bars = PL[(st >> 1) % 5u];
+            if (!cos_st_boot) {                          /* (once, at power-on: CLOCK can be changed after) */
+                cos_st_boot = 1;
+                if (st & 1u) song.g[G_CLOCK] = 2;
+            }
+        }
         cos_vj_ch = (uint8_t)(x[13] <= 16u ? x[13] : 0u);          /* (LINK's VJ CH: byte 21) */
         {                                                /* (LINK 2 / 3: STRING's row 8, bytes 24..29: its 16 presets'
                                                          * stars are bytes 0..1, the row cleared once at the settings' rev

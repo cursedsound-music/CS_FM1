@@ -1828,8 +1828,11 @@ static void midi_pc_poll(void)
     if (midi_song_req) {                               /* (0.6.80) channel 16: 0..3 a section, 16..23 a project */
         uint32_t n = midi_song_req - 1u;
         midi_song_req = 0;
-        if (n < 4u)
-            (void)section_jump(n);
+        if (n < 4u) {
+            uint8_t w = cos_pc_in;                     /* (0.17.0: a Syntakt pattern's: at the end of its pattern) */
+            cos_pc_in = 0;
+            if (!section_jump(n)) cos_pc_wait = w;
+        }
         else if (n >= 16u && n < 16u + NSONG)
             (void)song_select(n - 16u);
     }

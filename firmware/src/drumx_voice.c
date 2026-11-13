@@ -141,7 +141,7 @@ static __attribute__((noinline)) void dx_layer(dx_voice_t *v, int32_t *y, uint32
             int32_t o2, f = o + o1;
             o1 = o;
             o = sine_i(ph + (uint32_t)(sine_i(ph2) * ix) * 512u + (uint32_t)(f * fh));
-            o2 = dx_tri(ph4 + (uint32_t)(o * lx));
+            o2 = dx_tri(ph4 + (uint32_t)o * (uint32_t)lx);   /* (0.17.0: unsigned, a phase: wraps by design) */
             y[i] = mulq15(o + (((o2 - o) * lm) >> 6), ga >> 8);
             ph += (uint32_t)inc << 4;
             ph2 += ((uint32_t)inc >> 8) * ratio;

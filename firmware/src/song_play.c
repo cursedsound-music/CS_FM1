@@ -133,10 +133,12 @@ static void srec_stop(void)                           /* SONG REC pressed again,
     live.srec = 0;
 }
 
+static uint32_t chain_nbar;                           /* (cursed-os 0.17.0) bars since PLAY (GLO > SYNTAKT's PAT LEN) */
 static void chain_start(void)                         /* (seq_start) */
 {
     chain.carry = 0;
     chain.bar_pos = 0;
+    chain_nbar = 0;
     chain.armed_bar = 0;
     if (!chain.armed)
         return;
@@ -173,6 +175,7 @@ static void chain_tick(uint32_t n)
         return;
     chain.bar_pos -= bar;                             /* (a bar is longer than a block) */
     chain.carry = chain.bar_pos;
+    chain_nbar++;
     srec_bar();
     if (chain.running) {
         uint32_t next = chain.row + 1u;
@@ -206,8 +209,11 @@ static void chain_tick(uint32_t n)
             srec_add(live.cur);
         return;
     }
-    if (live.req >= 0 && sec_stage.ready && sec_stage.row == SEC_LIVE) {   /* a live jump */
+    if (live.req >= 0 && sec_stage.ready && sec_stage.row == SEC_LIVE &&
+        (!cos_pc_wait || cos_pc_bars < 2u || !(chain_nbar % cos_pc_bars))) {   /* a live jump (0.17.0: the Syntakt's, at
+                                                         * the end of its pattern) */
         live.req = -1;
+        cos_pc_wait = 0;
         song.rec = 0;                                 /* (a take does not run on into another section) */
         sec_apply();
         if (live.srec == 2u)

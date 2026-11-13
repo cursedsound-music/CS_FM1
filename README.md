@@ -45,10 +45,32 @@ mouse. Every push to `main` builds it (Actions, the run's "cursed-os-site" downl
 
 ## With the Syntakt
 
-- **Clock**: Syntakt MIDI OUT -> a DIN-to-TRS adapter -> the FM-1's TRS MIDI IN; on the FM-1, GLO > GLOBAL > CLOCK = TRS.
-- **Notes into the Syntakt**: the FM-1 sends MIDI over USB and Bluetooth only, and the Syntakt's USB is a device, so a
-  USB-MIDI host box or a Bluetooth-MIDI adapter on the Syntakt's MIDI IN goes in between. FM-1 track N plays on MIDI
-  channel N (MENU > CONTROL > MIDI OUT = ALL).
+The FM-1 plays extra voices next to the Syntakt (an acid line, a few drums, bleeps): the Syntakt leads the tempo, PLAY /
+STOP and the patterns; the FM-1 follows.
+
+**Cables**
+- MIDI: Syntakt **MIDI OUT** -> a DIN-to-3.5 mm TRS MIDI adapter -> the FM-1's TRS MIDI IN.
+- Audio: FM-1 out -> Syntakt **INPUT L/R** (3.5 mm stereo to two 6.3 mm mono jacks). The FM-1 then runs through the
+  Syntakt's FX block, delay and reverb, and the Syntakt's main out is one channel on the DJ mixer.
+
+**On the FM-1**: GLO > SYNTAKT, turn KNOB 1 to **ON**. That sets CLOCK TRS, follows the Syntakt's patterns on channel 15
+and sends nothing back; it stays on after a power-off. The page shows what comes in: CABLE, the CLOCK's BPM, PLAYING,
+the last PATTERN and the section it plays.
+
+**On the Syntakt** (SETTINGS > MIDI CONFIG):
+- SYNC: CLOCK SEND, TRANSPORT SEND and PRG CH SEND on.
+- CHANNELS: PROGRAM CHG OUT CH 15 (or set the FM-1's PC CH, KNOB 4, to the one you use).
+- PORT CONFIG: OUT PORT FUNC MIDI.
+- SETTINGS > AUDIO ROUTING > EXTERNAL IN: stereo. FUNC + FX, trig 16: the input through the FX block (pre) or straight
+  to the main mix (post).
+
+**Patterns and sections**: the Syntakt's pattern picks the FM-1's section, its number % 4 (A01 A, A02 B, A03 C, A04 D,
+A05 A ...). Set PAT BARS (KNOB 3) to the Syntakt pattern's length in bars: the FM-1 switches when the Syntakt does, at
+the end of its pattern. So a jam: build A on both, store it (SAVE + OCT+), then B ...; SONG REC records the order you
+play them in as a song.
+
+**In a set**: dial the Syntakt's BPM to the CDJ track and nudge it; the FM-1 follows. With the Syntakt's kick, the
+FM-1's own KICK track can stay muted (HOME held + white 1).
 
 ## Building
 

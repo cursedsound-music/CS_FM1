@@ -407,6 +407,12 @@ static volatile uint8_t midi_song_req;
  * (a Syntakt's A01 A, A02 B, A03 C, A04 D, A05 A ..), on the next bar; cos_pc_out: a section asked for on cursed-os sends
  * its number (0..3) there (USB / Bluetooth: cos_live.c live_tick sends it) */
 static volatile uint8_t cos_pc_ch, cos_pc_out, cos_pc_out_req, cos_pc_in;
+/* (cursed-os 0.17.0, GG: "complete the syntakt integration ... easy to setup") GLO > SYNTAKT: cos_pc_bars, the Syntakt's
+ * pattern length in bars (1, 2, 4, 8, 16): a pattern of its asked for (its PRG CH SEND, sent when the next pattern is
+ * picked) comes in on the FM-1 when the Syntakt's own does, at the end of its pattern (song_play.c: the bars since PLAY
+ * a multiple of it), not on the next bar; cos_pc_wait: the section waiting is the Syntakt's; cos_pc_last: its last
+ * program + 1 (the page shows it); cos_rx_ms: when anything last came in on the jack (the page's CABLE) */
+static volatile uint8_t cos_pc_bars = 1, cos_pc_wait, cos_pc_last;
 /* (cursed-os) GLO > LINK's VJ CH (1..16, 0 OFF): the live layer's events out as notes for visuals (cos_live.c vj_*) */
 static volatile uint8_t cos_vj_ch;
 /* (cursed-os) GLO > LINK 2 / 3: the macros M1..M4 (mod.c macro_v) as CONTROL CHANGEs, each its own (cos_mc_cc), on
@@ -474,6 +480,7 @@ static void __attribute__((noinline)) midi_event(uint32_t st, uint32_t ch, uint3
     if (st == 0xC0u && cos_pc_ch && ch == cos_pc_ch - 1u) {   /* (cursed-os) LINK: the other machine's pattern, a section */
         midi_song_req = (uint8_t)(d1 % 4u + 1u);
         cos_pc_in = 1;                                  /* (not sent back: no loop) */
+        cos_pc_last = (uint8_t)(d1 + 1u);
         return;
     }
     if (st == 0xB0u && cos_mc_ch && ch == cos_mc_ch - 1u && cos_mc_dir != 1u) {   /* (cursed-os) LINK 2: the other

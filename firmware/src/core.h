@@ -881,6 +881,8 @@ static inline uint32_t swing_step_len(const track_t *t, uint32_t base, uint32_t 
 /* ----------------------------------------------------------- system --- */
 #define RING_PUBLISH() __asm__ volatile("" ::: "memory")   /* slot store before the index update */
 static volatile uint32_t fm1_ms;  /* milliseconds since boot (TIMER4-based, TIMER5 ISR in main.c) */
+static volatile uint32_t cos_rx_ms;  /* (cursed-os 0.17.0) when a byte last came in on the MIDI jack (midi_uart.c; | 1) */
+#define MIDI_UART_RX_HOOK() (cos_rx_ms = fm1_ms | 1u)
 /* boot-loop guard (main.c): two boots in a row that die in the first 30 s -> UBOOT */
 #define BOOTGUARD_MAGIC 0x42475244u
 struct { uint32_t magic, failed, pending; } bootguard __attribute__((section(".noinit")));

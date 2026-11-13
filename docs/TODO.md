@@ -4,6 +4,10 @@ Planned work. Done items move to the commit log.
 
 ## When the FM-1 arrives
 
+- **The Syntakt link (0.17.0) on the cables.** GLO > SYNTAKT ON: CABLE OK, the BPM, PLAY / STOP, a pattern change
+  landing with the Syntakt's at PAT BARS 1 and 4 (if its PRG CH SEND goes out when the pattern changes rather than when
+  it is picked, PAT BARS 1 is right); the FM-1's level into the Syntakt's INPUT (no clipping at CEILING -6).
+
 - **CPU on the device.** The host numbers (tests/cpu_vg.py, `cos/*` sections) are relative only. On the FM-1, run
   GLO > SYSTEM and watch CPU / PEAK / LATE while playing the worst case: all five tracks, the master COMP on with
   SC HPF and MIX, the ISOLATOR in use (LOW -12), eight FX pad effects held, a BREAKDOWN building, RUMBLE on. Host figures (instructions a sample,

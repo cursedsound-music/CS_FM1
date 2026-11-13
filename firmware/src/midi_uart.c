@@ -29,8 +29,12 @@ static uint32_t um_len(uint32_t s)                 /* data bytes of a channel st
     return (s & 0xE0u) == 0xC0u ? 1u : 2u;         /* Cx Dx: 1, else 2 */
 }
 
+#ifndef MIDI_UART_RX_HOOK
+#define MIDI_UART_RX_HOOK() ((void)0)
+#endif
 static void um_byte(uint32_t b)
 {
+    MIDI_UART_RX_HOOK();                           /* (cursed-os 0.17.0: GLO > SYNTAKT's CABLE, core.h) */
     if (b >= 0xF8u) {
         if (b == 0xF8u || b == 0xFAu || b == 0xFBu || b == 0xFCu) {
             if (midi_enqueue(0xFu | b << 8, 2u))
