@@ -125,7 +125,7 @@ static struct {
 
 static void chain_start(void);                   /* song_play.c (end of seq.c) */
 static void chain_stop(void);
-static void chain_tick(uint32_t n);
+static __attribute__((noinline)) void chain_tick(uint32_t n);
 static uint32_t step_samples(const track_t *t, uint32_t period, uint32_t idx);   /* seq.c (motion.c uses it) */
 
 static void chain_defaults(chain_config_t *c)

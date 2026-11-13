@@ -173,7 +173,8 @@ static void chain_stop(void)                          /* (seq_stop) */
     scene_pfx = 0;                                    /* (a scene's punch-in effects end with the song) */
     chain.ended = chain.kept;                         /* (a quick chain keeps nothing: what plays stays) */
 }
-static void chain_tick(uint32_t n)
+/* (cursed-os 0.17.0: out of line, once a block: out of mix_block's RAM code, its headroom 2048 B kept) */
+static __attribute__((noinline)) void chain_tick(uint32_t n)
 {
     uint32_t bar;
     if (!song.playing)
