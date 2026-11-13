@@ -134,6 +134,15 @@ static void srec_stop(void)                           /* SONG REC pressed again,
 }
 
 static uint32_t chain_nbar;                           /* (cursed-os 0.17.0) bars since PLAY (GLO > SYNTAKT's PAT LEN) */
+/* (0.17.0) a section the Syntakt asked for: due when the bars since PLAY are a multiple of PAT BARS (1 2 4 8 16); one
+ * asked for here: at once. Out of line: the bar's hook is in the audio's RAM code (tools/build.py HOT_FNS), kept small */
+static __attribute__((noinline)) int cos_pc_due(void)
+{
+    if (cos_pc_wait && cos_pc_bars > 1u && (chain_nbar & (cos_pc_bars - 1u)))
+        return 0;
+    cos_pc_wait = 0;
+    return 1;
+}
 static void chain_start(void)                         /* (seq_start) */
 {
     chain.carry = 0;
@@ -209,11 +218,9 @@ static void chain_tick(uint32_t n)
             srec_add(live.cur);
         return;
     }
-    if (live.req >= 0 && sec_stage.ready && sec_stage.row == SEC_LIVE &&
-        (!cos_pc_wait || cos_pc_bars < 2u || !(chain_nbar % cos_pc_bars))) {   /* a live jump (0.17.0: the Syntakt's, at
-                                                         * the end of its pattern) */
+    if (live.req >= 0 && sec_stage.ready && sec_stage.row == SEC_LIVE && cos_pc_due()) {   /* a live jump (0.17.0: the
+                                                         * Syntakt's at the end of its pattern) */
         live.req = -1;
-        cos_pc_wait = 0;
         song.rec = 0;                                 /* (a take does not run on into another section) */
         sec_apply();
         if (live.srec == 2u)
