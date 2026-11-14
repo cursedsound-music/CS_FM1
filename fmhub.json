@@ -1,0 +1,9 @@
+{
+  "what": "An Elektron-style six-track groovebox for the FM-1, with Elektron Syntakt support. One-press quick-start loops, generators for acid lines, dub chords, held atmospheres and modular bleeps, trig conditions and locks, a DJ filter and FX pad, and the keys set the song's key. Built on JIANT FM.",
+  "author": "cursedsound",
+  "kinds": ["groove", "drums", "chords"],
+  "cheat": "https://github.com/cursedsound-music/CS_FM1/blob/main/docs/GUIDE.md#cheat-sheet",
+  "image": "docs/guide/02_home_playing.png",
+  "color": "#E0242E",
+  "sounds": "licensed: FMDRUM's transient samples from the LXR drum machine firmware by Erica Synths (github.com/erica-synths/lxr-desktop-app), GPL-3.0-only"
+}

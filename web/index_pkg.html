@@ -264,7 +264,7 @@ async function fwKind(up) {
   if (!dev) return { kind: "none" };
   const text = dev.id.text;
   if (text === "FM-1_015") { dev.link.close(); return { kind: "stock", text }; }
-  if (!/^FM-1_9\d\d$/.test(text)) { dev.link.close(); return { kind: "other", text }; }
+  if (!/^FM-1_(9\d\d|65\d{6})$/.test(text)) { dev.link.close(); return { kind: "other", text }; }   /* (cursed-os: FM-1_65MMmmpp) */
   const input = dev.link.input, output = dev.link.output; dev.link.close();
   const link = new BackupConnection(input, output);
   try { return isJiantInfo(await link.request([1, []], { timeout: 2000 })) ? { kind: "jiant", text } : { kind: "other", text }; }

@@ -2,7 +2,7 @@
 
 cursed os is custom firmware for the M-VAVE FM-1. It turns the FM-1 into a six-track groovebox, with drums, a kick,
 an acid line, a bass, a pad and a sixth voice. Each track has its own sequencer and generators, and it works with an
-Elektron Syntakt. This guide is for cursed os 0.18.4.
+Elektron Syntakt. This guide is for cursed os 0.18.5.
 
 All screenshots come from the browser emulator, which runs the same firmware.
 

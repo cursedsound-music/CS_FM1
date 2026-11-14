@@ -43,7 +43,8 @@ python3 -m http.server 8000
 2. Pick the version (the newest is on top) and press Install. Allow MIDI access when the browser asks.
 3. Wait until the FM-1 restarts and the page reports the new version. Don't unplug it while it writes.
 
-The installer checks the connected FM-1 first and writes only over official V15, JIANT FM or cursed os.
+The installer checks the connected FM-1 first and writes only over official V15, JIANT FM or cursed os. A running
+cursed os answers over USB as `FM-1_65` and its version (0.18.5: `FM-1_65001805`; 0.18.4 and older answered `FM-1_909`).
 
 ## Option 2: the command line
 
