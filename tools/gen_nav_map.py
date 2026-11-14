@@ -636,7 +636,8 @@ def main():
         verify(keys, drawn)
         out = R / 'docs' / f'{name}.svg'
         if check:
-            if not out.exists() or out.read_text() != doc:
+            words = lambda d: re.findall(r'>([^<>]+)</text>', d)   # (cursed-os: the words, in order, not the geometry:
+            if not out.exists() or words(out.read_text()) != words(doc):   # FreeType's widths move it by a hair
                 raise SystemExit(f'gen_nav_map: {out.relative_to(R)} is out of date (run tools/gen_nav_map.py)')
             continue
         out.write_text(doc)
