@@ -52,8 +52,9 @@ enum { CC_OUTCH, CC_MOUT, CC_CLOCK, CC_SLOT, CC_TRKS, CC_LOAD, CC_COMP, CC_CATK,
        CC_TCOND, CC_TSLD, CC_TSND,                       /* (0.14.0) TRIG > COND: the held steps' CONDITION, SLIDE, SOUND */
        CC_DPAN, CC_DCHN,                                 /* (0.14.1) EDIT > SOUND on a kit: the drum's PAN, CHANCE */
        CC_STON, CC_STPAT, CC_STLEN,                      /* (0.17.0) GLO > SYNTAKT: ON, PATTERNS, PAT LEN */
-       CC_LSAT, CC_QSTY, CC_QDRM };                      /* (0.18.0) GLO > LIMIT's SATURATE; SAVE > START's STYLE, DRUMS */
-_Static_assert(CC_QDRM < 0xFBu && CC_DCH7 < 0xFBu, "the CK_COS ids fit a page's byte (0xFB..0xFF: BFINE, MUTE Q, BPM, OCTAVE, none)");
+       CC_LSAT, CC_QSTY, CC_QDRM,                        /* (0.18.0) GLO > LIMIT's SATURATE; SAVE > START's STYLE, DRUMS */
+       CC_QELM, CC_QBAR };                               /* (0.18.1) START's ELEMENTS, BARS */
+_Static_assert(CC_QBAR < 0xFBu && CC_DCH7 < 0xFBu, "the CK_COS ids fit a page's byte (0xFB..0xFF: BFINE, MUTE Q, BPM, OCTAVE, none)");
 _Static_assert(X2_N <= 16u, "CC_X2 .. CC_X2E: room for every trk_x2 field");
 static void cos_syntakt(uint32_t id, int32_t v);    /* (0.17.0) GLO > SYNTAKT's knobs */
 /* (0.18.0, GG: "quick starts") SAVE > START: a jam ready in one press (cos_qs_load) */
@@ -61,6 +62,9 @@ enum { QS_HYPNO, QS_ACID, QS_DUB, QS_BLEEPS, QS_N };
 static const char *const QS_NAME[QS_N + 1u] = {"HYPNOTIC", "ACID", "DUB TECHNO", "BLEEPS", 0};
 static const char *const QS_DRN[4] = {"FULL", "PERC", "NONE", 0};
 static uint8_t qs_sty, qs_drm;                          /* (qs_drm: 0 the default, else DRUMS + 1) */
+static uint8_t qs_elm, qs_bar = 2;                      /* (0.18.1) ELEMENTS: 0 ALL, 1 PICKED; BARS: 1 2 4 (0 .. 2) */
+static const char *const QS_ELN[3] = {"ALL", "PICKED", 0};
+static const char *const QS_BRN[4] = {"1", "2", "4", 0};
 static uint8_t qs_mute, qs_have;                        /* (the mutes before it, bit a track: not in the UNDO's project) */
 static void cos_qs_undo(void);
 static uint32_t qs_drm_get(void);
@@ -224,7 +228,8 @@ static const cpg_t CZP_PERF[] = {{"FX PAD", CK_COS, {CC_PF0, CC_PF0 + 1u, CC_PF0
 static const cpg_t CZP_PROJ[] = {{"PROJECT", CK_COS, {CC_SLOT, CC_NAME, X, X}},
                                 {"SOUNDS", CK_COS, {CC_USLOT, X, X, X}},
                                 {"KITS", CK_COS, {CC_KSLOT, X, X, X}},
-                                {"START", CK_COS, {CC_QSTY, CC_QDRM, X, X}}};   /* (0.18.0) quick starts: cos_qs_load */   /* (0.13.0) the user kits: kits.c */   /* (0.10.2) the user presets: KNOB 1 the slot */   /* (KNOB 1 the slot, every song's: 1A ..
+                                {"START", CK_COS, {CC_QSTY, CC_QDRM, CC_QELM, CC_QBAR}}};   /* (0.18.0) quick starts: cos_qs_load;
+                                                         * 0.18.1 ELEMENTS, BARS */   /* (0.13.0) the user kits: kits.c */   /* (0.10.2) the user presets: KNOB 1 the slot */   /* (KNOB 1 the slot, every song's: 1A ..
                                                          * 8D; white keys 1..4 this song's, 9..16 the songs; KNOB 2 a name) */
 #undef X
 static const char *const CM_NAME[CM_N] = {"HOME", "TRIG", "SRC", "AMP", "DRUMS", "FX", "GEN", "MIX", "KEY", "SAVE"};
@@ -841,16 +846,18 @@ static const param_desc_t *cos_cdesc(uint32_t id, int16_t **vp)
     if (id == CC_LSAT) {                                 /* (0.18.0) GLO > LIMIT's SATURATE: STRING's row 8, byte 23 */
         static const char *const SN[14] = {"OFF", "0 dB", "+1 dB", "+2 dB", "+3 dB", "+4 dB", "+5 dB", "+6 dB", "+7 dB",
                                            "+8 dB", "+9 dB", "+10 dB", "+11 dB", "+12 dB"};
-        static const param_desc_t DS = {"SAT", F_ENUM, 0, 13, 0, SN, 0};
-        cz.cc_v[3] = (int16_t)(favorites.factory[8][23] <= 13u ? favorites.factory[8][23] : 0u);
+        static const param_desc_t DS = {"SAT", F_ENUM, 0, 13, 1, SN, 0};   /* (0.18.1: 0 dB the default) */
+        uint32_t sb = favorites.factory[8][23];          /* (0.18.1, GG: "on by default": 0 there 0 dB, 14 OFF) */
+        cz.cc_v[3] = (int16_t)(sb == 0u ? 1u : sb == 14u ? 0u : sb <= 13u ? sb : 1u);
         *vp = &cz.cc_v[3];
         return &DS;
     }
-    if (id == CC_QSTY || id == CC_QDRM) {                /* (0.18.0) SAVE > START */
-        static const param_desc_t DS[2] = {{"STYLE", F_ENUM, 0, QS_N - 1u, 0, QS_NAME, 0}, {"DRUMS", F_ENUM, 0, 2, 0, QS_DRN, 0}};
-        cz.cc_v[3] = (int16_t)(id == CC_QSTY ? qs_sty : qs_drm_get());
+    if (id == CC_QSTY || id == CC_QDRM || id == CC_QELM || id == CC_QBAR) {   /* (0.18.0) SAVE > START */
+        static const param_desc_t DS[2] = {{"STYLE", F_ENUM, 0, QS_N - 1u, 0, QS_NAME, 0}, {"DRUMS", F_ENUM, 0, 2, 0, QS_DRN, 0}},
+                                  DE[2] = {{"ELEMENTS", F_ENUM, 0, 1, 0, QS_ELN, 0}, {"BARS", F_ENUM, 0, 2, 2, QS_BRN, 0}};
+        cz.cc_v[3] = (int16_t)(id == CC_QSTY ? qs_sty : id == CC_QDRM ? qs_drm_get() : id == CC_QELM ? qs_elm : qs_bar);
         *vp = &cz.cc_v[3];
-        return &DS[id - CC_QSTY];
+        return id >= CC_QELM ? &DE[id - CC_QELM] : &DS[id - CC_QSTY];
     }
     if (id >= CC_STON && id <= CC_STLEN) {               /* (0.17.0) GLO > SYNTAKT */
         static const char *const OO[] = {"OFF", "ON", 0}, *const PF[] = {"OFF", "ON", 0},
@@ -1172,12 +1179,16 @@ static void cos_cput(uint32_t id, int32_t v)
     } else if (id >= CC_STON && id <= CC_STLEN) {
         cos_syntakt(id, v);                              /* (0.17.0) GLO > SYNTAKT */
     } else if (id == CC_LSAT) {
-        favorites.factory[8][23] = (uint8_t)clamp(v, 0, 13);
+        favorites.factory[8][23] = (uint8_t)(v <= 0 ? 14 : v == 1 ? 0 : clamp(v, 2, 13));   /* (0.18.1: OFF 14, 0 dB 0) */
         cz.set_ms = fm1_ms;
     } else if (id == CC_QSTY) {
         qs_sty = (uint8_t)clamp(v, 0, QS_N - 1);
     } else if (id == CC_QDRM) {
         qs_drm = (uint8_t)(clamp(v, 0, 2) + 1);
+    } else if (id == CC_QELM) {
+        qs_elm = (uint8_t)clamp(v, 0, 1);
+    } else if (id == CC_QBAR) {
+        qs_bar = (uint8_t)clamp(v, 0, 2);
     } else if (id == CC_DPAN) {
         dx_pan[dx_ui_lane & 7u] = (int8_t)clamp(v, -64, 63);
     } else if (id == CC_DCHN) {
@@ -2074,13 +2085,19 @@ static __attribute__((noinline)) void cos_proj_new(void)
 }
 /* (0.18.0, GG: "quick starts") SAVE > START: OCT+ a jam in one press, the FM-1 as extra voices to a Syntakt or on its
  * own; again: another of the same STYLE (new seeds). Each track its sound and a generated line, the ones not needed
- * muted; DRUMS: FULL (the KICK track 4/4 and the kit's percussion), PERC (the kit's only: a Syntakt's kick), NONE (the
+ * muted; DRUMS: FULL (the KICK track 4/4 and the kit's groove), PERC (the kit's only: a Syntakt's kick), NONE (the
  * default PERC with SYNTAKT ON, else FULL). The tempo and the key stay. An UNDO point first (REC on the page brings
  * the music before back: undo_do). The transport plays on.
- *   HYPNOTIC   T3 ACID rolling, T5 ATMOS DARK held, T6 a SONAR PING 5-step motif
- *   ACID       T3 ACID busy, T6 R2 BLIPS 3-step
- *   DUB TECHNO T4 DUB STAB chords, T5 ATMOS DARK held, T6 GLASS PING 6-step
- *   BLEEPS     T4 WOOD BLOCK 3-step, T5 ATMOS DARK held, T6 WATER DROP 5-step (two motifs across each other) */
+ * (0.18.1, GG: "complete loops with all the elements") ELEMENTS ALL (the default): every track a part, a whole loop
+ * (the kit's hats, claps and percussion as the style's genre plays them, the kick, an acid line, a sub bass under it,
+ * chords or an atmosphere, a bleep motif); PICKED: the style's few, as 0.18.0. BARS 1, 2, 4: the drums, the acid, the
+ * bass and the chords that long (the drums with their genre's variations; the bleeps' motifs their own length).
+ *   ALL:  HYPNOTIC   kit, kick, T3 ACID rolling, T4 SUB BASS, T5 ATMOS, T6 SONAR PING 5
+ *         ACID       kit, kick, T3 ACID busy, T4 SUB BASS, T5 DUB STABS, T6 R2 BLIPS 3
+ *         DUB TECHNO kit, kick, T3 SUB BASS, T4 DUB STABS, T5 ATMOS, T6 GLASS PING 6
+ *         BLEEPS     kit, kick, T3 SUB BASS, T4 WOOD BLOCK 3, T5 ATMOS, T6 WATER DROP 5
+ *   PICKED: HYPNOTIC T3 ACID, T5 ATMOS, T6 SONAR; ACID T3 ACID, T6 R2 BLIPS; DUB TECHNO T4 STABS, T5 ATMOS, T6 GLASS;
+ *         BLEEPS T4 WOOD, T5 ATMOS, T6 WATER DROP */
 static uint32_t qs_drm_get(void)
 {
     if (qs_drm) return (uint32_t)(qs_drm - 1u) % 3u;
@@ -2102,18 +2119,33 @@ static void qs_bleep(uint32_t k, const char *nm, int32_t motif)
     bl_put(BK_MOTIF, motif);
     bl_oct(1, 0);
 }
-static void qs_atmos(uint32_t k)
+static void qs_chords(uint32_t k, uint32_t atmos, uint32_t bars)
 {
-    qs_sound(k, ENGI_DUB, "ATMOS DARK");
+    if (atmos) qs_sound(k, ENGI_DUB, "ATMOS DARK"); else qs_sound(k, ENGI_ANALOG, "DUB STAB");
     track_select(k);
-    db_put(DK_DENS, 12);
-    db_put(DK_LEN, 100);
+    db_put(DK_BARS, (int32_t)bars);
+    if (atmos) { db_put(DK_DENS, 12); db_put(DK_LEN, 100); }
     db_throw(k, 1);
+}
+/* an acid line (ACID's engine) or a sub bass (ANALOG's SUB BASS, the same generator: sparse, no slides) */
+static void qs_line(uint32_t k, uint32_t sub, int32_t dens, uint32_t ctr, uint32_t bars)
+{
+    ac_t *a;
+    if (sub) qs_sound(k, ENGI_ANALOG, "SUB BASS"); else qs_sound(k, ENGI_ACID, "");
+    track_select(k);
+    a = ac_of(k);
+    a->ctr = (uint8_t)ctr;                               /* (the register: the acid above the sub) */
+    a->steps = (uint8_t)(16u << bars);
+    if (sub) { a->slide = 0; a->acc = 10; }
+    ac_put(AK_DENS, dens);
+    ac_oct(1, 0);
 }
 static __attribute__((noinline)) void cos_qs_load(void)
 {
-    uint32_t k, sel = song.sel % NTRK, st = qs_sty % QS_N, dm = qs_drm_get(), gi;
+    uint32_t k, sel = song.sel % NTRK, st = qs_sty % QS_N, dm = qs_drm_get(), gi, all = !qs_elm, bars = qs_bar % 3u;
     static const char *const GN[QS_N] = {"HYPNOTIC", "TECHNO", "DUB TECHNO", "HYPNOTIC"};
+    static const char *const BL[QS_N] = {"SONAR PING", "R2 BLIPS", "GLASS PING", "WATER DROP"};
+    static const uint8_t BM[QS_N] = {2, 1, 3, 2};
     if (chain_busy()) { cos_say("STOP THE SONG FIRST"); return; }
     undo_mark();
     for (k = 0, qs_mute = 0; k < NTRK; k++) qs_mute |= (uint8_t)((trk[k].p[P_MUTE] != 0) << k);
@@ -2124,32 +2156,29 @@ static __attribute__((noinline)) void cos_qs_load(void)
         trk[k].p[P_SLEN] = 16;
         trk[k].p[P_MUTE] = 1;
     }
-    /* drums: T2 the KICK 4/4, T1 the kit's percussion (GEN's drums of the style's genre) */
+    /* drums: T2 the KICK 4/4, T1 the kit's groove (GEN's drums of the style's genre: hats, claps, percussion) */
     qs_sound(1, ENGI_KICK, "TECHNO");
     cos_kick_pat(&trk[1], 0);
     trk[1].p[P_MUTE] = (int16_t)(dm != 0u);
     for (gi = 0; gi < NELEM(GENRE) && !str_eq(GENRE[gi].name, GN[st]); gi++) {}
     gs.gi = (uint8_t)(gi % NELEM(GENRE));
     gs.g = &GENRE[gs.gi];
+    gs.amt[GP_DRUMS] = (uint8_t)(all ? 65u : 35u);
+    gs.energy = all ? 65u : 50u;
+    gs.complex = 40u;
     gp.seed = (uint16_t)(fm1_ms * 2654435761u >> 16);
     trk[0].p[P_MUTE] = (int16_t)(dm == 2u);
-    gen_drums(&trk[0], 16);
+    trk[0].p[P_SLEN] = (int16_t)(16u << bars);
+    gen_drums(&trk[0], 16u << bars);
     /* the voices */
-    if (st == QS_HYPNO || st == QS_ACID) {
-        qs_sound(2, ENGI_ACID, "");
-        track_select(2);
-        ac_put(AK_DENS, st == QS_ACID ? 78 : 50);
-        ac_oct(1, 0);
-    }
-    if (st == QS_DUB) {
-        qs_sound(3, ENGI_ANALOG, "DUB STAB");
-        track_select(3);
-        db_throw(3, 1);
-    }
+    if (st == QS_HYPNO || st == QS_ACID) qs_line(2, 0, st == QS_ACID ? 78 : 50, all ? 48u : 40u, bars);
+    else if (all) qs_line(2, 1, 30, 36u, bars);
+    if (all && (st == QS_HYPNO || st == QS_ACID)) qs_line(3, 1, 30, 36u, bars);
+    if (st == QS_DUB) qs_chords(3, 0, bars);
     if (st == QS_BLEEPS) qs_bleep(3, "WOOD BLOCK", 1);
-    if (st != QS_ACID) qs_atmos(4);
-    qs_bleep(5, st == QS_HYPNO ? "SONAR PING" : st == QS_ACID ? "R2 BLIPS" : st == QS_DUB ? "GLASS PING" : "WATER DROP",
-             st == QS_ACID ? 1 : st == QS_DUB ? 3 : 2);
+    if (st != QS_ACID) qs_chords(4, 1, bars);
+    else if (all) qs_chords(4, 0, bars);
+    qs_bleep(5, BL[st], BM[st]);
     track_select(sel);
     ac_ms = db_ms = eu_ms = fm1_ms;
     cos_say(QS_NAME[st]);
@@ -4079,13 +4108,15 @@ static void cos_body_link2(void)
 /* (0.18.0) SAVE > START: what the STYLE puts on the tracks, how to load it */
 static void cos_body_start(void)
 {
-    static const char *const L1[QS_N] = {"T3 ACID ROLLING", "T3 ACID BUSY", "T4 DUB STABS", "T4 WOOD 3-STEP"};
-    static const char *const L2[QS_N] = {"T5 ATMOS, T6 SONAR 5", "T6 R2 BLIPS 3-STEP", "T5 ATMOS, T6 GLASS 6", "T5 ATMOS, T6 DROP 5"};
-    static const char *const DR[3] = {"DRUMS: KICK + KIT PERC", "DRUMS: KIT PERC ONLY", "DRUMS: NONE"};
+    static const char *const A1[QS_N] = {"T3 ACID  T4 SUB BASS", "T3 ACID  T4 SUB BASS", "T3 SUB BASS  T4 STABS", "T3 SUB BASS  T4 WOOD 3"};
+    static const char *const A2[QS_N] = {"T5 ATMOS  T6 SONAR 5", "T5 STABS  T6 R2 BLIPS 3", "T5 ATMOS  T6 GLASS 6", "T5 ATMOS  T6 DROP 5"};
+    static const char *const P1[QS_N] = {"T3 ACID ROLLING", "T3 ACID BUSY", "T4 DUB STABS", "T4 WOOD 3-STEP"};
+    static const char *const P2[QS_N] = {"T5 ATMOS, T6 SONAR 5", "T6 R2 BLIPS 3-STEP", "T5 ATMOS, T6 GLASS 6", "T5 ATMOS, T6 DROP 5"};
+    static const char *const DR[3] = {"T1 KIT GROOVE, T2 KICK", "T1 KIT GROOVE (NO KICK)", "NO DRUMS"};
     uint32_t st = qs_sty % QS_N;
-    cos_tx(8, 40, L1[st], C_FG);
-    cos_tx(8, 52, L2[st], C_FG);
-    cos_tx(8, 64, DR[qs_drm_get()], C_MID);
+    cos_tx(8, 40, DR[qs_drm_get()], C_MID);
+    cos_tx(8, 52, qs_elm ? P1[st] : A1[st], C_FG);
+    cos_tx(8, 64, qs_elm ? P2[st] : A2[st], C_FG);
     cos_tx(8, 84, "OCT+ LOADS; AGAIN: ANOTHER", C_FG);
     cos_tx(8, 96, "TEMPO AND KEY STAY", C_DIM);
     cos_tx(8, 108, "REC: THE MUSIC BEFORE IT", C_DIM);
@@ -4271,7 +4302,7 @@ dials:
 /* the splash (ui_draw.c draw_splash / splash_write under COS_SLIM; main.c's boot loop calls it every ~4 ms for
  * SPL_WRITE + SPL_HOLD ms): black, a few still stars, the name 2x, the version, a 16-block bar filling like a pattern
  * (the block being filled red), READY. Drawn whole once, then only the bar's strip when a block fills */
-#define COS_VERSION "0.18.0"
+#define COS_VERSION "0.18.1"
 static void cos_px2(int32_t x, int32_t y, const char *s, uint16_t c)      /* (the face 2 x 2) */
 {
     int32_t r, b, b0;

@@ -293,9 +293,10 @@ static void track_dist(track_t *t, int32_t *b, uint32_t n)
 static volatile int32_t lim_t = LIM_T0;               /* (cursed-os) GLO > MASTER LIMIT: the ceiling, the output's peak -6 ..
                                                          * -18 dBFS (ui_input.c ui_polls' LIM) */
 #define LIM_T lim_t
-/* (cursed-os 0.18.0, GG: "soft clip not always on, i want to set it when I need it") GLO > LIMIT's SATURATE: 0 (OFF, the
- * power-on) the master clean, the limiter's ceiling the output's peak; else softclip(x g) k after the limiter, g its
- * drive (0 .. +12 dB, Q15), k so the ceiling stays the peak (ui_input.c ui_polls); 0 dB: the clip as before 0.18 */
+/* (cursed-os 0.18.0, GG: "cleaned soft clip (not always on, i want to set it when I need it)"; 0.18.1: "on by default
+ * i turn it off when I don't need it") GLO > LIMIT's SAT: 0 dB at power-on (the clip as before 0.18), OFF the master
+ * clean, the limiter's ceiling the output's peak; on, softclip(x g) k after the limiter, g its drive (0 .. +12 dB, Q15),
+ * k so the ceiling stays the peak (ui_input.c ui_polls) */
 static volatile int32_t sat_g, sat_k = 32768;
 static int32_t lim_env = LIM_T0;
 static uint16_t lim_hold;                             /* (cursed-os 0.12.2) the peak held this long before the release */

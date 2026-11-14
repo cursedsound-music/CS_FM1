@@ -69,8 +69,9 @@ A05 A ...). Set PAT BARS (KNOB 3) to the Syntakt pattern's length in bars: the F
 the end of its pattern. So a jam: build A on both, store it (SAVE + OCT+), then B ...; SONG REC records the order you
 play them in as a song.
 
-**A quick start**: SAVE > START, pick a STYLE and DRUMS (PERC by default with SYNTAKT ON: the Syntakt plays the kick),
-OCT+ loads a ready jam; REC on the page goes back.
+**A quick start**: SAVE > START, pick a STYLE, DRUMS (PERC by default with SYNTAKT ON: the Syntakt plays the kick),
+ELEMENTS (ALL: a complete loop on every track; PICKED: a few voices) and BARS; OCT+ loads it, again another; REC on the
+page goes back.
 
 **In a set**: dial the Syntakt's BPM to the CDJ track and nudge it; the FM-1 follows. With the Syntakt's kick, the
 FM-1's own KICK track can stay muted (HOME held + white 1).

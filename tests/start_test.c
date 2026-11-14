@@ -61,6 +61,7 @@ int main(void)
         CHECK(n == 4u && str_eq(p[3].tab, "START") && cos_ess(CM_PROJ, p, 3, n), "SAVE > START: a page, an everyday one");
     }
     cz.mode = CM_PROJ; cz.tab[CM_PROJ] = 3; frame16();
+    cos_cput(CC_QELM, 1);                                /* (PICKED: the style's few, as 0.18.0) */
     for (s = 0; s < QS_N; s++) {
         uint32_t used = 0;
         cos_cput(CC_QSTY, (int32_t)s); cos_cput(CC_QDRM, 0);
@@ -72,6 +73,17 @@ int main(void)
         if (s == QS_ACID) CHECK(trk[2].eng_req == ENGI_ACID && notes(2) && trk[4].p[P_MUTE], "ACID: T3 an acid line, T5 muted");
         if (s == QS_DUB) CHECK(!trk[3].p[P_MUTE] && notes(3) && !trk[4].p[P_MUTE] && trk[2].p[P_MUTE], "DUB TECHNO: T4 stabs, T5 the atmosphere, T3 muted");
         if (s == QS_BLEEPS) CHECK(trk[3].eng_req == ENGI_DUB && trk[3].p[P_SLEN] == 3 && trk[5].p[P_SLEN] == 5, "BLEEPS: a 3-step and a 5-step motif across each other");
+    }
+    /* ELEMENTS ALL (the default): every track a part, a whole loop; BARS 4 */
+    cos_cput(CC_QELM, 0); cos_cput(CC_QBAR, 2);
+    for (s = 0; s < QS_N; s++) {
+        uint32_t used = 0, dl = 0;
+        cos_cput(CC_QSTY, (int32_t)s); cos_cput(CC_QDRM, 0);
+        cos_proj_oct(1);
+        for (k = 0; k < 4u; k++) frame16();
+        for (k = 0; k < NTRK; k++) used += !trk[k].p[P_MUTE] && notes(k);
+        for (i = 0; i < 64u; i++) dl |= trk[0].step[i].hit;
+        CHECK(used == NTRK && trk[0].p[P_SLEN] == 64 && (dl & (1u << DV_HATC | 1u << DV_HATO)), "%s ALL: all six tracks play, the kit's hats in a 4-bar groove (lanes %02x)", QS_NAME[s], dl);
     }
     /* again: another */
     {
@@ -85,7 +97,7 @@ int main(void)
     /* REC on START: the music before it */
     {
         int16_t m2 = trk[2].p[P_MUTE];
-        cos_cput(CC_QSTY, QS_DUB); cos_proj_oct(1); frame16();
+        cos_cput(CC_QELM, 1); cos_cput(CC_QSTY, QS_DUB); cos_proj_oct(1); frame16();
         CHECK(trk[2].p[P_MUTE], "DUB TECHNO: T3 muted"); cos_qs_undo();
         frame16();
         CHECK(trk[2].p[P_MUTE] == m2 && (trk[2].eng_req == ENGI_ACID || trk[2].engine == ENGI_ACID), "the ACID start back (T3 as it was: %d %d, %u %u)", trk[2].p[P_MUTE], m2, trk[2].eng_req, trk[2].engine);
@@ -124,7 +136,7 @@ int main(void)
         double h1, h3;
         uint32_t n = 4096;
         for (s = 0; s < 2u; s++) {
-            favorites.factory[8][23] = (uint8_t)(s ? 13u : 0u); ui_polls();
+            favorites.factory[8][23] = (uint8_t)(s ? 13u : 14u); ui_polls();
             for (k = 0; k < 2u; k++) {
                 for (i = 0; i < n; i++) {
                     int32_t l = (int32_t)(8231.0 * sin(2 * M_PI * 1000.0 * (k * n + i) / FS)), rr = l;
@@ -138,6 +150,7 @@ int main(void)
             else CHECK(h3 > h1 * 1e-3, "SATURATE +12 dB: the 3rd up (%.1f dB)", 10 * log10(h3 / h1 + 1e-30));
         }
         favorites.factory[8][23] = 0; ui_polls();
+        CHECK(sat_g == 32768, "SAT: 0 dB by default (on)");
         /* silence: 0; twice the same */
         {
             int32_t a[256], b[256], l, rr;
