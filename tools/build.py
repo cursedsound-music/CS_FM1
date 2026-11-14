@@ -58,16 +58,10 @@ PRODUCT = "FM-1_909"                # package identity; release builds are FM-1_
 
 
 def cos_product():
-    """(cursedsound) cursed os's own identity: FM-1_65 and its version as MMmmpp (0.18.4: FM-1_65001804), free on
-    The Firmware Hub (its catalog: no other firmware's pattern takes FM-1_65 and six digits). The identity is only the
-    package's marker and the USB answer: the installers check that the device reports it after the install, the
-    loader and the flash layout do not change"""
-    import pathlib
-    src = (pathlib.Path(__file__).resolve().parent.parent / "firmware/src/cos.c").read_text()
-    m = re.search(r'#define COS_VERSION "(\d+)\.(\d+)\.(\d+)"', src)
-    if not m:
-        raise SystemExit("build.py: COS_VERSION in firmware/src/cos.c is not X.Y.Z")
-    return "FM-1_65%02d%02d%02d" % tuple(int(x) for x in m.groups())
+    """(cursedsound) cursed os's own identity, FM-1_420 (free on The Firmware Hub, GG's pick); JIANT's FM-1_909 until
+    0.18.4. The identity is only the package's marker and the USB answer: the installers check that the device reports
+    it after the install, the loader and the flash layout do not change"""
+    return "FM-1_420"
 
 
 PRODUCT = cos_product()

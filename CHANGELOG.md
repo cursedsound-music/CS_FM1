@@ -4,8 +4,7 @@ cursed os versions, newest first. The full detail of each one is in the git hist
 
 ## 0.18.5
 
-- cursed os has its own identity: `FM-1_65` and its version (0.18.5: `FM-1_65001805`), instead of JIANT's
-  `FM-1_909`. Nothing else changes for an install: the update loader and the flash layout are the same, and both
+- cursed os has its own identity, `FM-1_420`, instead of JIANT's `FM-1_909`. Nothing else changes for an install: the update loader and the flash layout are the same, and both
   installers accept it.
 - `fmhub.json` for The Firmware Hub's card.
 - LICENSING.md: how cursed os keeps Erica Synths' terms for the LXR firmware's transient samples.
