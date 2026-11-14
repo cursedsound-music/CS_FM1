@@ -58,14 +58,16 @@ _Static_assert(CC_QBAR < 0xFBu && CC_DCH7 < 0xFBu, "the CK_COS ids fit a page's 
 _Static_assert(X2_N <= 16u, "CC_X2 .. CC_X2E: room for every trk_x2 field");
 static void cos_syntakt(uint32_t id, int32_t v);    /* (0.17.0) GLO > SYNTAKT's knobs */
 /* (0.18.0, GG: "quick starts") SAVE > START: a jam ready in one press (cos_qs_load) */
-enum { QS_HYPNO, QS_ACID, QS_DUB, QS_BLEEPS, QS_N };
-static const char *const QS_NAME[QS_N + 1u] = {"HYPNOTIC", "ACID", "DUB TECHNO", "BLEEPS", 0};
+enum { QS_HYPNO, QS_ACID, QS_DUB, QS_BLEEPS, QS_RAND, QS_N };   /* (0.18.2: RANDOM) */
+static const char *const QS_NAME[QS_N + 1u] = {"HYPNOTIC", "ACID", "DUB TECHNO", "BLEEPS", "RAND", 0};   /* (RAND: the knob shows five letters) */
 static const char *const QS_DRN[4] = {"FULL", "PERC", "NONE", 0};
 static uint8_t qs_sty, qs_drm;                          /* (qs_drm: 0 the default, else DRUMS + 1) */
 static uint8_t qs_elm, qs_bar = 2;                      /* (0.18.1) ELEMENTS: 0 ALL, 1 PICKED; BARS: 1 2 4 (0 .. 2) */
 static const char *const QS_ELN[3] = {"ALL", "PICKED", 0};
 static const char *const QS_BRN[4] = {"1", "2", "4", 0};
 static uint8_t qs_mute, qs_have;                        /* (the mutes before it, bit a track: not in the UNDO's project) */
+static uint8_t qs_keep, qs_pend;                        /* (0.18.2) KEEP: the tracks a load leaves alone; a load waiting
+                                                         * for the bar's end (cos_qs_tick) */
 static void cos_qs_undo(void);
 static uint32_t qs_drm_get(void);
 #define ID_MUTEQ 0xFCu                          /* (HOME 2's: MUTE Q, cos_knob) */
@@ -2052,9 +2054,10 @@ static __attribute__((noinline)) void cos_kit_erase(void)
     cos_say(kit_erase(k) ? "NOT ERASED" : "ERASED");
 }
 static void cos_qs_load(void);
+static void cos_qs_press(void);
 static __attribute__((noinline)) void cos_proj_oct(int up)
 {
-    if (cz.tab[CM_PROJ] == 3u) { if (up) cos_qs_load(); else cos_say("OCT+: LOAD IT"); return; }   /* (0.18.0) START */
+    if (cz.tab[CM_PROJ] == 3u) { if (up) cos_qs_press(); else cos_say("OCT+: LOAD IT"); return; }   /* (0.18.0) START */
     if (cz.tab[CM_PROJ] == 2u) { cos_kit_oct(up); return; }
     if (cz.tab[CM_PROJ] == 1u) { cos_snd_oct(up); return; }
     if (up) cos_name_auto();                             /* (a music with no name: one drawn for it) */
@@ -2140,48 +2143,158 @@ static void qs_line(uint32_t k, uint32_t sub, int32_t dens, uint32_t ctr, uint32
     ac_put(AK_DENS, dens);
     ac_oct(1, 0);
 }
+/* (0.18.2, GG: "happy accidents i can layer or use live") RANDOM: every part a role and a sound of its own, drawn: the
+ * kit's genre any of GEN's, the KICK's sound and pattern (4/4 most often), T3 an acid line or a sub bass, T4 a sub
+ * bass, an acid line above, stabs or a bleep, T5 an atmosphere, stabs or a bleep, T6 a bleep; each sound any of its
+ * kind (ACID's eight, the basses, DUB's stabs, atmospheres and bleeps), the motifs 3 5 6 7 steps, the densities their
+ * own. PICKED: some of T3 .. T5 muted. KEEP (white 1 .. 6 on the page): those tracks left as they are, so a loop
+ * builds up layer by layer. Playing, a load comes in at the bar's end (cos_qs_tick), SYNTAKT ON with PAT BARS: at its
+ * pattern's end */
+static uint32_t qs_rs;
+static uint32_t qs_r(uint32_t n) { qs_rs = qs_rs * 1664525u + 1013904223u; return n ? (qs_rs >> 8) % n : 0u; }
+static uint32_t qs_pick(uint32_t e, int32_t type)       /* a preset of engine e (DUB: of TYPE type), at random */
+{
+    const engine_t *en = ENGINES[e];
+    uint32_t i, c = 0, n;
+    static const char *const BASS[4] = {"SUB BASS", "FAT BASS", "SQR BASS", "REESE"};
+    if (e == ENGI_ANALOG) {
+        const char *nm = BASS[qs_r(4)];
+        for (i = 0; i < en->npresets && !str_eq(en->presets[i].name, nm); i++) {}
+        return i < en->npresets ? i : 0u;
+    }
+    for (i = 0; i < en->npresets; i++) c += type < 0 || en->presets[i].e[0] == type;
+    n = qs_r(c ? c : 1u);
+    for (i = 0; i < en->npresets; i++)
+        if ((type < 0 || en->presets[i].e[0] == type) && !n--) return i;
+    return 0;
+}
+static void qs_sound_i(uint32_t k, uint32_t e, uint32_t pr)
+{
+    set_engine_of(&trk[k], e);
+    apply_preset_to(&trk[k], pr);
+    trk[k].p[P_MUTE] = 0;
+}
+/* a random part on track k: 0 acid, 1 sub bass, 2 stabs, 3 atmosphere, 4 bleep */
+static void qs_rand_part(uint32_t k, uint32_t role, uint32_t bars)
+{
+    static const uint8_t MO[4] = {1, 2, 3, 4};           /* (BLEEP's MOTIF: 3 5 6 7) */
+    ac_t *a;
+    track_select(k);
+    if (role <= 1u) {
+        qs_sound_i(k, role ? ENGI_ANALOG : ENGI_ACID, qs_pick(role ? ENGI_ANALOG : ENGI_ACID, -1));
+        a = ac_of(k);
+        a->ctr = (uint8_t)(role ? 36u : 40u + qs_r(16));
+        a->steps = (uint8_t)(16u << bars);
+        a->slide = (uint8_t)(role ? 0u : 10u + qs_r(50));
+        a->acc = (uint8_t)(role ? 10u : 15u + qs_r(50));
+        ac_put(AK_DENS, role ? 20 + (int32_t)qs_r(25) : 35 + (int32_t)qs_r(50));
+        ac_oct(1, 0);
+    } else if (role <= 3u) {
+        qs_sound_i(k, ENGI_DUB, qs_pick(ENGI_DUB, role == 3u ? 1 : 0));
+        db_put(DK_BARS, (int32_t)bars);
+        db_put(DK_SHAPE, (int32_t)qs_r(7));
+        if (role == 3u) { db_put(DK_DENS, 8 + (int32_t)qs_r(15)); db_put(DK_LEN, 100); }
+        else { db_put(DK_DENS, 25 + (int32_t)qs_r(50)); db_put(DK_LEN, 10 + (int32_t)qs_r(40)); }
+        db_throw(k, 1);
+    } else {
+        qs_sound_i(k, ENGI_DUB, qs_pick(ENGI_DUB, 2));
+        bl_put(BK_DENS, 30 + (int32_t)qs_r(45));
+        bl_put(BK_MOTIF, MO[qs_r(4)]);
+        bl_oct(1, 0);
+    }
+}
 static __attribute__((noinline)) void cos_qs_load(void)
 {
     uint32_t k, sel = song.sel % NTRK, st = qs_sty % QS_N, dm = qs_drm_get(), gi, all = !qs_elm, bars = qs_bar % 3u;
-    static const char *const GN[QS_N] = {"HYPNOTIC", "TECHNO", "DUB TECHNO", "HYPNOTIC"};
-    static const char *const BL[QS_N] = {"SONAR PING", "R2 BLIPS", "GLASS PING", "WATER DROP"};
-    static const uint8_t BM[QS_N] = {2, 1, 3, 2};
+    uint32_t kp = qs_keep;
+    static const char *const GN[QS_N] = {"HYPNOTIC", "TECHNO", "DUB TECHNO", "HYPNOTIC", ""};
+    static const char *const BL[QS_N] = {"SONAR PING", "R2 BLIPS", "GLASS PING", "WATER DROP", ""};
+    static const uint8_t BM[QS_N] = {2, 1, 3, 2, 2};
     if (chain_busy()) { cos_say("STOP THE SONG FIRST"); return; }
+    if ((kp & ((1u << NTRK) - 1u)) == (1u << NTRK) - 1u) { cos_say("ALL TRACKS KEPT"); return; }
     undo_mark();
     for (k = 0, qs_mute = 0; k < NTRK; k++) qs_mute |= (uint8_t)((trk[k].p[P_MUTE] != 0) << k);
     qs_have = 1;
+    qs_rs ^= fm1_ms * 2654435761u + 0x9E3779B9u;
     ac_ms = db_ms = eu_ms = fm1_ms;                      /* (one UNDO point: this one, not the generators' own) */
     for (k = 0; k < NTRK; k++) {
+        if ((kp >> k) & 1u) continue;                    /* (KEEP: as it is) */
         track_defaults_steps(&trk[k]);
         trk[k].p[P_SLEN] = 16;
         trk[k].p[P_MUTE] = 1;
     }
-    /* drums: T2 the KICK 4/4, T1 the kit's groove (GEN's drums of the style's genre: hats, claps, percussion) */
-    qs_sound(1, ENGI_KICK, "TECHNO");
-    cos_kick_pat(&trk[1], 0);
-    trk[1].p[P_MUTE] = (int16_t)(dm != 0u);
-    for (gi = 0; gi < NELEM(GENRE) && !str_eq(GENRE[gi].name, GN[st]); gi++) {}
-    gs.gi = (uint8_t)(gi % NELEM(GENRE));
-    gs.g = &GENRE[gs.gi];
-    gs.amt[GP_DRUMS] = (uint8_t)(all ? 65u : 35u);
-    gs.energy = all ? 65u : 50u;
-    gs.complex = 40u;
-    gp.seed = (uint16_t)(fm1_ms * 2654435761u >> 16);
-    trk[0].p[P_MUTE] = (int16_t)(dm == 2u);
-    trk[0].p[P_SLEN] = (int16_t)(16u << bars);
-    gen_drums(&trk[0], 16u << bars);
+    /* drums: T2 the KICK (4/4; RANDOM: its sound and pattern drawn), T1 the kit's groove (GEN's drums of the genre) */
+    if (!((kp >> 1) & 1u)) {
+        if (st == QS_RAND) {
+            static const uint8_t KP[8] = {0, 0, 0, 0, 1, 2, 3, 6};
+            qs_sound_i(1, ENGI_KICK, qs_pick(ENGI_KICK, -1));
+            cos_kick_pat(&trk[1], KP[qs_r(8)]);
+        } else {
+            qs_sound(1, ENGI_KICK, "TECHNO");
+            cos_kick_pat(&trk[1], 0);
+        }
+        trk[1].p[P_MUTE] = (int16_t)(dm != 0u);
+    }
+    if (!(kp & 1u)) {
+        if (st == QS_RAND) gi = qs_r(NELEM(GENRE));
+        else for (gi = 0; gi < NELEM(GENRE) && !str_eq(GENRE[gi].name, GN[st]); gi++) {}
+        gs.gi = (uint8_t)(gi % NELEM(GENRE));
+        gs.g = &GENRE[gs.gi];
+        gs.amt[GP_DRUMS] = (uint8_t)(all ? 55u + qs_r(st == QS_RAND ? 30 : 10) : 35u);
+        gs.energy = all ? 65u : 50u;
+        gs.complex = st == QS_RAND ? 20u + qs_r(60) : 40u;
+        gp.seed = (uint16_t)(qs_r(10000));
+        trk[0].p[P_MUTE] = (int16_t)(dm == 2u);
+        trk[0].p[P_SLEN] = (int16_t)(16u << bars);
+        gen_drums(&trk[0], 16u << bars);
+    }
     /* the voices */
-    if (st == QS_HYPNO || st == QS_ACID) qs_line(2, 0, st == QS_ACID ? 78 : 50, all ? 48u : 40u, bars);
-    else if (all) qs_line(2, 1, 30, 36u, bars);
-    if (all && (st == QS_HYPNO || st == QS_ACID)) qs_line(3, 1, 30, 36u, bars);
-    if (st == QS_DUB) qs_chords(3, 0, bars);
-    if (st == QS_BLEEPS) qs_bleep(3, "WOOD BLOCK", 1);
-    if (st != QS_ACID) qs_chords(4, 1, bars);
-    else if (all) qs_chords(4, 0, bars);
-    qs_bleep(5, BL[st], BM[st]);
+    if (st == QS_RAND) {
+        uint32_t r3 = qs_r(2), r4 = r3 == 0u ? (qs_r(3) ? 1u : 2u + 2u * qs_r(2)) : (qs_r(2) ? 0u : 2u + 2u * qs_r(2));
+        uint32_t r5 = qs_r(3) ? (qs_r(2) ? 3u : 2u) : 4u, m = all ? 0u : 1u + qs_r(6);   /* (PICKED: one or two of T3..T5 out) */
+        if (r4 == 0u) r4 = 0u;                           /* (an acid above a sub: ac's register, qs_rand_part) */
+        if (!((kp >> 2) & 1u)) { qs_rand_part(2, r3, bars); if (m & 1u) trk[2].p[P_MUTE] = 1; }
+        if (!((kp >> 3) & 1u)) { qs_rand_part(3, r4, bars); if (m & 2u) trk[3].p[P_MUTE] = 1; }
+        if (!((kp >> 4) & 1u)) { qs_rand_part(4, r5, bars); if ((m & 4u) && m != 7u) trk[4].p[P_MUTE] = 1; }
+        if (!((kp >> 5) & 1u)) qs_rand_part(5, 4, bars);
+    } else {
+        if (!((kp >> 2) & 1u)) {
+            if (st == QS_HYPNO || st == QS_ACID) qs_line(2, 0, st == QS_ACID ? 78 : 50, all ? 48u : 40u, bars);
+            else if (all) qs_line(2, 1, 30, 36u, bars);
+        }
+        if (!((kp >> 3) & 1u)) {
+            if (all && (st == QS_HYPNO || st == QS_ACID)) qs_line(3, 1, 30, 36u, bars);
+            if (st == QS_DUB) qs_chords(3, 0, bars);
+            if (st == QS_BLEEPS) qs_bleep(3, "WOOD BLOCK", 1);
+        }
+        if (!((kp >> 4) & 1u)) {
+            if (st != QS_ACID) qs_chords(4, 1, bars);
+            else if (all) qs_chords(4, 0, bars);
+        }
+        if (!((kp >> 5) & 1u)) qs_bleep(5, BL[st], BM[st]);
+    }
     track_select(sel);
     ac_ms = db_ms = eu_ms = fm1_ms;
-    cos_say(QS_NAME[st]);
+    cos_say(st == QS_RAND ? GENRE[gs.gi].name : QS_NAME[st]);
+}
+/* OCT+ on START: stopped, at once; playing, at the end of the bar (SYNTAKT ON: of its pattern), so it lands in time */
+static void cos_qs_press(void)
+{
+    if (!song.playing) { qs_pend = 0; cos_qs_load(); return; }
+    qs_pend = 1;
+    cos_say("ON THE NEXT BAR");
+}
+/* every UI frame: a load waiting, in the bar's last sixteenth (after its last step, before the next bar's first) */
+static __attribute__((noinline)) void cos_qs_tick(void)
+{
+    uint32_t bs, pb;
+    if (!qs_pend) return;
+    if (!song.playing) { qs_pend = 0; return; }
+    bs = beat_samples();
+    pb = (favorites.factory[8][31] & 1u) && song.g[G_CLOCK] == 2 ? cos_pc_bars : 1u;
+    if (beat_n != 3u || beat_pos < bs * 3u / 4u + bs / 16u || (pb > 1u && ((bar_n + 1u) % pb))) return;
+    qs_pend = 0;
+    cos_qs_load();
 }
 static __attribute__((noinline)) void cos_qs_undo(void)
 {
@@ -2623,6 +2736,11 @@ static __attribute__((noinline)) void cos_input(void)
             cos_drm_key(k);                              /* (0.13.0: a press shown; holding rolls / repeats: cos_drm_poll) */
         } else if (cz.mode == CM_TRIG && cz.si) {
             cos_si_key(k);                               /* (STEP INPUT: the note into the cursor's step) */
+        } else if (cz.mode == CM_PROJ && cz.tab[CM_PROJ] == 3u) {   /* (0.18.2) START: white 1 .. 6 KEEP a track */
+            if (w < NTRK) {
+                qs_keep ^= (uint8_t)(1u << w);
+                cos_say((qs_keep >> w) & 1u ? "KEPT" : "FREE");
+            }
         } else if (cz.mode == CM_PROJ) {
             if (w < 4u) cz.slot = (uint8_t)w;
             else if (w >= 8u && w < 8u + COS_NSONG && !chain_busy()) {   /* (white 9 .. 16: the set list's songs 1 .. 8) */
@@ -4108,17 +4226,23 @@ static void cos_body_link2(void)
 /* (0.18.0) SAVE > START: what the STYLE puts on the tracks, how to load it */
 static void cos_body_start(void)
 {
-    static const char *const A1[QS_N] = {"T3 ACID  T4 SUB BASS", "T3 ACID  T4 SUB BASS", "T3 SUB BASS  T4 STABS", "T3 SUB BASS  T4 WOOD 3"};
-    static const char *const A2[QS_N] = {"T5 ATMOS  T6 SONAR 5", "T5 STABS  T6 R2 BLIPS 3", "T5 ATMOS  T6 GLASS 6", "T5 ATMOS  T6 DROP 5"};
-    static const char *const P1[QS_N] = {"T3 ACID ROLLING", "T3 ACID BUSY", "T4 DUB STABS", "T4 WOOD 3-STEP"};
-    static const char *const P2[QS_N] = {"T5 ATMOS, T6 SONAR 5", "T6 R2 BLIPS 3-STEP", "T5 ATMOS, T6 GLASS 6", "T5 ATMOS, T6 DROP 5"};
+    static const char *const A1[QS_N] = {"T3 ACID  T4 SUB BASS", "T3 ACID  T4 SUB BASS", "T3 SUB BASS  T4 STABS", "T3 SUB BASS  T4 WOOD 3", "EVERY PART DRAWN:"};
+    static const char *const A2[QS_N] = {"T5 ATMOS  T6 SONAR 5", "T5 STABS  T6 R2 BLIPS 3", "T5 ATMOS  T6 GLASS 6", "T5 ATMOS  T6 DROP 5", "ROLES, SOUNDS, MOTIFS"};
+    static const char *const P1[QS_N] = {"T3 ACID ROLLING", "T3 ACID BUSY", "T4 DUB STABS", "T4 WOOD 3-STEP", "EVERY PART DRAWN,"};
+    static const char *const P2[QS_N] = {"T5 ATMOS, T6 SONAR 5", "T6 R2 BLIPS 3-STEP", "T5 ATMOS, T6 GLASS 6", "T5 ATMOS, T6 DROP 5", "SOME OF T3..T5 OUT"};
     static const char *const DR[3] = {"T1 KIT GROOVE, T2 KICK", "T1 KIT GROOVE (NO KICK)", "NO DRUMS"};
-    uint32_t st = qs_sty % QS_N;
+    char b[32];
+    uint32_t st = qs_sty % QS_N, k, n = 5;
     cos_tx(8, 40, DR[qs_drm_get()], C_MID);
     cos_tx(8, 52, qs_elm ? P1[st] : A1[st], C_FG);
     cos_tx(8, 64, qs_elm ? P2[st] : A2[st], C_FG);
-    cos_tx(8, 84, "OCT+ LOADS; AGAIN: ANOTHER", C_FG);
-    cos_tx(8, 96, "TEMPO AND KEY STAY", C_DIM);
+    str_cpy(b, "KEEP:", sizeof b);
+    for (k = 0; k < NTRK; k++)
+        if ((qs_keep >> k) & 1u) { b[n++] = ' '; b[n++] = 'T'; b[n++] = (char)('1' + k); }
+    if (n == 5u) str_cpy(b + 5, " NONE (WHITE 1-6)", sizeof b - 5);
+    else b[n] = 0;
+    cos_tx(8, 80, b, qs_keep ? C_RED : C_DIM);
+    cos_tx(8, 96, qs_pend ? "ON THE NEXT BAR ..." : "OCT+ LOADS; AGAIN: ANOTHER", qs_pend ? C_RED : C_FG);
     cos_tx(8, 108, "REC: THE MUSIC BEFORE IT", C_DIM);
 }
 
@@ -4302,7 +4426,7 @@ dials:
 /* the splash (ui_draw.c draw_splash / splash_write under COS_SLIM; main.c's boot loop calls it every ~4 ms for
  * SPL_WRITE + SPL_HOLD ms): black, a few still stars, the name 2x, the version, a 16-block bar filling like a pattern
  * (the block being filled red), READY. Drawn whole once, then only the bar's strip when a block fills */
-#define COS_VERSION "0.18.1"
+#define COS_VERSION "0.18.2"
 static void cos_px2(int32_t x, int32_t y, const char *s, uint16_t c)      /* (the face 2 x 2) */
 {
     int32_t r, b, b0;
@@ -4445,6 +4569,12 @@ static __attribute__((noinline)) void cos_leds(void)
                 if (!in || wait) led_clear(nl, 14u + WK[k]);
                 if (wait) led_put(nb, 14u + WK[k], 1);
             }
+        }
+    } else if (cz.mode == CM_PROJ && cz.tab[CM_PROJ] == 3u) {   /* (0.18.2) START: the kept tracks lit, a load waiting
+                                                         * breathes on OCT+'s free ones */
+        for (k = 0; k < NTRK; k++) {
+            led_put(nl, 14u + WK[k], (qs_keep >> k) & 1u);
+            if (qs_pend && !((qs_keep >> k) & 1u)) led_put(nb, 14u + WK[k], 1);
         }
     } else if (cz.mode == CM_DRUMS) {
         cos_drm_leds(nl, nb);

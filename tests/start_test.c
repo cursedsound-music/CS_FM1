@@ -20,6 +20,7 @@
 static int fails;
 #define CHECK(c, ...) do { if (!(c)) { fails++; printf("FAIL: "); } else printf("ok: "); printf(__VA_ARGS__); printf("\n"); } while (0)
 static void frame16(void) { host_ticks += 16000u; fm1_ms += 16u; ui_input(); ui_draw(); }
+static void cos_test_key(uint32_t w) { host_notes = 1u << WK[w]; host_ticks += 16000u; cos_input(); host_notes = 0; host_ticks += 16000u; cos_input(); }
 static int32_t o[2 * CTL];
 /* the same line: each step's kind, and a note step's notes, velocity and flags (packing clears a rest's leftovers) */
 static int same_line(const step_t *a, const step_t *b)
@@ -84,6 +85,57 @@ int main(void)
         for (k = 0; k < NTRK; k++) used += !trk[k].p[P_MUTE] && notes(k);
         for (i = 0; i < 64u; i++) dl |= trk[0].step[i].hit;
         CHECK(used == NTRK && trk[0].p[P_SLEN] == 64 && (dl & (1u << DV_HATC | 1u << DV_HATO)), "%s ALL: all six tracks play, the kit's hats in a 4-bar groove (lanes %02x)", QS_NAME[s], dl);
+    }
+    /* (0.18.2) RANDOM: every part drawn; the sounds differ from press to press */
+    {
+        uint32_t seen = 0, kicks = 0, pr6 = 0, pr3 = 0, r, ok = 1;
+        cos_cput(CC_QELM, 0); cos_cput(CC_QSTY, QS_RAND); cos_cput(CC_QDRM, 0);
+        for (r = 0; r < 12u; r++) {
+            uint32_t used = 0;
+            fm1_ms += 1234u;
+            cos_proj_oct(1); frame16();
+            for (k = 0; k < NTRK; k++) used += !trk[k].p[P_MUTE] && notes(k);
+            ok &= used == NTRK && trk[5].eng_req == ENGI_DUB && ENG_DUB.presets[trk[5].preset].e[0] == 2;
+            ok &= (trk[2].eng_req == ENGI_ACID || trk[2].eng_req == ENGI_ANALOG) && trk[1].eng_req == ENGI_KICK;
+            seen |= 1u << (trk[4].eng_req == ENGI_DUB ? ENG_DUB.presets[trk[4].preset].e[0] : 3u);
+            kicks |= 1u << (trk[1].preset % 32u);
+            pr6 |= 1u << (trk[5].preset % 32u);
+            pr3 |= 1u << (trk[2].eng_req * 8u + trk[2].preset % 8u) % 32u;
+        }
+        CHECK(ok, "RANDOM ALL: six parts every time, T6 a bleep, T3 a bass line, T2 a kick");
+        CHECK(__builtin_popcount(pr6) >= 4 && __builtin_popcount(kicks) >= 3 && __builtin_popcount(pr3) >= 4 && __builtin_popcount(seen) >= 2,
+              "RANDOM: the sounds drawn (bleeps %d, kicks %d, bass lines %d, T5 kinds %d)", __builtin_popcount(pr6), __builtin_popcount(kicks), __builtin_popcount(pr3), __builtin_popcount(seen));
+    }
+    /* (0.18.2) KEEP: white 1 .. 6 on the page; a load leaves those tracks alone */
+    {
+        static step_t k1[NSTEP], k3[NSTEP];
+        uint8_t p1 = 0, p3 = 0, e3 = 0;
+        cz.mode = CM_PROJ; cz.tab[CM_PROJ] = 3; frame16();
+        qs_keep = 0;
+        cos_test_key(0); cos_test_key(2);                /* (white 1, 3: T1, T3) */
+        CHECK(qs_keep == 5u, "white 1 and 3: T1, T3 kept (%02x)", qs_keep);
+        memcpy(k1, trk[0].step, sizeof k1); memcpy(k3, trk[2].step, sizeof k3);
+        p1 = trk[0].preset; p3 = trk[2].preset; e3 = trk[2].eng_req;
+        fm1_ms += 3333u; cos_proj_oct(1); frame16();
+        CHECK(!memcmp(k1, trk[0].step, sizeof k1) && !memcmp(k3, trk[2].step, sizeof k3) && trk[2].preset == p3 && trk[2].eng_req == e3 && trk[0].preset == p1,
+              "OCT+: T1 and T3 as they were, the rest new");
+        cos_test_key(0); cos_test_key(2);
+        CHECK(!qs_keep, "again: free");
+    }
+    /* (0.18.2) playing: on the next bar, not at once */
+    {
+        static step_t was[NSTEP];
+        uint32_t b0, guard = 0;
+        transport_req = 1; frame16();
+        for (k = 0; k < 40u; k++) { mix_block(o, CTL); frame16(); }
+        memcpy(was, trk[5].step, sizeof was);
+        fm1_ms += 777u;
+        cos_proj_oct(1);
+        b0 = bar_n;
+        CHECK(qs_pend && !memcmp(was, trk[5].step, sizeof was), "playing: OCT+ waits (nothing yet)");
+        while (qs_pend && guard++ < 20000u) { mix_block(o, CTL); if (!(guard & 3u)) { host_ticks += 16000u; fm1_ms += 16u; ui_input(); } }
+        CHECK(!qs_pend && bar_n == b0 && beat_n == 3u && beat_pos * 4u >= beat_samples() * 3u, "loaded in the bar's last sixteenth (bar %u, beat %u)", bar_n, beat_n);
+        transport_req = 2; frame16();
     }
     /* again: another */
     {

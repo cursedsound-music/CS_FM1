@@ -71,7 +71,8 @@ play them in as a song.
 
 **A quick start**: SAVE > START, pick a STYLE, DRUMS (PERC by default with SYNTAKT ON: the Syntakt plays the kick),
 ELEMENTS (ALL: a complete loop on every track; PICKED: a few voices) and BARS; OCT+ loads it, again another; REC on the
-page goes back.
+page goes back. STYLE RAND draws every part's role and sound: happy accidents. White keys 1-6 on the page KEEP tracks, so
+OCT+ rerolls only the rest. Playing, a new loop lands at the end of the bar (the Syntakt's pattern with SYNTAKT ON).
 
 **In a set**: dial the Syntakt's BPM to the CDJ track and nudge it; the FM-1 follows. With the Syntakt's kick, the
 FM-1's own KICK track can stay muted (HOME held + white 1).
