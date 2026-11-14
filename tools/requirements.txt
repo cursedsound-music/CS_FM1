@@ -1,0 +1,4 @@
+# the Python packages tools/fm1_install.py and tools/fm1_uboot.py need: pip3 install -r tools/requirements.txt
+mido
+python-rtmidi
+pyusb

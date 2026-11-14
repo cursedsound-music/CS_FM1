@@ -1,0 +1,90 @@
+# SPDX-License-Identifier: GPL-3.0-only OR MIT
+# Copyright (C) 2026 cursedsound
+# (cursedsound) a cursed os release: push a tag vX.Y.Z (the firmware's own COS_VERSION, firmware/src/cos.c), or run it
+# by hand (Actions > release > Run workflow, the version). It builds the firmware, runs every host test against it,
+# builds the browser emulator and the web installer, puts the download together (tools/make_release.py) and makes a
+# DRAFT release with it: nothing is public until you open the draft on the Releases page and publish it (and a
+# release of a private repository is only ever seen by those who can see the repository).
+name: release
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "The version (X.Y.Z, as COS_VERSION in firmware/src/cos.c)"
+        required: true
+permissions:
+  contents: write
+jobs:
+  release:
+    runs-on: ubuntu-24.04
+    env:
+      AC79_SDK: /home/runner/fw-AC79_AIoT_SDK
+      JIELI_TOOLCHAIN: /home/runner/.jieli/toolchain
+    steps:
+      - uses: actions/checkout@v4
+      - name: the version
+        id: v
+        run: |
+          V="${{ inputs.version }}"
+          [ -n "$V" ] || V="${GITHUB_REF_NAME#v}"
+          V="${V#v}"
+          C=$(sed -n 's/^#define COS_VERSION "\(.*\)"/\1/p' firmware/src/cos.c)
+          [ "$V" = "$C" ] || { echo "::error::version $V is not the firmware's ($C, firmware/src/cos.c)"; exit 1; }
+          echo "v=$V" >> "$GITHUB_OUTPUT"
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - run: pip install Pillow numpy fonttools
+      - name: generated headers
+        run: python3 -c "import sys; sys.path.insert(0, 'tools'); import build; build.generate()"
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.jieli
+            ~/fw-AC79_AIoT_SDK/cpu/wl82/tools
+          key: jieli-ac79-v1.2.1-pinned
+      - name: JieLi toolchain and SDK files
+        run: |
+          retry() { for d in 0 5 15 30 60; do sleep $d; "$@" && return 0; done; return 1; }
+          T=$HOME/fw-AC79_AIoT_SDK/cpu/wl82/tools
+          [ -e "$HOME/.jieli/toolchain" ] || retry sh tools/get_toolchain.sh "$HOME/.jieli"
+          if [ ! -s "$T/uboot.boot" ] || [ ! -s "$T/cfg_tool.bin" ] || [ ! -s "$T/cfg/eq_cfg_hw.bin" ]; then
+            rm -rf "$HOME/fw-AC79_AIoT_SDK"
+            retry git clone --filter=blob:none --no-checkout --depth 1 --branch AC79NN_SDK_V1.2.1_2023-12-13 https://gitee.com/Jieli-Tech/fw-AC79_AIoT_SDK.git "$HOME/fw-AC79_AIoT_SDK"
+            cd "$HOME/fw-AC79_AIoT_SDK" && git sparse-checkout set --no-cone /cpu/wl82/tools/uboot.boot /cpu/wl82/tools/cfg_tool.bin \
+              /cpu/wl82/tools/cfg/eq_cfg_hw.bin && retry git checkout
+          fi
+          test -s "$T/uboot.boot" && test -s "$T/cfg_tool.bin" && test -s "$T/cfg/eq_cfg_hw.bin"
+      - name: the firmware
+        run: python3 tools/build.py
+      - name: every host test (tests/run_tests.sh, against this package)
+        run: SANITIZE=0 sh tests/run_tests.sh
+      - uses: mymindstorm/setup-emsdk@v14
+        with:
+          version: 6.0.11
+      - name: the browser emulator
+        run: sh web/emu/build.sh
+      - name: the web installer and the download
+        run: |
+          V="${{ steps.v.outputs.v }}"
+          cp build/felucca.fwsc "build/cursed-os-$V.fwsc"
+          python3 web/make_site.py "build/cursed-os-$V.fwsc" "$V" build/site
+          python3 tools/make_release.py "$V" --fwsc "build/cursed-os-$V.fwsc" --site build/site --emu build/emu --out build/release
+      - name: the draft release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          V="${{ steps.v.outputs.v }}"
+          gh release view "v$V" >/dev/null 2>&1 && gh release delete "v$V" --yes --cleanup-tag=false || true
+          gh release create "v$V" --draft --title "cursed os $V" --notes-file build/release/NOTES.md \
+            --target "$GITHUB_SHA" "build/release/cursed-os-$V.zip" "build/release/cursed-os-$V.fwsc"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: cursed-os-release
+          path: build/release
+          retention-days: 30
