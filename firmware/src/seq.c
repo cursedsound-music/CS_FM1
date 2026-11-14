@@ -1211,11 +1211,28 @@ static __attribute__((noinline)) void kb_lat(uint32_t k)
 }
 #endif
 
+/* (cursed-os 0.18.3, GG: "tap a key and the chord keeps ringing until you tap another one or the same key again")
+ * KEY LATCH (SCL + OCT+, cos.c): a key's note held after its release; a press with no other key down lets the held ones
+ * go and holds the new one (keys pressed together: held together); a held key tapped alone: all off. kb_latch off:
+ * the held ones go (the ones still down at their release) */
+static volatile uint8_t kb_latch;
+static uint32_t kb_lmask;
+static void kb_unlatch(uint32_t keep)
+{
+    uint32_t j;
+    for (j = 0; j < 27u; j++)
+        if (((kb_lmask & ~keep) >> j) & 1u) {
+            if (kb_note[j] != KB_SILENT) key_off(j, &trk[kb_trk[j] % NTRK]);
+            kb_note[j] = KB_SILENT;
+        }
+    kb_lmask &= keep;
+}
 static void keyboard_block(void)
 {
     uint32_t cur = fm1_in.notes, ch, k;
     uint32_t lay, fx;
     keys_strum(CTL);                              /* (0.6.81) the chords' strums */
+    if (!kb_latch && kb_lmask) kb_unlatch(cur);   /* (0.18.3: LATCH off: the held ones go, the ones down at their release) */
     ch = cur ^ kb_prev;                           /* keys also sound while entering steps */
     if (!ch)
         return;
@@ -1256,6 +1273,16 @@ static void keyboard_block(void)
             kb_oct[k] = (int8_t)(!song.grid && drum_track(&trk[kb_trk[k]]) ? song.octave : 0);   /* (0.8.5) */
             if (kb_note[k] == KB_SILENT)
                 continue;
+            if (kb_latch) {                       /* (0.18.3) KEY LATCH */
+                if (!(cur & ~(1u << k) & ~kb_lmask)) {   /* (no other key down: a new chord, or all off) */
+                    if ((kb_lmask >> k) & 1u) {   /* (a held key tapped alone: all off, its release silent) */
+                        kb_unlatch(0);
+                        continue;
+                    }
+                    kb_unlatch(0);                /* (the held ones go; this one's note untouched) */
+                }
+                kb_lmask |= 1u << k;
+            }
             key_on(k, &trk[kb_trk[k]]);
 #ifdef FM1_INPUT_LAT
             kb_lat(k);
@@ -1270,6 +1297,8 @@ static void keyboard_block(void)
                 lv.kb &= ~(1u << k);
                 continue;
             }
+            if ((kb_lmask >> k) & 1u)             /* (0.18.3) latched: it keeps sounding */
+                continue;
             key_off(k, &trk[kb_trk[k] % NTRK]);
         }
     }

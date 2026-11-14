@@ -64,6 +64,17 @@ static int32_t db_shift(const db_t *a, uint32_t j)
     return a->move == 1u || j == 1u ? mv[0] : mv[1];
 }
 
+/* (cursed-os 0.18.3, GG: "a way to make atmospheric long chords") LENGTH past 100 %: HOLD 1/2, 1, 2, 4 BARS (a->len
+ * 101 .. 104): a chord on each stretch's first step, tied through it (ST_TIE: the notes held, not struck again), DENSITY
+ * whether a stretch after the first gets one; MOVE's progression across them. The knob: 5 % .. 100 % by 5, then the
+ * holds (DB_LENN) */
+static const uint8_t DB_HLD[4] = {8, 16, 32, 64};
+static const char *const DB_LENN[25] = {"5%", "10%", "15%", "20%", "25%", "30%", "35%", "40%", "45%", "50%", "55%", "60%",
+                                        "65%", "70%", "75%", "80%", "85%", "90%", "95%", "100%", "1/2BAR", "1 BAR", "2 BARS",
+                                        "4 BARS", 0};
+static uint32_t db_len_i(uint32_t len) { return len > 100u ? 19u + (len - 100u) : (len < 5u ? 0u : len / 5u - 1u); }
+static uint32_t db_i_len(int32_t i) { return i >= 20 ? 100u + (uint32_t)clamp(i - 19, 1, 4) : (uint32_t)clamp(i + 1, 1, 20) * 5u; }
+
 /* track k's groove written again from its settings */
 static void db_gen(uint32_t k, uint32_t hand)
 {
@@ -82,6 +93,11 @@ static void db_gen(uint32_t k, uint32_t hand)
         uint32_t sr = a->ms && ac_ch(a->ms, i, 0xD3u, a->amt) ? a->s.r ^ a->ms : a->s.r;   /* (a mutated stab: its own roll) */
         on[i] = (uint8_t)(a->dens && ac_ch(sr, i, 0xD1u, clamp(p, 0, 95)));
     }
+    if (a->len > 100u) {                                 /* (0.18.3) HOLD: a chord on each stretch's first step */
+        uint32_t h = DB_HLD[(a->len - 101u) % 4u];
+        if (h > n) h = n;
+        for (i = 0; i < n; i++) on[i] = (uint8_t)(!(i % h) && (!i || ac_ch(a->s.r, i, 0xD5u, clamp((int32_t)a->dens + 40, 0, 100))));
+    } else
     for (b = 0; a->dens && b < n; b += 16u) {            /* (every bar a stab at least: its second offbeat) */
         uint32_t any = 0;
         for (i = b; i < b + 16u; i++) any |= on[i];
@@ -91,7 +107,7 @@ static void db_gen(uint32_t k, uint32_t hand)
     for (i = 0; i < NSTEP; i++) step_clear(&t->step[i]);
     t->p[P_SLEN] = (int16_t)n;
     t->p[P_VOICE] = V_POLY;                              /* (four notes a stab) */
-    t->p[P_SGATE] = (int16_t)clamp((int32_t)a->len * 127 / 100, 1, 127);
+    t->p[P_SGATE] = (int16_t)clamp((int32_t)a->len * 127 / 100, 1, 127);   /* (a HOLD: 127, the ties the length) */
     for (i = 0; i < n; i++) {
         step_t *s = &t->step[i];
         int32_t v[4], r = base + db_shift(a, i * segs / n), x;
@@ -108,6 +124,10 @@ static void db_gen(uint32_t k, uint32_t hand)
         s->n = 4;
         for (q = 0; q < 4u; q++) s->note[q] = (uint8_t)clamp(v[q], 24, 108);
         s->vel = (uint8_t)(88 + ((i & 3u) == 2u ? 14 : 0) + (int32_t)(ac_h(a->s.r, i, 0xD2u) % 13u) - 6);
+        if (a->len > 100u) {                             /* (HOLD: tied to the stretch's end, or the next chord) */
+            uint32_t h = DB_HLD[(a->len - 101u) % 4u], j;
+            for (j = i + 1u; j < n && j < i + h && !on[j]; j++) t->step[j].time = ST_TIE;
+        }
     }
     if (hand) {                                          /* ECHO: the sends (the delay and reverb are everyone's) */
         t->p[P_DLY] = (int16_t)((int32_t)a->echo * 127 / 100);
@@ -137,7 +157,7 @@ static __attribute__((noinline)) const param_desc_t *db_desc(uint32_t k, int16_t
     case DK_SHAPE: db_d.fmt = F_ENUM; db_d.max = 6; db_d.names = DB_SHN; db_v[k] = a->shape; break;
     case DK_DENS: db_v[k] = a->dens; break;
     case DK_MOVE: db_d.fmt = F_ENUM; db_d.max = 2; db_d.names = MV; db_v[k] = a->move; break;
-    case DK_LEN: db_d.min = 5; db_v[k] = a->len; break;
+    case DK_LEN: db_d.fmt = F_ENUM; db_d.max = 23; db_d.names = DB_LENN; db_v[k] = (int16_t)db_len_i(a->len); break;   /* (0.18.3) */
     case DK_BARS: db_d.fmt = F_ENUM; db_d.max = 2; db_d.names = BR; db_v[k] = a->bars; break;
     case DK_VOIC: db_d.fmt = F_ENUM; db_d.max = 3; db_d.names = VO; db_v[k] = a->voic; break;
     case DK_ECHO: db_v[k] = a->echo; break;
@@ -154,8 +174,9 @@ static __attribute__((noinline)) void db_put(uint32_t k, int32_t v)
 {
     db_t *a = db_of(song.sel);
     uint8_t *f[DK_N] = {&a->shape, &a->dens, &a->move, &a->len, &a->bars, &a->voic, &a->echo, &a->root, &a->every, &a->amt, &a->dly};
-    static const uint8_t LO[DK_N] = {0, 0, 0, 5, 0, 0, 0, 0, 0, 0, 0}, HI[DK_N] = {6, 100, 2, 100, 2, 3, 100, 12, 5, 100, 5};
+    static const uint8_t LO[DK_N] = {0, 0, 0, 5, 0, 0, 0, 0, 0, 0, 0}, HI[DK_N] = {6, 100, 2, 104, 2, 3, 100, 12, 5, 100, 5};
     k %= DK_N;
+    if (k == DK_LEN) v = (int32_t)db_i_len(v);           /* (0.18.3: the knob's step; DB_LENN) */
     *f[k] = (uint8_t)clamp(v, LO[k], HI[k]);
     ui.force = 1;
     if (k == DK_DLY) {                                   /* (the delay is everyone's: only when turned, KEEP leaves it) */

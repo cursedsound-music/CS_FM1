@@ -2127,7 +2127,8 @@ static void qs_chords(uint32_t k, uint32_t atmos, uint32_t bars)
     if (atmos) qs_sound(k, ENGI_DUB, "ATMOS DARK"); else qs_sound(k, ENGI_ANALOG, "DUB STAB");
     track_select(k);
     db_put(DK_BARS, (int32_t)bars);
-    if (atmos) { db_put(DK_DENS, 12); db_put(DK_LEN, 100); }
+    if (atmos) { db_put(DK_DENS, 60); db_put(DK_MOVE, 1); db_put(DK_LEN, 21); }   /* (0.18.3: chords held a bar each, a
+                                                         * second one in the progression; DB_LENN 21 = 1 BAR) */
     db_throw(k, 1);
 }
 /* an acid line (ACID's engine) or a sub bass (ANALOG's SUB BASS, the same generator: sparse, no slides) */
@@ -2193,8 +2194,9 @@ static void qs_rand_part(uint32_t k, uint32_t role, uint32_t bars)
         qs_sound_i(k, ENGI_DUB, qs_pick(ENGI_DUB, role == 3u ? 1 : 0));
         db_put(DK_BARS, (int32_t)bars);
         db_put(DK_SHAPE, (int32_t)qs_r(7));
-        if (role == 3u) { db_put(DK_DENS, 8 + (int32_t)qs_r(15)); db_put(DK_LEN, 100); }
-        else { db_put(DK_DENS, 25 + (int32_t)qs_r(50)); db_put(DK_LEN, 10 + (int32_t)qs_r(40)); }
+        if (role == 3u) {                                /* (0.18.3: held 1/2, 1 or 2 bars, a progression drawn) */
+            db_put(DK_DENS, 40 + (int32_t)qs_r(50)); db_put(DK_MOVE, (int32_t)qs_r(3)); db_put(DK_LEN, 20 + (int32_t)qs_r(3));
+        } else { db_put(DK_DENS, 25 + (int32_t)qs_r(50)); db_put(DK_LEN, 1 + (int32_t)qs_r(9)); }   /* (10 .. 50 %) */
         db_throw(k, 1);
     } else {
         qs_sound_i(k, ENGI_DUB, qs_pick(ENGI_DUB, 2));
@@ -2566,6 +2568,11 @@ static __attribute__((noinline)) void cos_input(void)
             cz.home_tab = cz.tab[CM_HOME];               /* (the HOME page it comes back to) */
             if (cz.mode != CM_HOME) cos_mode(CM_HOME);
             cz.tab[CM_HOME] = 0;
+        }
+        else if (b == B_OCTUP && ((fm1_in.buttons >> panel.btn[B_SCL]) & 1u)) {   /* (0.18.3) SCL + OCT+: KEY LATCH */
+            cz.scl_used = 1;
+            kb_latch = (uint8_t)!kb_latch;
+            cos_say(kb_latch ? "KEY LATCH ON" : "KEY LATCH OFF");
         }
         else if (cz.fx_down && b == B_OCTUP) {           /* FX + OCT+: LATCH (a key turns its effect on / off) or HOLD */
             cz.fx_used = 1;
@@ -4426,7 +4433,7 @@ dials:
 /* the splash (ui_draw.c draw_splash / splash_write under COS_SLIM; main.c's boot loop calls it every ~4 ms for
  * SPL_WRITE + SPL_HOLD ms): black, a few still stars, the name 2x, the version, a 16-block bar filling like a pattern
  * (the block being filled red), READY. Drawn whole once, then only the bar's strip when a block fills */
-#define COS_VERSION "0.18.2"
+#define COS_VERSION "0.18.3"
 static void cos_px2(int32_t x, int32_t y, const char *s, uint16_t c)      /* (the face 2 x 2) */
 {
     int32_t r, b, b0;
@@ -4536,6 +4543,7 @@ static __attribute__((noinline)) void cos_leds(void)
     if (!ready) { led_pos_init(); ready = 1; }
     led_put(nl, panel.btn[CM_BTN[cz.mode]], 1);
     led_put(nl, panel.btn[B_REC], song.rec != 0u);
+    led_put(nl, panel.btn[B_SCL], kb_latch != 0u);      /* (0.18.3) KEY LATCH on: SCL lit */
     for (k = 0; k < NB; k++) led_put(nd, panel.btn[k], 1);
     if (cz.fx_down) {                                    /* (FX held: the pad's keys, each lit while its effect is on,
                                                          * latched or held; the rest at the glow) */
