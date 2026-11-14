@@ -330,7 +330,8 @@ static int screens(void)
     memset(host_screen, 0, sizeof host_screen); ui.force = 1; ui_draw();
     y = graph_y() + (uint32_t)pr_row_y(60) + 1u;
     x = (uint32_t)PR_CX(1);                          /* (0.8.5: columns 14 / 15 px, the bar a px in: x2 at x + 1 .. 6, 8 .. 13) */
-    ok = pr_is_bar(x + 2u, y) && pr_is_bar(x + 10u, y) && !pr_is_bar(x + 7u, y);
+    ok = pr_is_bar(x + 2u, y) && pr_is_bar(x + 9u, y) && !pr_is_bar(x + 6u, y);   /* (the columns 12 px now: x2 at
+                                                         * x + 1 .. 5, 7 .. 11, the gap at 6) */
     x = (uint32_t)PR_CX(3);
     bad += check("  the piano roll draws an x2 step in two parts (x1 whole)", ok && pr_is_bar(x + 7u, y));
     t->step[4] = (step_t){{64}, 1, ST_NOTE, 0, 100};   /* SLIDE into a note: the line, but not from x2 */

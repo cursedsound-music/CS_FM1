@@ -1,4 +1,4 @@
-/* SPDX-License-Identifier: GPL-3.0-only
+/* SPDX-License-Identifier: GPL-3.0-only OR MIT
  * Copyright (C) 2026 cursedsound */
 /* (cursedsound) cursed-os's knobs, every one on every page of every mode, on each kind of track (the kit, ACID, the
  * bass, the pad, VOICE):

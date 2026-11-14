@@ -1,4 +1,5 @@
-/* SPDX-License-Identifier: GPL-3.0-only
+/* SPDX-License-Identifier: GPL-3.0-only OR MIT
+ * Copyright (C) 2026 cursedsound
  * (cursedsound) SEQ > ACID (firmware/src/ui_acid.c): the 303 line generator against the real UI sources.
  *   cc -w -Ibuild/gen -Ifirmware/src -Itests -o build/t/acid_test tests/acid_test.c -lm && build/t/acid_test */
 #include <stdio.h>

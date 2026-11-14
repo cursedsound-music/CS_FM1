@@ -1,4 +1,4 @@
-# SPDX-License-Identifier: GPL-3.0-only
+# SPDX-License-Identifier: GPL-3.0-only OR MIT
 # Copyright (C) 2026 cursedsound
 """cursed-os's phone remote protocol (firmware/src/cos_remote.c), pure Python: used by
 tools/cursed_remote.py (Pythonista on the iPhone).

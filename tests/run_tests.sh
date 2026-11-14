@@ -167,7 +167,9 @@ OUT=build/host
 mkdir -p "$OUT"
 CC="${CC:-cc} -O1 -Wall -Wno-unused-function"
 fail=0
-run() { echo "== $1"; shift; "$@" || fail=1; }
+failed=""
+run() { echo "== $1"; n_="$1"; shift; "$@" || { fail=1; failed="$failed
+  $n_"; echo "!! FAILED: $n_"; }; }   # (cursed-os: the failed steps named, and listed at the end)
 
 $CC -O2 -o "$OUT/core1_stop_test" tests/core1_stop_test.c
 run "core 1 halt: delayed bus fault and restored protection" "$OUT/core1_stop_test"
@@ -211,7 +213,9 @@ EOF
     run "USB descriptors: CDC $t_cdc (presented $t_on), UAC $t_uac (48 kHz $t_48), layout $t_lay" "$OUT/usb_desc_test"
 done
 
-[ -f build/felucca.fwsc ] || { echo "run ./build.sh first"; exit 1; }
+if [ ! -f build/felucca.fwsc ]; then
+    echo "== skip the package tests (no build/felucca.fwsc: ./build.sh or the CI's firmware job makes it)"
+else
 
 $CC -DOWN_PKG=1 -o "$OUT/ota_test" tests/ota_test.c
 run "M-UPGRADE entry (own loader)" "$OUT/ota_test" build/felucca.fwsc
@@ -231,6 +235,7 @@ python3 -c 'import sys; open(sys.argv[2], "wb").write(open(sys.argv[1], "rb").re
 if python3 tools/fm1pkg_make.py "$OUT/over_app.bin" build/loader/ota.bin "$OUT/over.fwsc" >/dev/null 2>&1; then
     echo "FAIL: the packager took an app one byte past the slot"; fail=1
 else echo "ok: the packager refuses an app one byte past the slot"; fi
+fi
 
 if [ -f build/gen/felucca_tables.h ]; then
     $CC -O2 -w -Ibuild/gen -Ifirmware/src -o "$OUT/hostsim" tests/hostsim.c -lm
@@ -416,10 +421,12 @@ else
     A="$OUT/asan"
     SCC="${CC%% *} $SAN -Ibuild/gen -Ifirmware/src"
     export ASAN_OPTIONS="${ASAN_OPTIONS:-detect_leaks=0}"
+    if [ -f build/felucca.fwsc ]; then
     $SCC -o "$A/ldr_test" tests/ldr_test.c
     run "ASan/UBSan: update loader (other app -> this build)" "$A/ldr_test" "$OUT/old.fwsc" build/felucca.fwsc
     $SCC -DOWN_PKG=1 -o "$A/ota_test" tests/ota_test.c
     run "ASan/UBSan: M-UPGRADE entry (own loader)" "$A/ota_test" build/felucca.fwsc
+    fi
     for t in editor_test project_test backup_test robust_test fm6bank_test; do
         $SCC -o "$A/$t" tests/$t.c -lm
         run "ASan/UBSan: $t" "$A/$t"
@@ -430,8 +437,10 @@ else
     run "ASan/UBSan fuzz: project stores -> import -> restore -> render (5000, seed 13)" "$A/fuzz_proj" 5000 13
 fi
 
+if [ -f build/felucca.dis ]; then
 run "regression: target cost of the render loops (pi32v2 disassembly)" python3 tests/target_budget.py \
     build/felucca.dis tests/target_budget.txt
+else echo "== skip the target cost (no build/felucca.dis)"; fi
 
 # (JIANT 0.6.83) the audio path's CPU where proc_pid_rusage is missing (Linux): callgrind's exact counts, section by
 # section (each engine's heaviest preset, every REVERB TYPE, a full mix, the sequencer at its heaviest), against
@@ -455,11 +464,12 @@ if [ -d android/stems ]; then                         # (the app, while it lives
     else
         echo "== skip JIANT Stems usbstream.c (no JDK headers)"
     fi
-    if command -v gradle >/dev/null 2>&1; then
+    if command -v gradle >/dev/null 2>&1 && [ "${STEMS_GRADLE:-0}" = 1 ]; then   # (cursed-os: JIANT's Android app; offline,
+                                                    # it needs gradle's plugins already cached)
         run "JIANT Stems :core (JVM): WAV, layout, splitter, latency, mix, exports, the take's length and trim" \
             gradle -q -p android/stems -PcoreOnly --offline :core:test
     else
-        echo "== skip JIANT Stems :core (no gradle)"
+        echo "== skip JIANT Stems :core (STEMS_GRADLE=1 and gradle with its plugins cached run it)"
     fi
 fi
 if command -v node >/dev/null 2>&1; then
@@ -482,4 +492,4 @@ else
         run "stems from the browser build (web/emu/stems.js): a backup in, each part alone, the song once round, WAV + ZIP" node web/emu/stems_test.mjs build/emu/felucca.wasm
 fi
 
-[ $fail -eq 0 ] && echo "ALL HOST TESTS PASSED" || { echo "HOST TESTS FAILED"; exit 1; }
+[ $fail -eq 0 ] && echo "ALL HOST TESTS PASSED" || { echo "HOST TESTS FAILED:$failed"; exit 1; }

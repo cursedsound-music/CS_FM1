@@ -1,4 +1,5 @@
-/* SPDX-License-Identifier: GPL-3.0-only
+/* SPDX-License-Identifier: GPL-3.0-only OR MIT
+ * Copyright (C) 2026 cursedsound
  * (cursedsound) cursed-os 0.16.0, GG 2026-11-13: "the ui on the synth is too cluttered and too menu divy"; SIMPLE + DEEP.
  * On every track, in every mode: the mode button's taps go round its everyday pages only (each of them reached, the
  * first always one, no more than five), SELECT through every page; the pages are all still there.

@@ -1,4 +1,5 @@
-/* SPDX-License-Identifier: GPL-3.0-only
+/* SPDX-License-Identifier: GPL-3.0-only OR MIT
+ * Copyright (C) 2026 cursedsound
  * cursedsound edition: SEQ > ACID, a controlled-random 303 line generator. Included by ui_graph.c after ui_euclid.c
  * (it uses EUCLID's key finder eu_key and degree helper eu_deg).
  *

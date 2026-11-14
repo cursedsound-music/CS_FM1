@@ -1,4 +1,4 @@
-/* SPDX-License-Identifier: GPL-3.0-only
+/* SPDX-License-Identifier: GPL-3.0-only OR MIT
  * Copyright (C) 2026 cursedsound */
 /* ACID's float side (eng_acid.c): X0X's bass303.c and the few calls the engine makes, with integers only across the
  * boundary. The firmware is integer code built without the FPU; this file is built on its own with the AC79's

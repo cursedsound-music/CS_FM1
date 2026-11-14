@@ -1,4 +1,4 @@
-/* SPDX-License-Identifier: GPL-3.0-only
+/* SPDX-License-Identifier: GPL-3.0-only OR MIT
  * Copyright (C) 2026 cursedsound */
 /* (cursed-os 0.15.1) GEN > BLEEP: hypnotic techno's bleeps and bloops (GG: "random but consistent and good"): a line
  * of pings in the key, from a SEED (the same seed: the same line, always), on a synth track (its sound: DUB's BLEEP

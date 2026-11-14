@@ -1,4 +1,4 @@
-/* SPDX-License-Identifier: GPL-3.0-only
+/* SPDX-License-Identifier: GPL-3.0-only OR MIT
  * Copyright (C) 2026 cursedsound */
 /* (cursed-os 0.10.0) KICK: DRUM-X's kick on a track of its own (engine 4: SAMPLE's number, SAMPLER's in 0.9.5..0.9.9),
  * so the kick comes in, goes out and is shaped apart from the rest of the kit (GG: "drums without kicks, then the

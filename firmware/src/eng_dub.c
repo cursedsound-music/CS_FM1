@@ -1,4 +1,4 @@
-/* SPDX-License-Identifier: GPL-3.0-only
+/* SPDX-License-Identifier: GPL-3.0-only OR MIT
  * Copyright (C) 2026 cursedsound */
 /* (cursed-os 0.15.0) DUB (engine 6, TRIO's number: TRIO was folded into ANALOG in JIANT 0.4; a project before it marks
  * its 6s, project.c PROJ_DUB): GG's "dub-chord engine" and "one-knob atmosphere", one voice a whole chord:

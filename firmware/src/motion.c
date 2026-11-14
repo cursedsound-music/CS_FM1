@@ -55,9 +55,9 @@ static const param_desc_t *motion_desc(const track_t *t, uint32_t id)
 }
 /* (cursed-os 0.14.0) PARAMETER SLIDE: a step with SLIDE (SF_SLIDE; seq.c mo_slide) has its locks glide in, from the
  * values sounding before it to its own, across the step (mo_slide_len samples; motion_slide_block each block), instead
- * of at once. At most MS_N of a step's locks; past those, at once */
-#define MS_N 4u
-static struct { uint8_t n, id[MS_N]; int16_t from[MS_N], to[MS_N]; uint32_t pos, len; } mo_sl[NTRK];
+ * of at once. At most MO_SLN of a step's locks; past those, at once */
+#define MO_SLN 4u
+static struct { uint8_t n, id[MO_SLN]; int16_t from[MO_SLN], to[MO_SLN]; uint32_t pos, len; } mo_sl[NTRK];
 static uint8_t mo_slide;                         /* seq.c: the step about to apply its locks slides */
 static uint32_t mo_slide_len;                    /* .. its length, samples */
 static void motion_slide_block(track_t *t, uint32_t n)
@@ -451,7 +451,7 @@ static __attribute__((noinline)) void motion_step(track_t *t, uint32_t step, con
     mo_sl[k].n = 0;                                     /* (0.14.0) the step before's slide, done */
     if (mo_slide && play) {                             /* .. this one's: where its locked values start, before the
                                                          * locks of the step before go back */
-        for (i = 0; i < m->count && mo_sl[k].n < MS_N; i++) {
+        for (i = 0; i < m->count && mo_sl[k].n < MO_SLN; i++) {
             const motion_event_t *e = &m->event[i];
             uint32_t id = MOTION_ID(e);
             if (MOTION_TRK(e) == k && MOTION_STEP(e) == step && (e->param & MOTION_LOCK) && id < P_COUNT) {

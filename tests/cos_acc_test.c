@@ -1,4 +1,4 @@
-/* SPDX-License-Identifier: GPL-3.0-only
+/* SPDX-License-Identifier: GPL-3.0-only OR MIT
  * Copyright (C) 2026 cursedsound */
 /* (cursedsound) cursed-os's values as shown, against what the sound does (test tones through the DSP itself):
  *   BPM (and its tenths, the nudge), the delay's TIME (each division and free time), the COMP (THRESH, RATIO, KNEE,

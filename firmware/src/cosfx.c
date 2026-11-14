@@ -1,4 +1,4 @@
-/* SPDX-License-Identifier: GPL-3.0-only
+/* SPDX-License-Identifier: GPL-3.0-only OR MIT
  * Copyright (C) 2026 cursedsound */
 /* (cursedsound) cursed-os's FX pad, for techno: FX held, a key holds its effect while it is held (FX + OCT+ makes them
  * latch). The white keys, F3 up:

@@ -114,6 +114,19 @@ static void midi_release(uint32_t ch, uint32_t note)
         input_off(&trk[id - 1u], note);           /* input_off also checks other MIDI owners */
 }
 
+/* (cursed-os 0.18.4) a free entry in the held notes' table before a note-on: full (MN_MAX held at once, with a pedal),
+ * the oldest-placed one is let go as a note-off would (its voice, the owners' counts), not overwritten: an overwritten
+ * entry's note never got its note-off (the regression suite's random routing: notes left hanging on ARP) */
+static void mn_room(void)
+{
+    uint32_t i, e;
+    for (i = 0; i < MN_MAX; i++)
+        if (!(mn_tab[i] & 15u))
+            return;
+    e = mn_tab[(mn_rot++) % MN_MAX];
+    midi_release(e >> 11, (e >> 4) & 127u);
+}
+
 /* a MIDI note-on (ch, note) of track t. A note another key or MIDI note holds already sounds: not started again */
 static void midi_play(track_t *t, uint32_t ch, uint32_t note, uint32_t vel)
 {
@@ -140,6 +153,7 @@ static void midi_note_event(uint32_t ch, uint32_t note, uint32_t vel)
             midi_hint = (uint8_t)(trk_index(t) + 1u);
         c->targets |= (uint8_t)(1u << trk_index(t));
         midi_play(t, ch, note, vel);
+        mn_room();
         mn_set(ch, note, (uint8_t)(trk_index(t) + 1u));
         midi_owners[trk_index(t)]++;
         c->owned[trk_index(t)]++;

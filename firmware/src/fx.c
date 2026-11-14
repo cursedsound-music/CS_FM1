@@ -879,15 +879,17 @@ static inline void master_out(int32_t *l, int32_t *r)
         lim_g += gt < lim_g ? (gt - lim_g) >> 3 : gt - lim_g;   /* (down over ~8 samples, of the 32 ahead; up: the
                                                          * envelope's release itself) */
         if (lim_g < 32768) {
-            dl = mix_mul_d(clamp(dl, -(1 << 21) + 1, (1 << 21) - 1), lim_g, dth());   /* (0.13.1: was (dl >> 4) * g: 11 bits */
-            dr = mix_mul_d(clamp(dr, -(1 << 21) + 1, (1 << 21) - 1), lim_g, dth());   /* while it limited; 0.18.0 dithered) */
+            uint32_t dv = dth();                /* (0.18.4: one draw for both sides: a mono sound stays mono) */
+            dl = mix_mul_d(clamp(dl, -(1 << 21) + 1, (1 << 21) - 1), lim_g, dv);   /* (0.13.1: was (dl >> 4) * g: 11 bits */
+            dr = mix_mul_d(clamp(dr, -(1 << 21) + 1, (1 << 21) - 1), lim_g, dv);   /* while it limited; 0.18.0 dithered) */
         }
         *l = dl;
         *r = dr;
     }
     if (sat_g) {                                        /* (0.18.0) SATURATE on */
-        *l = mix_mul_d(softclip(mix_mul(clamp(*l, -(1 << 21) + 1, (1 << 21) - 1), sat_g)), sat_k, dth());
-        *r = mix_mul_d(softclip(mix_mul(clamp(*r, -(1 << 21) + 1, (1 << 21) - 1), sat_g)), sat_k, dth());
+        uint32_t dv = dth();                    /* (0.18.4: one draw for both sides) */
+        *l = mix_mul_d(softclip(mix_mul(clamp(*l, -(1 << 21) + 1, (1 << 21) - 1), sat_g)), sat_k, dv);
+        *r = mix_mul_d(softclip(mix_mul(clamp(*r, -(1 << 21) + 1, (1 << 21) - 1), sat_g)), sat_k, dv);
     }
     *l = clamp(*l, -32767, 32767);                      /* (OFF: clean; the limiter keeps it under the ceiling) */
     *r = clamp(*r, -32767, 32767);
@@ -2923,9 +2925,12 @@ static __attribute__((noinline)) void stem_fx_block(uint32_t n)
     stem_sl = 0;
     for (i = 0; i < n; i++) {
         int32_t wl = wet[i], wr = wet[i];
-        if (sfx) {                                      /* (the returns went into the bus: mix_block kept them here) */
-            wl = mulq16(stem_fx[0][i], (uint32_t)sl_tg[i] << 1) + sl_tl[i];
-            wr = wl - sl_tl[i] + sl_tr[i];
+        if (sfx) {                                      /* (the returns went into the bus: mix_block kept them here; */
+            wl = mulq16(stem_fx[0][i] + fx_sl[i], (uint32_t)sl_tg[i] << 1) + sl_tl[i];   /* 0.18.4: their sides too) */
+            wr = mulq16(stem_fx[0][i] + fx_sr[i], (uint32_t)sl_tg[i] << 1) + sl_tr[i];
+            stem_fx[0][i] = wl;
+            stem_fx[1][i] = wr;
+            continue;
         } else if (so && kf == NPART) {                 /* (nothing routed: whatever the SLICER still plays) */
             wl += sl_l[i];
             wr += sl_r[i];
@@ -2940,8 +2945,9 @@ static __attribute__((noinline)) void perf_master(int32_t *out, uint32_t n)
     uint32_t i;
     int32_t mg = fx_usb_fixed ? MASTER_FULL : (int32_t)song.master_q12;   /* (USB LEVEL FIXED: MASTER after) */
     for (i = 0; i < n; i++) {
-        mix_l[i] = mix_mul_d(clamp(mix_l[i] + wet[i], -(1 << 21) + 1, (1 << 21) - 1), mg << 3, dth());   /* (0.16.0: all its */
-        mix_r[i] = mix_mul_d(clamp(mix_r[i] + wet[i], -(1 << 21) + 1, (1 << 21) - 1), mg << 3, dth());   /* bits; 0.18.0 dither) */
+        uint32_t dv = dth();                    /* (0.18.4: one draw for both sides: a mono sound stays mono) */
+        mix_l[i] = mix_mul_d(clamp(mix_l[i] + wet[i], -(1 << 21) + 1, (1 << 21) - 1), mg << 3, dv);   /* (0.16.0: all its */
+        mix_r[i] = mix_mul_d(clamp(mix_r[i] + wet[i], -(1 << 21) + 1, (1 << 21) - 1), mg << 3, dv);   /* bits; 0.18.0 dither) */
     }
     perf_block(mix_l, mix_r, n);
     for (i = 0; i < n; i++) {
@@ -3286,13 +3292,16 @@ static __attribute__((noinline)) void mix_block(int32_t *out, uint32_t n)   /* (
         pfx_end();                                      /* (DEC- / DEC+ back) */
     if (perf)
         perf_pre(mix_l, mix_r, sl_l, sl_r, send_d, send_r, n);   /* (THROW: the SLICER's bus too) */
-    for (i = 0; i < n; i++) {                           /* (0.6.75) the buses' return and sides (the block before's sends); */
+    {
+    int32_t *sdl = slicer_fx() ? sl_l : mix_l, *sdr = sdl == sl_l ? sl_r : mix_r;   /* (0.18.4: SLICER FX ON: the sides */
+    for (i = 0; i < n; i++) {                           /* through it too: PLATE is stereo) (0.6.75) the buses' return and sides (the block before's sends); */
         wet[i] = fx_wet[i];                             /* this block's sends for the next */
-        mix_l[i] += fx_sl[i];
-        mix_r[i] += fx_sr[i];
+        sdl[i] += fx_sl[i];
+        sdr[i] += fx_sr[i];
         fxq_c[i] = send_c[i];
         fxq_d[i] = send_d[i];
         fxq_r[i] = send_r[i];
+    }
     }
     if (fx_stems) {                                     /* (0.9.8) the same, traced: each part through it its own */
         stem_slicer_bus(n);                             /* stem; (0.7.1) and the stems' FX return (stem_fx_block) */

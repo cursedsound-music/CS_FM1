@@ -35,10 +35,11 @@ static uint32_t mfnv(uint32_t h, const void *p, uint32_t n)
 }
 
 /* ---- 2. a project of before: the steps' MICRO set as 0.9.0 stored it (cwhen's bits 4-7, sixteenths) ---- */
-#define MICRO_OLD_090 0x249e3fdcu   /* (0.9.9 ctl64: the render in blocks of 64 differs from 0.9.0's bit for bit
+#define MICRO_OLD_090 0x51aa0169u   /* (cursed-os 0.18.4: again, cursed-os's sound: PLATE, the look-ahead, the dither;
+                                         * was 0x249e3fdc) (0.9.9 ctl64: the render in blocks of 64 differs from 0.9.0's bit for bit
                                          * (the notes at their samples, the fades); was 0xd5c5b5c5: the steps' places as read
                                          * from the project are unchanged, the second check below) */
-#define MICRO_PACK_090 0x55f3c173u
+#define MICRO_PACK_090 0xdd31a5bcu       /* (cursed-os 0.9.3: REVERB TYPE PLATE by default, a byte of the mix; was 0x55f3c173) */
 static void old_steps(void)
 {
     static const int8_t M16[8] = {0, 3, -2, 7, -8, 1, -5, 4};

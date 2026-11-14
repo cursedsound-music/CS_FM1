@@ -32,7 +32,7 @@ jobs:
       - run: pip install Pillow numpy fonttools
       - name: generated headers (fonts, icons, palettes, shapes, tables, samples)
         run: python3 -c "import sys; sys.path.insert(0, 'tools'); import build; build.generate()"
-      - name: the host tests of cursed-os
+      - name: the host tests of cursed-os (quick; every one after the firmware)
         run: |
           mkdir -p build/t
           cc -O1 -w -Ibuild/gen -Ifirmware/src -Itests -o build/t/acid_test tests/acid_test.c -lm && build/t/acid_test
@@ -77,6 +77,8 @@ jobs:
           python3 web/make_site.py build/felucca.fwsc "cursed-os-${GITHUB_SHA::7}" build/site
           cp -r build/site/webapp build/site/firmware build/emu/
           cp build/felucca.fwsc build/emu/cursed-os.fwsc
+      - name: every host test (tests/run_tests.sh; with the package when it built)
+        run: SANITIZE=0 sh tests/run_tests.sh
       - name: firmware status
         if: always()
         run: |

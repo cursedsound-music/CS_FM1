@@ -5,7 +5,7 @@
 //   node web/emu/emu_test.mjs build/emu/felucca.wasm [NATIVE.f32]
 // Checks: it boots (splash, then HOME on the screen, the HOME LED; the power-on LED sweep under the splash, over by
 // 1 s), a held key sounds and lights its LED, PLAY
-// starts the sequencer (PLAY's green LED), a user preset saved from the panel (SAVE, OCT+, OCT+) reaches the flash,
+// starts the sequencer (PLAY's green LED), a project saved from the panel (cursed-os: SAVE, white 1, OCT+) reaches the flash,
 // and the flash sectors kept as the page keeps them bring it back in a fresh instance; the same gestures twice
 // give the same audio (deterministic), with NATIVE.f32 (web/emu/native_check.c) the native build's, bit for bit.
 // Then the cost: 1 s of a heavy song (FM6, TRIO, VOICE chords, DRUM) against real time (BENCH_MAX, default 0.5:
@@ -72,9 +72,11 @@ const home = a.screen();
 check(`boots: the splash, then HOME (${colours(home)} colours), the HOME LED lit`,
       splash > 1 && colours(home) > 4 && (a.ex.web_lit_buttons() >> B.HOME & 1) === 1);
 check("silent at rest", a.peak === 0);
-a.ex.web_keys(1 << 7);                                        // C4
+a.tap(B.EDIT);                                                // (cursed-os: HOME's white keys pick tracks; on EDIT they play)
 a.render(300);
-const keyLit = (a.ex.web_lit_keys() >> 7) & 1;
+a.ex.web_keys(1 << 9);                                        // D4 (the snare; C, the kick, is the KICK track's)
+a.render(300);
+const keyLit = (a.ex.web_lit_keys() >> 9) & 1;
 a.ex.web_keys(0);
 a.render(400);
 check(`a key sounds (peak ${a.peak.toFixed(3)}) and lights its LED`, a.peak > 0.01 && keyLit === 1);
@@ -94,18 +96,19 @@ check("PLAY: the sequencer runs, PLAY's green LED", a.ex.web_playing() === 1 && 
 a.tap(B.PLAY);
 a.render(300);
 check("PLAY again stops it", a.ex.web_playing() === 0);
-a.ex.web_buttons(1 << B.FX);                                  // #119: FX held, its map: the effects breathe
-a.render(800);
-const brK = a.ex.web_breath_keys(), brB = a.ex.web_breath_buttons(), litK = a.ex.web_lit_keys();
+a.tap(B.HOME);                                                // (cursed-os) FX held + a white key: that effect, its key lit
+a.render(300);
+a.ex.web_buttons(1 << B.FX);
+a.render(300);
+a.ex.web_keys(1 << 0);
+a.render(300);
+const padLit = a.ex.web_lit_keys() & 1;
+a.ex.web_keys(0);
+a.render(300);
+const padOff = a.ex.web_lit_keys() & 1;
 a.ex.web_buttons(0);
 a.render(300);
-const lockedK = a.ex.web_breath_keys();                      // (0.6.44: held open, nothing played, let go: locked open)
-a.tap(B.FX);                                                 // .. FX again: unlocked
-a.render(300);
-check("FX held: its button and the effects' keys breathe, none lit; let go: locked open; FX again: nothing",
-      lockedK !== 0 &&
-      (brB >> B.FX & 1) === 1 && brK !== 0 && (brK & litK) === 0 && litK === 0 &&
-      a.ex.web_breath_keys() === 0 && a.ex.web_breath_buttons() === 0);
+check("FX held + white key 1: its effect, the key lit while held, dark when let go", padLit === 1 && padOff === 0);
 { // the page's breathing peaks against the firmware's (hal/fm1_input.h FM1_LED_BREATH_PK / _LO, /256 of lit): the
   // colour at 50 % between the dark and the lit one by the LED's share, gamma-encoded (sRGB), within 0.06
   const html = fs.readFileSync(new URL("./index.html", import.meta.url), "utf8");
@@ -124,15 +127,18 @@ check("FX held: its button and the effects' keys breathe, none lit; let go: lock
         Math.abs(got[3] - lo) <= 0.06);
 }
 
-// ---- a user preset saved from the panel, kept across a fresh instance
+// ---- a project saved from the panel (cursed-os: SAVE > PROJECT, white key 1 slot A, OCT+), kept across a fresh instance
 const w0 = a.ex.web_flash_writes_count();
 a.tap(B.SAVE);
+a.ex.web_keys(1 << 0);
+a.render(100);
+a.ex.web_keys(0);
+a.render(100);
 a.tap(B.OCTUP);
-a.tap(B.OCTUP);
-a.render(200);
+a.render(1500);
 const saved = storeSectors(new Uint8Array(a.mem.buffer, a.ex.web_nor(), a.ex.web_nor_size()));
-check(`SAVE, OCT+, OCT+: user preset 1 written (${Object.keys(saved).length} sectors kept)`,
-      a.ex.web_test_user_preset(0) === 1 && a.ex.web_flash_writes_count() > w0 && Object.keys(saved).length > 0);
+check(`SAVE, white 1, OCT+: project A written (${Object.keys(saved).length} sectors kept)`,
+      a.ex.web_test_project(0) === 1 && a.ex.web_flash_writes_count() > w0 && Object.keys(saved).length > 0);
 const kept = JSON.parse(JSON.stringify(Object.fromEntries(     // as the page keeps them (base64 in localStorage)
   Object.entries(saved).map(([k, v]) => [k, Buffer.from(v).toString("base64")]))));
 const b = await device(Object.fromEntries(Object.entries(kept).map(([k, v]) => [k, new Uint8Array(Buffer.from(v, "base64"))])));
@@ -140,7 +146,7 @@ b.render(600);
 const c = await device(null);
 c.render(600);
 check("a fresh instance with the kept sectors has it; one without does not",
-      b.ex.web_test_user_preset(0) === 1 && c.ex.web_test_user_preset(0) === 0);
+      b.ex.web_test_project(0) === 1 && c.ex.web_test_project(0) === 0);
 
 // ---- deterministic: the same gestures, the same samples
 async function song() {

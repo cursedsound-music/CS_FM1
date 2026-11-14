@@ -1,4 +1,5 @@
-/* SPDX-License-Identifier: GPL-3.0-only
+/* SPDX-License-Identifier: GPL-3.0-only OR MIT
+ * Copyright (C) 2026 cursedsound
  * (cursedsound) cursed-os 0.13.0: SAVE > KITS: a kit made (its sounds, levels, AHDSR, sends, CHANCE) saved into K01,
  * changed, loaded back; a used slot asks first; playing: loads, does not save; REC twice erases.
  *   cc -O1 -w -DCOS_SLIM=1 -Ibuild/gen -Ifirmware/src -Itests -o build/t/kit_test tests/kit_test.c -lm */

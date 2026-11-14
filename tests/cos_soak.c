@@ -1,4 +1,5 @@
-/* SPDX-License-Identifier: GPL-3.0-only
+/* SPDX-License-Identifier: GPL-3.0-only OR MIT
+ * Copyright (C) 2026 cursedsound
  * (cursedsound) cursed-os soak: hours of a random player on every button, key and knob, the sound rendered, the screen
  * drawn, long pauses (the IDLE screen), under the address and undefined-behaviour sanitizers (an out-of-bounds read
  * or write anywhere stops it with the place). After GG's crash (0.8.8, an hour of a jam: a bus error in the UI's draw).

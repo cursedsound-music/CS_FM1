@@ -1,4 +1,5 @@
-/* SPDX-License-Identifier: GPL-3.0-only
+/* SPDX-License-Identifier: GPL-3.0-only OR MIT
+ * Copyright (C) 2026 cursedsound
  * (cursedsound) cursed-os 0.13.0: GLO > MIDI 2 KNOBS: +MIDI turns the sound and sends its value as a CC (CTRL CH + the
  * mode, CC 20 + page x 4 + knob); MIDI sends a relative CC and leaves the sound.
  *   cc -O1 -w -DCOS_SLIM=1 -Ibuild/gen -Ifirmware/src -Itests -o build/t/ctl_test tests/ctl_test.c -lm */

@@ -3496,7 +3496,7 @@ static int test_presets_knob(void)
         song.sel = 0;
         my_steps(TSEL);
         ui.home = 0; ui.page = (uint8_t)i; page_entered();
-        if (!page_visible(i))
+        if (!page_visible(i) || g == GR_GCOMP)         /* (GLO > COMPS: the global lane's step, as SEQ's: its own check) */
             continue;
         frame();
         before = *TSEL;
@@ -3910,10 +3910,14 @@ static int test_layer(void)
     ui_power_on();
     go_title("REVERB");
     ok = cur_page()->fam == FAM_FX && cur_page()->id[0] == G_RTYPE && cur_page()->id[1] == G_RSIZE &&
-         cur_page()->id[2] == G_RDAMP && song.g[G_RTYPE] == 0;
+         cur_page()->id[2] == G_RDAMP && song.g[G_RTYPE] == 5 && str_eq(GP[G_RTYPE].names[5], "PLATE");   /* (cursed-os
+                                                         * 0.9.3: PLATE the default) */
+    turn(EN_K1, -5);
+    ok &= song.g[G_RTYPE] == 0;
     turn(EN_K1, 1);
     ok &= song.g[G_RTYPE] == 1 && str_eq(GP[G_RTYPE].names[song.g[G_RTYPE]], "SPRING");
-    turn(EN_K1, 5);                                  /* (JIANT 0.5: SHIMR RESO CLOUD after it) */
+    turn(EN_K1, 3);                                  /* (JIANT 0.5: SHIMR RESO CLOUD after it; cursed-os: PLATE TIGHT
+                                                         * after those, so three detents, not five against the end) */
     ok &= song.g[G_RTYPE] == 4 && str_eq(GP[G_RTYPE].names[4], "CLOUD");
     song.playing = 0;
     project_save(2);
@@ -4341,7 +4345,7 @@ static int test_edit_cycle(void)
     (void)CH_D; (void)TP_D;
 #endif
     {   /* #97: a DRUM track's lane levels on EDIT > LANES (KICK SNARE CLAP HATCL) and LANES 2 (HATOP TOM RIM BELL) */
-        static const char *const CH_K[] = {"KIT", "KIT 2", "KIT 3", "SOUND", "SOUND 2", "SOUND 3", "SOUND 4", "LEVELS",
+        static const char *const CH_K[] = {"KIT", "KIT 2", "KIT 3", "KIT 4", "SOUND", "SOUND 2", "SOUND 3", "SOUND 4", "LEVELS",   /* (KIT 4: ACOUSTIC) */
                                            "LEVELS 2", "X-MOD", "FILTER", "STEREO", "VOICE"};
         static const char *const TP_K[] = {"SOUND", "LEVELS", "X-MOD"};
         set_engine_of(TSEL, ENGI_DRUM);
@@ -5280,30 +5284,18 @@ static int test_step_rec(void)
             cursor_set(2); frame();
             key_down(7); frame(); key_down(11); frame();
             h0 = graph_signature();
-            turn(EN_SELECT, 2);
+            turn(EN_K1, 2);                             /* (JIANT 67cab79: SELECT navigates, armed or not; KNOB 1 the LEN) */
             h1 = graph_signature();
             ok = ui.ent_len == 3u && msg_is("LEN 3 STEPS") && cur_page() == pg0 && ui.cursor == 2u && h1 != h0;
             key_up(7); key_up(11); frame();
             ok &= t->step[2].n == 2u && t->step[3].time == ST_TIE && t->step[4].time == ST_TIE && t->step[5].time != ST_TIE &&
                   ui.cursor == 5u;
-            bad += check("seq2c step recording: a chord held + SELECT: its LEN (3, the bar on the roll), TIEs after, the page stays", ok);
-            turn(EN_SELECT, -1);
-            ok = ui.cursor == 4u && cur_page() == pg0;
-            turn(EN_SELECT, 1); turn(EN_SELECT, 1);
-            ok &= ui.cursor == 6u;
-            cursor_set(0); frame();
-            turn(EN_SELECT, -1);
-            ok &= ui.cursor == 15u && cur_page() == pg0;
+            bad += check("step recording: a chord held + KNOB 1: its LEN (3, the bar on the roll), TIEs after, the page stays", ok);
             turn(EN_SELECT, 1);
-            ok &= ui.cursor == 0u && cur_page() == pg0 && song.rec == 1u;
-            bad += check("seq2c step recording: no key + SELECT: the cursor a step left / right, round in LEN 16, the page stays", ok);
-            song.rec = 0;
-            turn(EN_SELECT, 1);
-            ok = cur_page() != pg0 && ui.cursor == 0u;
+            ok = cur_page() != pg0 && ui.cursor == 5u && song.rec == 1u;
             turn(EN_SELECT, -1);
             ok &= cur_page() == pg0;
-            song.rec = 1u;
-            bad += check("seq2c not armed: SELECT walks the pages as before", ok);
+            bad += check("step recording: SELECT walks the pages, armed or not (JIANT 67cab79), the cursor stays", ok);
         }
         t->p[P_SLEN] = 8;
     }
@@ -5778,12 +5770,14 @@ static int test_fm4_retired(void)
     }
     bad += check("PRESETS KNOB 2: the engines in order (0.9.9: DRUM first; snd5: NOISE STRING ADD last, round), DIGITAL skipped, back to the first",
                  seen == all && TSEL->eng_req == 0u && eng_step(0, 1) == ENGI_FM6 && eng_step(ENGI_FM6, 1) == ENGI_PHASE &&
-                 eng_step(ENGI_FM6, -1) == 0u && eng_step(0, -1) == ENGI_LOFI && eng_step(ENGI_DRUM, 1) == ENGI_VOICE &&
+                 eng_step(ENGI_FM6, -1) == 0u && eng_step(0, -1) == ENGI_LOFI && eng_step(ENGI_DRUM, 1) == ENGI_KICK &&
+                 eng_step(ENGI_KICK, 1) == ENGI_FMDRUM && eng_step(ENGI_ACID, 1) == ENGI_DUB && eng_step(ENGI_DUB, 1) == ENGI_VOICE &&   /* (cursed-os) */
                  eng_step(ENGI_VOICE, 1) == ENGI_ANIMAL && eng_step(ENGI_DRUM, -1) == ENGI_ADD && eng_step(ENGI_NOISE, 1) == ENGI_STRING &&
                  eng_step(ENGI_STRING, 1) == ENGI_ADD && eng_step(ENGI_ADD, 1) == ENGI_DRUM);
     {   /* the display order (engines.c ENGINE_ORDER, 0.9.9): every engine one can pick once; the PRESETS list follows it
          * (was ANALOG FM6 PHASE LOFI VOICE WHEEL NOISE DRUM ANIMAL: test_engine_order_099 has PROGRAM CHANGE's) */
-        static const char *const ORDER[] = {"DRUM", "VOICE", "ANIMAL", "LOFI", "ANALOG", "FM6", "PHASE", "WHEEL", "NOISE", "STRING", "ADD"};
+        static const char *const ORDER[] = {"DRUM", "KICK", "FMDRUM", "ACID", "DUB", "VOICE", "ANIMAL", "LOFI", "ANALOG", "FM6", "PHASE",
+                                             "WHEEL", "NOISE", "STRING", "ADD"};   /* (cursed-os: KICK FMDRUM ACID DUB after DRUM) */
         uint32_t last = 0xFFu, r = 0, n = 0;
         ok = NENG_SHOWN == NELEM(ORDER);
         for (i = 0; ok && i < NENG_SHOWN; i++)
@@ -5798,7 +5792,7 @@ static int test_fm4_retired(void)
             last = e;
             r++;
         }
-        bad += check("engines shown DRUM VOICE ANIMAL LOFI ANALOG FM6 PHASE WHEEL NOISE STRING ADD (ENGINE_ORDER); PRESETS lists them so",
+        bad += check("engines shown DRUM KICK FMDRUM ACID DUB VOICE ANIMAL LOFI ANALOG FM6 PHASE WHEEL NOISE STRING ADD (ENGINE_ORDER); PRESETS lists them so",
                      ok && r == NENG_SHOWN);
     }
     /* a user preset stored with engine 1: kept as it is, it loads as FM6 with the converted patch */
@@ -7335,32 +7329,33 @@ static int test_save_lens(void)
  * layer and the dice on every page. (Was 0.8.3's LENTE: SELECT PATTERN <-> BAR <-> STEP, PRESETS the bar / step) */
 static int test_lente(void)
 {
-    static const char *const CH[12] = {"STEP", "LENGTH", "TRACK", "EUCLID", "MODES", "MUTATE", "PLAYHEADS", "STRETCH",
-                                       "COMP", "COMP 2", "AUTOMATION", "AUTO LIST"};
-    static const char *const TP[6] = {"LENGTH", "EUCLID", "PLAYHEADS", "STRETCH", "COMP", "AUTOMATION"};
+    static const char *const CH[15] = {"STEP", "LENGTH", "TRACK", "EUCLID", "MODES", "MUTATE", "ACID", "ACID 2", "ACID 3",
+                                       "PLAYHEADS", "STRETCH", "COMP", "COMP 2", "AUTOMATION", "AUTO LIST"};   /* (cursed-os:
+                                                         * the ACID generator's three pages after MUTATE) */
+    static const char *const TP[7] = {"LENGTH", "EUCLID", "ACID", "PLAYHEADS", "STRETCH", "COMP", "AUTOMATION"};
     int bad = 0, ok;
     uint32_t q, sig;
     ui_power_on();
     TSEL->p[P_SLEN] = 64;
     open_family(FAM_SEQ); frame();
-    ok = str_eq(cur_page()->title, "STEP") && lens_level() == LV_BAR && roll_view(cur_page()) && lz_tabs() == 7u &&
-         lz_tab_lit(0) && lz_crumb_is("SEQ \xB7 STEP \xB7 STEP") && lz_count_is("1/12");
+    ok = str_eq(cur_page()->title, "STEP") && lens_level() == LV_BAR && roll_view(cur_page()) && lz_tabs() == 8u &&
+         lz_tab_lit(0) && lz_crumb_is("SEQ \xB7 STEP \xB7 STEP") && lz_count_is("1/15");
     turn(EN_SELECT, -1); frames(32);
-    ok &= str_eq(cur_page()->title, "STEP") && lz_count_is("1/12");                /* (the first: no wrap) */
+    ok &= str_eq(cur_page()->title, "STEP") && lz_count_is("1/15");                /* (the first: no wrap) */
     turn(EN_SELECT, 1); frames(32);
-    ok &= str_eq(cur_page()->title, "PATTERN") && seq_roll_view(cur_page()) && lz_tab_lit(1) && lz_count_is("2/12") &&
+    ok &= str_eq(cur_page()->title, "PATTERN") && seq_roll_view(cur_page()) && lz_tab_lit(1) && lz_count_is("2/15") &&
           lz_crumb_is("SEQ \xB7 LENGTH \xB7 LENGTH");                              /* (PATTERN, named LENGTH) */
     turn(EN_SELECT, 1); frames(32);
-    ok &= str_eq(cur_page()->title, "TRACK") && lz_tab_lit(1) && lz_count_is("3/12") &&
+    ok &= str_eq(cur_page()->title, "TRACK") && lz_tab_lit(1) && lz_count_is("3/15") &&
           lz_crumb_is("SEQ \xB7 LENGTH \xB7 TRACK");                               /* (TRACK under the LEN tab) */
-    turn(EN_SELECT, 6); frames(32);
-    ok &= str_eq(cur_page()->title, "COMP") && seq_roll_view(cur_page()) && lz_tab_lit(5) && lz_count_is("9/12") &&
+    turn(EN_SELECT, 9); frames(32);
+    ok &= str_eq(cur_page()->title, "COMP") && seq_roll_view(cur_page()) && lz_tab_lit(6) && lz_count_is("12/15") &&
           lz_crumb_is("SEQ \xB7 COMP \xB7 COMP");
     turn(EN_SELECT, 1); frames(32);
-    ok &= str_eq(cur_page()->title, "COMP 2") && lz_tab_lit(5) && lz_count_is("10/12");
-    bad += check("seq2 SEQ: enters at STEP (1/12, seven tabs); LENGTH the roll (seq2b), TRACK under its tab, COMP the roll, COMP 2 after it", ok);
-    bad += check("seq2 SEQ: one chain of 12 by SELECT (no wrap); a SEQ tap the next tab's first, round",
-                 chain_walk(B_SEQ, CH, 12, TP, 6));
+    ok &= str_eq(cur_page()->title, "COMP 2") && lz_tab_lit(6) && lz_count_is("13/15");
+    bad += check("seq2 SEQ: enters at STEP (1/15, eight tabs); LENGTH the roll (seq2b), TRACK under its tab, COMP the roll, COMP 2 after it", ok);
+    bad += check("seq2 SEQ: one chain of 15 by SELECT (no wrap); a SEQ tap the next tab's first, round",
+                 chain_walk(B_SEQ, CH, 15, TP, 7));
     {   /* (0.9.9-seq2b) every page of the chain the same picture: the bars' strip, the roll with its keys */
         static const char *const TI[12] = {"STEP", "PATTERN", "TRACK", "EUCLID", "MODES", "MUTATE", "PLAYHEADS", "STRETCH",
                                            "COMP", "COMP 2", "AUTOMATION", "AUTO LIST"};
@@ -7465,7 +7460,7 @@ static int test_lente(void)
     go_title("BAR"); frames(32);
     turn(EN_K1, 1);
     ok &= ui.bank == 1u;
-    turn(EN_SELECT, 7); frames(32);                                               /* (from BAR, LENGTH's place: COMP; V10.16: past MUTATE) */
+    turn(EN_SELECT, 10); frames(32);                                              /* (from BAR, LENGTH's place: COMP; V10.16: past MUTATE; cursed-os: ACID x3) */
     ok &= seq_roll_view(cur_page()) && lens_level() == LV_STEP;
     bad += check("  DRUM: STEP is the grid (its keys); LENGTH the grid (seq2b), BAR (by code) KNOB 1 the bar; COMP the grid", ok);
     return bad;
@@ -7681,7 +7676,7 @@ static int test_seq_tools(void)
     ui_power_on();
     go_page(GR_ROLL); frame();
     {   /* (0.9.2) a tap on STEP: the next tab's first (seq2: LENGTH MUTATE PLAYHEADS STRETCH COMP AUTOMATION, round) */
-        static const char *const ORD[] = {"PATTERN", "EUCLID", "PLAYHEADS", "STRETCH", "COMP", "AUTOMATION"};
+        static const char *const ORD[] = {"PATTERN", "EUCLID", "ACID", "PLAYHEADS", "STRETCH", "COMP", "AUTOMATION"};   /* (cursed-os: ACID) */
         uint32_t q;
         ok = 1;
         for (q = 0; q < sizeof ORD / sizeof ORD[0]; q++) {
@@ -11054,8 +11049,10 @@ static int test_scope(void)
     for (sk = 0; sk < SKIN_N; sk++)                               /* the EDIT pages of every engine with a creature */
         for (e = 0; e < NENGINES; e++) {
             uint32_t on_tile, on_mid, off_tile, off_mid, gy, chips;
-            if (!eng_ok(e) || e == ENGI_DRUM || e == ENGI_FM6 || eng_gone(e) || str_eq(ENGINES[e]->name, "DIGITAL"))
-                continue;                                         /* (DIGITAL, FELUCCA_FM4=1: its OP pages, no creature) */
+            if (!eng_ok(e) || e == ENGI_DRUM || e == ENGI_FM6 || eng_gone(e) || str_eq(ENGINES[e]->name, "DIGITAL") ||
+                e == ENGI_KICK || e == ENGI_DUB || e == ENGI_FMDRUM || e == ENGI_ACID)
+                continue;                                         /* (DIGITAL, FELUCCA_FM4=1: its OP pages, no creature;
+                                                                   * cursed-os's engines: none drawn in JIANT's interface) */
             ui_power_on(); ui_skin = (uint8_t)sk; set_engine_of(TSEL, e); TSEL->engine = TSEL->eng_req;
             go_title("EDIT 1"); ui.force = 1; frame(); frame();
             if (trk_engp(TSEL) == &ENG_FORMANT && TSEL->p[P_VLANG])
@@ -11536,7 +11533,9 @@ static int lz_tab_lit(uint32_t l)
     uint32_t lv, at, n = tabs_now(nm, tab, cnt, &lv, &at), k;
     int ok = lv == l;
     for (k = 0; k < n; k++)
-        ok &= swap16(host_screen[(LT_Y + LT_H / 2) * 240 + TAB_X(k, n) + 2]) == (k == l ? T_THEME : T_RAISE);
+        ok &= swap16(host_screen[(LT_Y + 1) * 240 + TAB_X(k, n) + 2]) == (k == l ? T_THEME : T_RAISE);   /* (cursed-os: the
+                                                         * tab's top row, not its middle: eight tabs' labels reach the
+                                                         * sample point there) */
     return ok;
 }
 static uint32_t lz_tabs(void)                           /* how many tabs */
@@ -11556,7 +11555,9 @@ static int lz_crumb_is(const char *s)
 static int lz_count_is(const char *s)
 {
     char b[8];
-    return crumb_count(b) && str_eq(b, s);
+    int ok = crumb_count(b) && str_eq(b, s);
+    if (!ok) printf("  count \"%s\", wanted \"%s\"\n", b, s);
+    return ok;
 }
 /* HOME (0.9.2): ECO (ECO MACROS) . BEING (BEING ROUTES) . GEN (GEN 1..3) one chain; SELECT a page a detent (no wrap), a
  * HOME tap the next group (round: GEN -> ECO), PRESETS on GEN its GENRE, OCT- on GEN back to ECO; GEN is a page (a
@@ -12078,14 +12079,14 @@ static int test_toasts(void)
     bad += check("  NOTICE blacks out no more than its box (its tabs, its card, its breadcrumb): the page round it, back whole", ok);
     /* hints: walking SEQ's chain with SELECT (TRACK > EUCLID > PLAYHEADS) says nothing; dwelt on, MUTATE's; at most HINT_MAX */
     ui_power_on(); go_title("TRACK"); frames(400);
-    for (seen = passed = 0, k = 0; k < 4u; k++) {
+    for (seen = passed = 0, k = 0; k < 7u; k++) {      /* (cursed-os: ACID's three pages before PLAYHEADS) */
         turn(EN_SELECT, 1); passed |= str_eq(cur_page()->title, "EUCLID");
         for (n = 0; n < 12u; n++) { frame(); seen |= msg_is("TURN A KNOB: A PATTERN") || msg_is("OCT+ NEW  OCT- BEFORE"); }
     }
     for (n = 0; n < 200u; n++) { frame(); seen |= ui.msg_t && ui.msg[0]; }
     bad += check("0.9.5 a page's hint: none while SELECT walks past it (TRACK > EUCLID > PLAYHEADS), nor carried onto the next",
                  passed && str_eq(cur_page()->title, "PLAYHEADS") && !seen);
-    turn(EN_SELECT, -3);                                /* back to EUCLID (past MUTATE, MODES): stay */
+    turn(EN_SELECT, -6);                                /* back to EUCLID (past ACID's, MUTATE, MODES): stay */
     ok = str_eq(cur_page()->title, "EUCLID");
     frames(HINT_DWELL_MS - 160u);
     ok &= !ui.msg_t;
@@ -12549,7 +12550,7 @@ static void tk_start(uint32_t from)                     /* 0 home, 1 seq, 2 fxdl
 }
 static int test_nav_tasks(void)
 {
-    static const uint8_t WANT[14] = {4, 3, 5, 6, 34, 10, 9, 2, 3, 1, 3, 8, 18, 4};   /* (V10.1: SAVE composes first, 106 -> 108) */   /* (seq2: task 5 by STEP's KNOB 1, no BAR;
+    static const uint8_t WANT[14] = {4, 3, 5, 6, 34, 10, 9, 2, 3, 1, 3, 7, 21, 4};   /* (cursed-os: task 13 past ACID's three pages) */   /* (V10.1: SAVE composes first, 106 -> 108) */   /* (seq2: task 5 by STEP's KNOB 1, no BAR;
                                                          * task 11 TRACK under LEN's tab; task 13 eight detents (seq2c:
                                                          * MUTATE 2); was 73) */
     uint32_t got[14], t, tot = 0;
@@ -12614,13 +12615,14 @@ static int test_nav_tasks(void)
             ok = str_eq(cur_page()->title, "TRACK") && TSEL->p[P_HRQ] == 0;
             break;
         case 11:                                        /* DRUM-X (track 4): the snare's DECAY */
-            tk_start(0); tk_btn(B_EDIT); tk_go(EN_ALGO, 3); tk_btn(B_EDIT); tk_go(EN_SELECT, 1); tk_go(EN_K1, 1);
+            tk_start(0); tk_btn(B_EDIT); tk_go(EN_ALGO, 3); tk_btn(B_EDIT); tk_go(EN_SELECT, 1);   /* (cursed-os: the
+                                                         * kit's EDIT opens on the SNARE, ui.c: no KNOB 1 to it) */
             { uint32_t c = dx_ui_lane & 7u; uint8_t *dv = dx_ui_side ? dx_kit[c].b : dx_kit[c].a, d0 = dv[DXP_DECAY];
               tk_val(EN_K2, -6);
               ok = song.sel == 3u && str_eq(cur_page()->title, "SOUND 2") && c == 1u && dv[DXP_DECAY] != d0; }
             break;
         case 12:                                        /* COMP 2 of step 9 */
-            tk_start(1); tk_go(EN_K1, 8); tk_go(EN_SELECT, 9); tk_val(EN_K1, 1);   /* (seq2c: eight detents to COMP 2, V10.16 nine;
+            tk_start(1); tk_go(EN_K1, 8); tk_go(EN_SELECT, 12); tk_val(EN_K1, 1);   /* (seq2c: eight detents to COMP 2, V10.16 nine;
                                                          * seq2d: the step picked on STEP, KNOB 1 its ACTION) */
             ok = str_eq(cur_page()->title, "COMP 2") && ui.cursor == 8u && TSEL->step[8].comp2 != 0u;
             break;
@@ -12638,7 +12640,7 @@ static int test_nav_tasks(void)
     }
     printf("ui:   the race: %u %u %u %u %u %u %u %u %u %u %u %u %u %u = %u actions (0.9.1: 75)\n", got[0], got[1], got[2], got[3],
            got[4], got[5], got[6], got[7], got[8], got[9], got[10], got[11], got[12], got[13], tot);
-    bad += check("0.9.2 the mock-up's 14 tasks on the panel: each goal reached in its PROPOSED actions (seq2c: 106, was 73)", okall && tot == 110u);   /* (V10.8: an accent past VEL 127: +1; V10.16 MUTATE in SEQ's chain: +1) */
+    bad += check("0.9.2 the mock-up's 14 tasks on the panel: each goal reached in its PROPOSED actions (seq2c: 106, was 73)", okall && tot == 112u);   /* (V10.8: an accent past VEL 127: +1; V10.16 MUTATE in SEQ's chain: +1) */
     ui_power_on();
     return bad;
 }
@@ -12741,8 +12743,8 @@ static void ui_power_on_099(void)
  * each part sounds a note with no effects, none clipping */
 static int test_power_on_099(void)
 {
-    static const char *const ENG[NPART] = {"DRUM", "VOICE", "ANIMAL", "LOFI", "ANALOG", "FM6"};
-    static const char *const PRE[NPART] = {"DRUM-X", "SINGER EN", "CMOS BIRD", "BYTEBEAT", "FAT BASS", "TINE EP"};
+    static const char *const ENG[NPART] = {"DRUM", "KICK", "ACID", "ANALOG", "ANALOG", "VOICE"};   /* (cursed-os 0.10.0) */
+    static const char *const PRE[NPART] = {"DRUM-X", "TECHNO", "TB CLASSIC", "FAT BASS", "DARK PAD", "SINGER EN"};
     int bad = 0, ok = 1;
     uint32_t i, k, b, drums = 0, live;
     int16_t p0[NTRK][P_COUNT];
@@ -12758,12 +12760,10 @@ static int test_power_on_099(void)
         drums += drum_track(&trk[i]);
     }
     ok &= load_depth == 0 && song.sel == 0u && !memcmp(dx_kit, DX_KIT_DEF, sizeof dx_kit);
-    bad += check("0.9.9 power-on: T1 DRUM-X, T2 VOICE SINGER EN, T3 ANIMAL CMOS BIRD, T4 LOFI BYTEBEAT, T5 ANALOG FAT BASS, T6 FM6 TINE EP", ok);
+    bad += check("power-on (cursed-os 0.10.0): T1 DRUM-X, T2 KICK TECHNO, T3 ACID TB CLASSIC, T4 ANALOG FAT BASS, T5 DARK PAD, T6 VOICE SINGER EN", ok);
     ok = drums == 1u && drum_track(&trk[0]) && drum_elsewhere(&trk[1]) == 1u && !drum_elsewhere(&trk[0]) && perc_kit(&trk[0]);
-    ok &= trk[1].p[P_VLANG] == LG_EN && trk[1].p[P_VLYR] != 0;     /* (VOICE sings English words, its LYRIC's) */
-    for (i = 0; i < NPART; i++)
-        ok &= TRK_DEF[i][0] == eng_vis(i);                     /* (the display order's first six) */
-    bad += check("  .. DRUM on T1 alone (its factory kit); VOICE sings words (EN); T1..T6 the display order's first six", ok);
+    ok &= trk[5].p[P_VLANG] == LG_EN && trk[5].p[P_VLYR] != 0;     /* (VOICE sings English words, its LYRIC's) */
+    bad += check("  .. DRUM on T1 alone (its factory kit); VOICE on T6 sings words (EN)", ok);
     for (i = 0; i < NTRK; i++) memcpy(p0[i], trk[i].p, sizeof p0[i]);
     trk[0].p[P_REV] = 90; trk[4].p[P_E0] = 3; set_engine_of(&trk[2], ENGI_PHASE);
     system_init();
@@ -12840,7 +12840,8 @@ static int test_engine_order_099(void)
 #if FELUCCA_FM4
                                      "DIGITAL",
 #endif
-                                     "PHASE", "LOFI", "VOICE", "WHEEL", "NOISE", "DRUM", "ANIMAL", "STRING", "ADD"};
+                                     "PHASE", "LOFI", "VOICE", "WHEEL", "NOISE", "DRUM", "ANIMAL", "STRING", "ADD",
+                                     "ACID", "KICK", "FMDRUM", "DUB"};   /* (cursed-os: after ADD, every number before kept) */
     int bad = 0, ok = 1;
     uint32_t i, e, k, n, all, seen = 0;
     project_store_t st;
@@ -12870,7 +12871,7 @@ static int test_engine_order_099(void)
     k = 0;
     ok = preset_all_at(0, &k) == ENGI_DRUM && k == 0u;            /* the PRESETS list: DRUM-X first */
     e = preset_all_at(preset_shown(ENGI_DRUM), &k);
-    ok &= e == ENGI_VOICE && k == preset_nth(ENGINES[ENGI_VOICE], 0);   /* the last kit, then VOICE's first */
+    ok &= e == ENGI_KICK && k == preset_nth(ENGINES[ENGI_KICK], 0);   /* the last kit, then KICK's first (cursed-os) */
     for (i = 0, n = 0; i < all; i++) {                             /* the same sounds in both orders */
         uint32_t k1, k2, e1 = preset_all_at(i, &k1), e2;
         for (e2 = 0, n = 0; e2 < all && !n; e2++) {

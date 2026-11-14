@@ -84,7 +84,8 @@ static int load_scene(void)
     steals=load_steals; p=voices_busy(); tails=tails_held();
     trk_note_on(&trk[1],75,100); trk_note_on(&trk[1],77,100); trk_note_on(&trk[1],79,100);   /* 80 + 3 x 6 > 90 */
     printf("voice-load: at 80 %% three notes at once (6 %% each): a released tail given up past 90 %%, the count kept (%u -> %u, steals %u, tails %u -> %u)\n",p,voices_busy(),load_steals-steals,tails,tails_held());
-    if(load_steals<steals+1u||voices_busy()>p+2u||tails_held()>=tails||load_tight) return 17;
+    if(voices_busy()>p+2u||tails_held()>=tails||load_tight) return 17;   /* (cursed-os: the tail given up is the check;
+                                                         * load_steals counts steals of held voices only now, not this) */
     return 0;
 }
 int main(int argc,char **argv)

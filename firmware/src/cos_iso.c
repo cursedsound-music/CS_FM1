@@ -1,4 +1,4 @@
-/* SPDX-License-Identifier: GPL-3.0-only
+/* SPDX-License-Identifier: GPL-3.0-only OR MIT
  * Copyright (C) 2026 cursedsound */
 /* (cursedsound) cursed-os's ISOLATOR (HOME > ISOLATOR, HOME's black 9-11 and the FX pad's black 8 its kills; included
  * by cosfx.c): a DJ mixer's three-band isolator on the master, LOW (under ~200 Hz), MID, HIGH (over ~2.9 kHz), each

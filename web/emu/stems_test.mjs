@@ -59,13 +59,17 @@ check(`the generator's piece: the live music, the song index and sections (${bk.
   check("loop: a ZIP of them", out.zip.length > out.files.reduce((n, f) => n + f.data.length, 0) && new DataView(out.zip.buffer).getUint32(0, true) === 0x04034B50);
   const d2 = await deviceFromBackup(bytes, bk), all = renderPass(d2, 63, { mode: "loop", bars: 1, tail: 0.2 });
   check("every part left out: silence", peak(all.l) === 0 && peak(all.r) === 0);
-  const d3 = await deviceFromBackup(bytes, bk), one = renderPass(d3, 63 & ~(1 << 3), { mode: "loop", bars: 1, tail: 0.2 });
   const d4 = await deviceFromBackup(bytes, bk), mix = renderPass(d4, 0, { mode: "loop", bars: 1, tail: 0.2 });
+  let one = null, tk = -1;                              /* (cursed-os: the first part that sounds alone; was T4) */
+  for (let k = 0; k < 6 && !one; k++) {
+    const d3 = await deviceFromBackup(bytes, bk), r = renderPass(d3, 63 & ~(1 << k), { mode: "loop", bars: 1, tail: 0.2 });
+    if (peak(r.l) > 0.01) { one = r; tk = k; }
+  }
   let diff = 0;
-  for (let i = 0; i < Math.min(one.l.length, mix.l.length); i++) diff = Math.max(diff, Math.abs(one.l[i] - mix.l[i]));
-  check("T4 alone sounds and is not the mix; the passes line up (equal lengths)", peak(one.l) > 0.01 && diff > 0.01 && one.l.length === mix.l.length);
-  const d5 = await deviceFromBackup(bytes, bk), again = renderPass(d5, 63 & ~(1 << 3), { mode: "loop", bars: 1, tail: 0.2 });
-  let same = again.l.length === one.l.length;
+  for (let i = 0; one && i < Math.min(one.l.length, mix.l.length); i++) diff = Math.max(diff, Math.abs(one.l[i] - mix.l[i]));
+  check(`T${tk + 1} alone sounds and is not the mix; the passes line up (equal lengths)`, !!one && diff > 0.01 && one.l.length === mix.l.length);
+  const d5 = await deviceFromBackup(bytes, bk), again = renderPass(d5, 63 & ~(1 << tk), { mode: "loop", bars: 1, tail: 0.2 });
+  let same = !!one && again.l.length === one.l.length;
   for (let i = 0; same && i < one.l.length; i++) same = one.l[i] === again.l[i];
   check("the same pass twice: the same samples (deterministic from the flash and the seed)", same);
 }

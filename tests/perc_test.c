@@ -1,4 +1,5 @@
-/* SPDX-License-Identifier: GPL-3.0-only
+/* SPDX-License-Identifier: GPL-3.0-only OR MIT
+ * Copyright (C) 2026 cursedsound
  * (cursedsound) cursed-os 0.14.1, GG 2026-11-11: "i dont need 2 kick drums ... the kick in the kit could be something
  * else". With a KICK track, the kit's first sound is a PERC: a RIDE at power-on, named PERC / PC, its own mute (HOME +
  * white 9), out of the KICK KILL and the DUCK, GEN's percussion line on it; without a KICK track the kick as before.

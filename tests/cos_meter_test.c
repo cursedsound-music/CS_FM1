@@ -1,4 +1,5 @@
-/* SPDX-License-Identifier: GPL-3.0-only
+/* SPDX-License-Identifier: GPL-3.0-only OR MIT
+ * Copyright (C) 2026 cursedsound
  * (cursedsound) firmware/src/cos_meter.c: its integer K-weighting against the float filters and BS.1770's reference
  * (a 997 Hz sine at 0 dBFS in one channel reads -3.01 LUFS, in both 0.0), the peak, the correlation sums, the rings.
  *   cc -O2 -w -Ifirmware/src -o build/t/cos_meter_test tests/cos_meter_test.c -lm && build/t/cos_meter_test */

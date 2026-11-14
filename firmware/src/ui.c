@@ -981,7 +981,7 @@ static void comp_vname(const track_t *t, const step_t *s, uint32_t a, uint32_t v
     case CA_JUMP: str_cpy(lb, "TO STEP", 8); if (v >= CV_JUMP_REV) str_cpy(val, "REV", 8); else fmt_int(val, (int32_t)v + 1); break;
     case CA_SOUND: str_cpy(lb, "HIT", 8); str_cpy(val, HIT[v % 3u], 8); break;
     case CA_CHORD: str_cpy(lb, "CHORD", 8); str_cpy(val, N_CHRD[1u + v % CD_POW], 8); break;
-    case CA_SHIFT: str_cpy(lb, "MOVE", 8); m = (int32_t)(v % 127u) - 63; val[0] = m < 0 ? '-' : '+'; fmt_int(val + 1, m < 0 ? -m : m); str_cpy(un, "STEPS", 8); break;
+    case CA_SHIFT: str_cpy(lb, "MOVE", 8); m = (int32_t)(v % 127u) - 63; val[0] = m < 0 ? '-' : '+'; fmt_int(val + 1, m < 0 ? -m : m); str_cpy(un, "STP", 8); break;   /* (STEPS: cut on the card beside -63) */
     case CA_BEND: str_cpy(lb, "BEND", 8); m = (int32_t)(v % 25u) - 12; val[0] = m < 0 ? '-' : '+'; fmt_int(val + 1, m < 0 ? -m : m); str_cpy(un, "ST", 8); break;
     default: break;
     }

@@ -38,7 +38,7 @@ static int startup_case(int saved, int restore, int noprefs)
     if (noprefs) {                                     /* (0.9.7) no settings saved: new settings, SKIN AIR, SCOPE OFF */
         int okf = ui_skin == SKIN_AIR, i2;
         for (i2 = 0; i2 < 2000; i2++) web_render(128);   /* (past the splash: the skin applied) */
-        okf &= ux.skin == SKIN_AIR && ui_skin == SKIN_AIR && ui_scope == 0u;
+        okf &= (cos_active() || ux.skin == SKIN_AIR) && ui_skin == SKIN_AIR && ui_scope == 0u;   /* (cursed-os draws its own screen: JIANT's skin is only the setting) */
         printf("startup: empty flash, no settings: SKIN AIR, SCOPE OFF (new settings) %s\n", okf ? "ok" : "FAIL");
         return !okf;
     }

@@ -1,4 +1,4 @@
-/* SPDX-License-Identifier: GPL-3.0-only
+/* SPDX-License-Identifier: GPL-3.0-only OR MIT
  * Copyright (C) 2026 cursedsound */
 /* (cursedsound) cursed-os's live layer, the ISR's part (included at the end of seq.c; cosfx.c's cfx_run calls live_tick
  * each block). Everything lands on the grid: the next block that starts a beat (or a bar) is where it goes in, so a

@@ -1,4 +1,4 @@
-# SPDX-License-Identifier: GPL-3.0-only
+# SPDX-License-Identifier: GPL-3.0-only OR MIT
 # Copyright (C) 2026 cursedsound
 """CURSED REMOTE: the JIANT FM-1 (cursed-os 0.10.3+) from an iPhone, in Pythonista 3.
 

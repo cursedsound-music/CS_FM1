@@ -1,4 +1,5 @@
-/* SPDX-License-Identifier: GPL-3.0-only */
+/* SPDX-License-Identifier: GPL-3.0-only OR MIT */
+/* Copyright (C) 2026 cursedsound */
 /* (cursed-os 0.9.2) the output as it leaves (after the master's COMP and LIMIT; what the DAC and USB get), for GLO's
  * SCOPE, SPECTRUM, STEREO and LOUDNESS (cos.c). Called by audio.c's audio_block with each block (Q15 L R pairs).
  *   scope_buf the left at 44.1 kHz (512: 11.6 ms), scope_r the right; scope_lo the mid (L + R) / 2 and scope_ls the side

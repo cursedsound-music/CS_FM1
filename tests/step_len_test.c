@@ -1,4 +1,5 @@
-/* SPDX-License-Identifier: GPL-3.0-only
+/* SPDX-License-Identifier: GPL-3.0-only OR MIT
+ * Copyright (C) 2026 cursedsound
  * (cursedsound) cursed-os 0.12.4: a step's LENGTH, steps held + black 3 shorter / black 4 longer: the sixteenths of a
  * step (its own gate), then whole steps (TIEs after it), stopped by a note; heard as shorter and longer.
  *   cc -O1 -w -DCOS_SLIM=1 -Ibuild/gen -Ifirmware/src -Itests -o build/t/step_len_test tests/step_len_test.c -lm */

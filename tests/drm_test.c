@@ -1,4 +1,5 @@
-/* SPDX-License-Identifier: GPL-3.0-only
+/* SPDX-License-Identifier: GPL-3.0-only OR MIT
+ * Copyright (C) 2026 cursedsound
  * (cursedsound) cursed-os 0.13.0: LFO > DRUMS: a drum held rolls at the RATE (stopped: from the press; playing: on the
  * grid), the kick through the KICK track; black 1..4 held repeat the drums' last steps; each drum's CHANCE; kept in the
  * project.

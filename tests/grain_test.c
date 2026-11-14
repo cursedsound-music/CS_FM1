@@ -1,4 +1,5 @@
-/* SPDX-License-Identifier: GPL-3.0-only
+/* SPDX-License-Identifier: GPL-3.0-only OR MIT
+ * Copyright (C) 2026 cursedsound
  * (cursedsound) cursed-os 0.13.1, GG 2026-11-11: "hiss and artifacts, especially with limiter drive and sidechain".
  * The master COMP, the limiter's DRIVE and its gain reduction multiplied (x >> 4) * g: the mix cut to 11 bits. Now
  * fx.c mix_mul keeps every bit: a quiet sine (-70 dBFS, a tail's level) through each comes out as itself times the gain,

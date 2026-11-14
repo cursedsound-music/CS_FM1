@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# SPDX-License-Identifier: GPL-3.0-only
+# SPDX-License-Identifier: GPL-3.0-only OR MIT
 # Copyright (C) 2026 cursedsound
 """Install a cursed-os / Felucca package (.fwsc) on an FM-1 through the chip's own boot mode (UBOOT), straight from
 the computer's USB: for an FM-1 whose running firmware will not take an update over USB-MIDI (a cursed-os before

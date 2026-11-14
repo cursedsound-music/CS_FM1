@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# SPDX-License-Identifier: GPL-3.0-only
+# SPDX-License-Identifier: GPL-3.0-only OR MIT
 # Copyright (C) 2026 cursedsound
 """tools/fm1_uboot.py against a simulated FM-1 in UBOOT: a USB mass-storage device that answers Bulk-Only Transport
 (CBW, data, CSW) with the WL82 ROM and loader commands as FM-1 Transporter documents them (docs/PROTOCOL.md,

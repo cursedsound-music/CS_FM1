@@ -85,6 +85,8 @@ static void fresh(uint32_t e, uint32_t pi)        /* the boot state (no FX tails
     memset(rev_comb, 0, sizeof rev_comb);
     memset(rev_ap, 0, sizeof rev_ap);
     memset(&fx, 0, sizeof fx);
+    fx_trip(0, CTL);                                    /* (cursed-os: every line and state of the buses: PLATE, the */
+    memset(lim_dl, 0, sizeof lim_dl); memset(lim_dr, 0, sizeof lim_dr);   /* half-rate delay, the limiter look-ahead) */
     memset(fxq_c, 0, sizeof fxq_c); memset(fxq_d, 0, sizeof fxq_d); memset(fxq_r, 0, sizeof fxq_r);   /* (0.6.75: the buses' queued sends) */
     lim_env = LIM_T; lev_env = 0; lev_g = lev_cur = 32768; lev_dg = 0;
     memset(mp_seen, 0, sizeof mp_seen); memset(dist_w, 0, sizeof dist_w);      /* (0.6.8: LEVEL / PAN glide, DST blend; 0.6.9: AUTO PAN) */
@@ -691,7 +693,9 @@ static uint64_t phrase_lr(int32_t *diff)
         blocks(1);
         for (i = 0; i < CTL; i++) {
             int32_t d = out_buf[2u * i] - out_buf[2u * i + 1u];
-            *diff += d < 0 ? -d : d > 0 ? d : 0;
+            d = d < 0 ? -d : d;
+            *diff += d > 2 ? d : 0;                     /* (cursed-os 0.18.0: the master's dither and rounding, a */
+                                                        /* bit or two apart: not the sound's own stereo) */
             if (*diff > 1 << 28)
                 *diff = 1 << 28;
         }
@@ -1175,12 +1179,15 @@ static void test_jiant_fx(void)
     }
     fresh(0, 0);
     trk[0].p[P_DLY] = 110; trk[0].p[P_CHOR] = 0; song.g[G_WIDTH] = 0;
-    h0 = phrase_lr(&d0);
+    trk[0].p[P_REV] = 0; song.g[G_RTYPE] = 0;          /* (cursed-os 0.9.3: PLATE, the default, is stereo by nature: */
+    h0 = phrase_lr(&d0);                                /* the delay's echoes reach the reverb, ROOM's mono here) */
     fresh(0, 0);
     trk[0].p[P_DLY] = 110; trk[0].p[P_CHOR] = 0; song.g[G_WIDTH] = 127;
+    trk[0].p[P_REV] = 0; song.g[G_RTYPE] = 0;
     h1 = phrase_lr(&d1);
     check("WIDTH 0: the delay mono (left = right, to a rounding); 127: left and right apart",
-          d0 <= 4 && d1 > 1000 && h0 != h1);   /* (0.6.75: one sample 1 apart, the master's rounding of L and R) */
+          (int64_t)d0 * 1000 < d1 && d1 > 1000 && h0 != h1);   /* (cursed-os 0.18.0: the master's dither and soft clip
+                                                         * leave a few LSB apart: under 0.1 % of WIDTH 127's) */   /* (0.6.75: one sample 1 apart, the master's rounding of L and R) */
     {   /* (0.5.1) the chorus an ensemble: stereo already at WIDTH 0, wider at 127 */
         int32_t d2, d3;
         fresh(0, 0);

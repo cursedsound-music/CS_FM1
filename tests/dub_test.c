@@ -1,4 +1,5 @@
-/* SPDX-License-Identifier: GPL-3.0-only
+/* SPDX-License-Identifier: GPL-3.0-only OR MIT
+ * Copyright (C) 2026 cursedsound
  * (cursedsound) cursed-os 0.15.0: DUB (engine 6, eng_dub.c), GG's dub chords and atmospheres: reachable, every preset
  * sounding and bounded; a STAB falls, an ATMOS holds and moves; ATMOS in the key (any key struck: the chord on ROOT);
  * COLOR brighter, DENSITY denser; THROW lifts the delay send; its presets keep their sends (others load dry); a project

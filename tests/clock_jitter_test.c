@@ -1,4 +1,5 @@
-/* SPDX-License-Identifier: GPL-3.0-only
+/* SPDX-License-Identifier: GPL-3.0-only OR MIT
+ * Copyright (C) 2026 cursedsound
  * (cursedsound) cursed-os 0.14.1, GG 2026-11-12: Ableton at 135 BPM, the FM-1 showing 134.7 .. 135 all the time. Clocks
  * at 135 BPM with USB's timing (each pulse's millisecond up to 1 off, rounded): the tempo the FM-1 takes holds within
  * 0.15 %, the BPM shown stays 135.0; a real change (to 128) followed at once.

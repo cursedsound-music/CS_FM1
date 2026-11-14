@@ -1,4 +1,5 @@
-/* SPDX-License-Identifier: GPL-3.0-only
+/* SPDX-License-Identifier: GPL-3.0-only OR MIT
+ * Copyright (C) 2026 cursedsound
  * (cursedsound) cursed-os 0.18.0, GG 2026-11-14: "dither, leveler off ... only syntakt, cleaned soft clip (not always on,
  * i want to set it when I need it), undo for gen, quick starts, drum sample rate conversion".
  *   SAVE > START: each STYLE loads (OCT+) sounds and lines on the tracks it uses, the rest muted; DRUMS FULL / PERC

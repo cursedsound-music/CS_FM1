@@ -23,6 +23,7 @@ static int st_prog(uint32_t off, const void *src, uint32_t n)
     return 0;
 }
 #include "../firmware/src/storage.c"
+static const uint8_t *lfo_user_rec;                     /* (cursed-os 0.10.2: voice.c's, which upreset.c sets) */
 #include "../firmware/src/upreset.c"
 
 static int check(const char *what, int ok)
@@ -276,14 +277,11 @@ int main(void)
         st_save(OBJ_UPRESET0 + 1, &up_bank[1], sizeof up_bank[1]);
         memset(up_bank, 0, sizeof up_bank);
         up_bank_check(1, st_load(OBJ_UPRESET0 + 1, &up_bank[1], sizeof up_bank[1]));
-        ok = up_used(19) && up_rec(19)->engine == ENGI_DRUM && up_used(20) && up_rec(20)->engine == ENGI_SAMPLE &&
-             !memcmp(up_rec(20)->p, m.p, sizeof m.p) && up_used(21) && up_rec(21)->engine == ENGI_DRUM &&
+        ok = up_used(19) && up_rec(19)->engine == ENGI_KICK && up_used(20) && up_rec(20)->engine == ENGI_KICK &&
+             !memcmp(up_rec(19)->p, d.p, sizeof d.p) && !memcmp(up_rec(20)->p, m.p, sizeof m.p) &&
+             up_used(21) && up_rec(21)->engine == ENGI_KICK &&
              !memcmp(up_rec(19)->note, d.note, sizeof d.note) && !memcmp(up_rec(19)->flags, d.flags, sizeof d.flags);
-        for (k = 0; k < 8u; k++)
-            ok &= up_value(up_rec(19), P_E0 + k) == KIT[k] && up_value(up_rec(21), o.np - 8u + k) == KIT[k];
-        for (k = 0; k < P_E0; k++)
-            ok &= up_value(up_rec(19), k) == up_value(&d, k);
-        bad += check("bank load: SAMPLE PERC -> DRUM kit, FLUTE kept", ok);
+        bad += check("bank load: an old SAMPLE preset (4) is KICK now (cursed-os 0.10.0), kept as saved", ok);
         before = *up_rec(19);
         up_migrate(up_rec(19));
         bad += check("  migrated again: as it is", !memcmp(up_rec(19), &before, sizeof before));
@@ -293,10 +291,9 @@ int main(void)
             a[at - 1u] = u & 127u;
             a[at] = (u >> 7) & 127u;
         }
-        ok = up_parse(a, n, &got, &slot) == 0 && got.engine == ENGI_DRUM;
-        for (k = 0; k < 8u; k++)
-            ok &= up_value(&got, P_E0 + k) == KIT[k];
-        bad += check("UP_PUT of SAMPLE PERC -> DRUM kit", ok);
+        ok = up_parse(a, n, &got, &slot) == 0 && got.engine == ENGI_KICK;   /* (cursed-os 0.10.0: 4 is KICK) */
+        (void)KIT;
+        bad += check("UP_PUT of an old SAMPLE frame: KICK (engine 4)", ok);
     }
 
     /* map by count: a record from a build with 2 parameters fewer */

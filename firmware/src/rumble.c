@@ -1,4 +1,4 @@
-/* SPDX-License-Identifier: GPL-3.0-only
+/* SPDX-License-Identifier: GPL-3.0-only OR MIT
  * Copyright (C) 2026 cursedsound */
 /* (cursedsound) cursed-os's RUMBLE (FX > RUMBLE): the kick's dark tail, the hypnotic-techno low end. The drum tracks'
  * sum, low-passed under ~180 Hz (the kick, hardly anything else of a kit), goes into a small dark reverb of its own

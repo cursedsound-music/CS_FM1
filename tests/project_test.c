@@ -442,7 +442,7 @@ int main(void)
         q.sum = proj_sum(&q);
         to_v4(&v4, &q);
         memcpy(&buf, &v4, sizeof v4);
-        ok = proj_import(&q2, &buf, (int)sizeof v4) && proj_ok(&q2) && q2.phys == PROJ_FMD &&
+        ok = proj_import(&q2, &buf, (int)sizeof v4) && proj_ok(&q2) && q2.phys == PROJ_DUB &&
              q2.t[0].engine == ENGI_DRUM && q2.t[0].preset == 0 && str_eq(ENGINES[ENGI_DRUM]->name, "DRUM") &&
              q2.t[0].p[P_E0] == 64 && q2.t[0].p[P_E4] == 64 && q2.t[0].p[P_E6] == 0 && q2.t[0].p[P_E7] == 0;
         for (i = 1; i < 6u; i++)
@@ -473,7 +473,7 @@ int main(void)
         q.sum = proj_sum(&q);
         to_v4(&v4, &q);
         memcpy(&buf, &v4, sizeof v4);
-        ok = proj_import(&q2, &buf, (int)sizeof v4) && q2.phys == PROJ_FMD && q2.t[1].engine == ENGI_PHYS_TO &&
+        ok = proj_import(&q2, &buf, (int)sizeof v4) && q2.phys == PROJ_DUB && q2.t[1].engine == ENGI_PHYS_TO &&
              q2.t[1].p[P_E0] == ENGINES[ENGI_PHYS_TO]->presets[0].e[0];
         bad += check("FUN4 phys 0: PHYS DUST -> ANALOG (PHYS retired)", ok);
     }
@@ -836,24 +836,23 @@ int main(void)
         a.motion.event[1] = (motion_event_t){2u << 6 | 5u, P_REV, 60};         /* track 3: a send: stays */
         a.motion.event[2] = (motion_event_t){0u << 6 | 3u, P_E4, 70};          /* track 1: stays */
         a.sum = proj_sum(&a);
-#define PERC_OK(c) ((c).t[2].engine == ENGI_DRUM && (c).t[2].preset == 0u && !memcmp(&(c).t[2].p[P_E0], KIT, sizeof KIT) && \
-                    !memcmp((c).t[2].p, a.t[2].p, P_E0 * sizeof(int16_t)) && \
+#define PERC_OK(c) ((c).t[2].engine == ENGI_KICK && (c).t[2].preset == a.t[2].preset && \
+                    !memcmp((c).t[2].p, a.t[2].p, sizeof a.t[2].p) && \
                     !memcmp((c).t[2].step, a.t[2].step, sizeof a.t[2].step) && \
-                    (c).t[0].engine == ENGI_PHYS_TO && (c).t[0].p[P_E0] == ENGINES[ENGI_PHYS_TO]->presets[0].e[0] && \
-                    (c).t[1].engine == ENGI_PHYS_TO)
+                    (c).t[0].engine == ENGI_KICK && (c).t[1].engine == ENGI_KICK)
+        (void)KIT;                                      /* (cursed-os 0.10.0: engine 4 is KICK, SAMPLE's old number: an old
+                                                         * SAMPLE track loads as KICK, its sound, steps and motion kept) */
         ok = proj_pack_vb(&st, &a) && proj_import(&c, &st, sizeof st);
-        bad += check("FUN8 with a SAMPLE PERC track: DRUM's kit, the rest of the sound and the steps kept; SAMPLE tracks ANALOG", ok && PERC_OK(c) &&
-                     str_eq(ENGINES[ENGI_DRUM]->presets[0].name, "DRUM-X") &&
-                     !memcmp(ENGINES[ENGI_DRUM]->presets[0].e, (int8_t[8])DRUM_KIT_E, 8));
-        bad += check("  its motion on CUT goes, the retired SAMPLE track's too (ANALOG now); a send's stays",
-                     c.motion.count == 1u && c.motion.event[0].param == P_REV && motion_valid(&c.motion) && proj_ok(&c));
+        bad += check("FUN8 with a SAMPLE track: KICK now (cursed-os), the sound, the steps and the preset kept", ok && PERC_OK(c));
+        bad += check("  its motion kept (nothing retired)",
+                     c.motion.count == 3u && motion_valid(&c.motion) && proj_ok(&c));
         bad += check("  imported again: as it is (DRUM now)", proj_import(&d, &c, sizeof c) && !memcmp(&d, &c, sizeof d));
         memset(&a.motion, 0, sizeof a.motion);
         a.sum = proj_sum(&a);
         to_v4(&w4, &a);
         memcpy(&buf, &w4, sizeof w4);
         ok = proj_import(&c, &buf, (int)sizeof w4) && PERC_OK(c);
-        bad += check("FUN4 with a SAMPLE PERC track: DRUM's kit, the same", ok);
+        bad += check("FUN4 with a SAMPLE track: KICK, the same", ok);
 #undef PERC_OK
     }
     {   /* (JIANT) GRAIN (8) and SLICE (13) tracks, retired: ANALOG's first preset, their engine motion gone, the rest kept */
@@ -873,11 +872,11 @@ int main(void)
         g.motion.event[0] = (motion_event_t){2u << 6 | 1u, P_E2, 30};
         g.motion.event[1] = (motion_event_t){2u << 6 | 2u, P_REV, 40};
         g.sum = proj_sum(&g);
-        ok = proj_pack_vb(&gs, &g) && proj_import(&h, &gs, sizeof gs) && h.t[1].engine == ENGI_PHYS_TO &&
+        ok = proj_pack_vb(&gs, &g) && proj_import(&h, &gs, sizeof gs) && h.t[1].engine == ENGI_KICK &&
              h.t[2].engine == ENGI_PHYS_TO && h.t[2].p[P_LEVEL] == 66 && h.motion.count == 1u && h.motion.event[0].param == P_REV &&
-             h.t[2].p[P_E0] == ENGINES[ENGI_PHYS_TO]->presets[0].e[0] && !eng_ok(ENGI_PHYS) && eng_ok(ENGI_STRING) && eng_ok(ENGI_ADD) &&
-             !eng_ok(ENGI_SAMPLE) && eng_live(ENGI_PHYS) == ENGI_PHYS_TO;
-        bad += check("JIANT: SAMPLE and PHYS tracks (retired) load as ANALOG, their engine motion gone, LEVEL and sends kept", ok);
+             h.t[2].p[P_E0] == ENGINES[ENGI_PHYS_TO]->presets[0].e[0] && eng_ok(ENGI_FMDRUM) && eng_ok(ENGI_STRING) && eng_ok(ENGI_ADD) &&
+             eng_ok(ENGI_KICK);
+        bad += check("JIANT: a PHYS track of before 0.11 (retired) loads as ANALOG, its engine motion gone, LEVEL and sends kept; SAMPLE's 4 is KICK", ok);
     }
     {   /* (JIANT 0.6) FUNC: six tracks in FUNB's 3840 bytes, only the steps that are not empty stored */
         static project_t f, g, h;

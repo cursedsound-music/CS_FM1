@@ -1,4 +1,5 @@
-/* SPDX-License-Identifier: GPL-3.0-only
+/* SPDX-License-Identifier: GPL-3.0-only OR MIT
+ * Copyright (C) 2026 cursedsound
  * (cursedsound) cursed-os 0.14.0, GG 2026-11-11: TRIG > COND (Elektron-style, written again):
  *   CONDITION  a step plays on 1ST, !1ST, FILL, !FILL or the pass N of every M (1:2 .. 8:8) of its track's pattern;
  *   SLIDE      a step's locks glide in from the values before, across the step;

@@ -1,4 +1,4 @@
-/* SPDX-License-Identifier: GPL-3.0-only
+/* SPDX-License-Identifier: GPL-3.0-only OR MIT
  * Copyright (C) 2026 cursedsound */
 /* (cursedsound) the FX pad, every key: held from a playing mix, the sound is another within the first half second
  * (each effect heard at once: 0.7's FREEZE held nothing with the delay empty, the risers took a bar to be heard: found

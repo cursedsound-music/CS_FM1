@@ -1,4 +1,5 @@
-/* SPDX-License-Identifier: GPL-3.0-only
+/* SPDX-License-Identifier: GPL-3.0-only OR MIT
+ * Copyright (C) 2026 cursedsound
  * (cursedsound) cursed-os 0.16.0, GG 2026-11-13: "i still notice noise ... crackle on kicks ... mostly with kicks and
  * bass". The KICK track's hit took the kit's lane 0 LAYER, FEEDBK and AHDSR (dx_lay[0], dx_tone, dx_de[0]): since 0.14.1
  * the PERC, a RIDE from FMDRUM, its FM settings read as LAYER 10, FEEDBK 12 on the kick's sine (a crackling FM kick from

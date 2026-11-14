@@ -1,4 +1,4 @@
-/* SPDX-License-Identifier: GPL-3.0-only
+/* SPDX-License-Identifier: GPL-3.0-only OR MIT
  * Copyright (C) 2026 cursedsound */
 /* (cursed-os 0.13.0) LFO > DRUMS, in DRONE's place (GG: "remove the drone"): the drums played live.
  *   white 1..8 held  ROLL that drum (KICK SNARE CLAP HATCL HATOP TOM RIM BELL) at ROLL's RATE, on the beat's grid

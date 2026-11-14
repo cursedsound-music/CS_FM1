@@ -5,7 +5,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>JIANT FM</title>
+<title>cursed os</title>
 <style>
   :root { --bg: #fff; --fg: #000; --dim: #777; }
   @media (prefers-color-scheme: dark) {
@@ -29,7 +29,7 @@
 <body>
 <main>
   <button class="lang" id="lang"></button>
-  <h1>JIANT FM</h1>
+  <h1>cursed os</h1>
   <p data-t="intro"></p>
   <p data-t="warn"></p>
   <p data-t="samples" style="color:#ec6e50"></p>
@@ -74,14 +74,13 @@
   <pre id="log"></pre>
   <p><a href="../editor/" style="color:inherit" data-t="editor"></a></p>
   <p><span data-t="manual"></span>
-    <a href="https://github.com/juanjiant-bit/JIANT/blob/main/docs/MANUAL.md" target="_blank" rel="noopener" style="color:inherit">English</a> ·
-    <a href="https://github.com/juanjiant-bit/JIANT/blob/main/docs/MANUAL.es.md" target="_blank" rel="noopener" style="color:inherit">Español</a></p>
-  <p class="kofi" style="border-left:3px solid #ec6e50;padding:4px 0 4px 12px">If you resonate with my work, consider supporting me on <a href="https://ko-fi.com/juanjiant" target="_blank" rel="noopener" style="color:inherit;font-weight:600">Ko-fi</a> (in Argentina: <a href="https://cafecito.app/juanjiant" target="_blank" rel="noopener" style="color:inherit;font-weight:600">Cafecito</a>). Thanks for all the good energy, hope you enjoy this little beast 🫶✨🎹</p>
-  <p class="small">Credits: Felucca by Leo Kuroshita (@kurogedelic), <a href="https://hugelton.com" target="_blank" rel="noopener" style="color:inherit">Hügelton Instruments</a>, with its CrispyZebra waveforms and Fukiai icons (MIT); the song system after SLOOP by isod89.<br>
-    Font: Inter Tight (The Inter Project Authors, SIL OFL 1.1).<br>
+    <a href="https://github.com/cursedsound-music/CS_FM1/blob/main/docs/GUIDE.md" target="_blank" rel="noopener" style="color:inherit">Guide (English)</a></p>
+  <p class="small">cursed os by cursedsound, built on <a href="https://github.com/juanjiant-bit/JIANT" target="_blank" rel="noopener" style="color:inherit">JIANT FM</a> by Juan Jiant (you can support Juan on <a href="https://ko-fi.com/juanjiant" target="_blank" rel="noopener" style="color:inherit">Ko-fi</a>).</p>
+  <p class="small">Credits: Felucca by Leo Kuroshita (@kurogedelic), <a href="https://hugelton.com" target="_blank" rel="noopener" style="color:inherit">Hügelton Instruments</a>, with its CrispyZebra waveforms and Fukiai icons (MIT); the song system after SLOOP by isod89; the ACID voice from X0X by Charles Vestal (Open303 by Robin Schmidt, MIT).<br>
+    Fonts: Press Start 2P (The Press Start 2P Project Authors) and Inter Tight (The Inter Project Authors), SIL OFL 1.1.<br>
     FM6 engine: msfa from Dexed (Google Inc., Pascal Gauthier, Apache-2.0). The package also holds three JieLi AC79 SDK files, uboot.boot, cfg_tool.bin and eq_cfg_hw.bin (JieLi Technology, Apache-2.0). <a href="../../firmware/LICENSING.md" style="color:inherit">Licences</a>: <a href="../../firmware/LICENSE" style="color:inherit">GPL-3.0</a>, <a href="../../firmware/LICENSES/Apache-2.0.txt" style="color:inherit">Apache-2.0</a>, <a href="../../firmware/LICENSES/" style="color:inherit">all</a>.<br>
     M-VAVE and FM-1 are trademarks of their respective owners.<br>
-    <span data-t="license"></span> <a href="https://github.com/juanjiant-bit/JIANT" target="_blank" rel="noopener" style="color:inherit">github.com/juanjiant-bit/JIANT</a></p>
+    <span data-t="license"></span> <a href="https://github.com/cursedsound-music/CS_FM1" target="_blank" rel="noopener" style="color:inherit">github.com/cursedsound-music/CS_FM1</a></p>
 </main>
 <script type="module">
 /*LIB*/
@@ -90,25 +89,25 @@ const TEXT = {
   ja: {
     intro: "FM-1 を USB で接続してください。（Chrome か Edge で使えます）",
     warn: "書き込み中は USB を抜かないでください。",
-    samples: "注意: JIANT にはユーザーサンプルがありません。Felucca のユーザーサンプル (USR1–3) はインストールで失われます（その領域は曲の保存に使われます）。元の WAV ファイルは手元に残しておいてください。",
-    dual: "0.6.71 から JIANT は FM-1 の2つのコアを使います（実験的）。すべての仮想テストには合格していますが、まだ実機では試されていません。FM-1 が固まる・再起動する・以前より音が途切れる場合は、REC を押しながら電源を入れると1コアで動きます。MENU > ABOUT の表示（CORES 2 / CORES 1 と理由）を GitHub で知らせてください。",
+    samples: "注意: cursed os にはユーザーサンプルがありません。Felucca のユーザーサンプル (USR1–3) はインストールで失われます（その領域は曲の保存に使われます）。元の WAV ファイルは手元に残しておいてください。",
+    dual: "0.6.71 から cursed os は FM-1 の2つのコアを使います（実験的）。すべての仮想テストには合格していますが、まだ実機では試されていません。FM-1 が固まる・再起動する・以前より音が途切れる場合は、REC を押しながら電源を入れると1コアで動きます。MENU > ABOUT の表示（CORES 2 / CORES 1 と理由）を GitHub で知らせてください。",
     install: "インストール", other: "English",
     firstTitle: "他のカスタムファームウェアから入れる場合は、先に公式V15へ戻してください",
-    firstText: "Felucca・baudgirl などの別のカスタムファームウェアが入った FM-1 に直接 JIANT を書き込むと、起動しなくなることがあります。まず下のボタンで公式V15に戻し（全体バックアップも取れます）、それから JIANT をインストールしてください。公式V15 か JIANT がすでに入っている場合はそのままで大丈夫です。",
+    firstText: "Felucca・baudgirl などの別のカスタムファームウェアが入った FM-1 に直接 cursed os を書き込むと、起動しなくなることがあります。まず下のボタンで公式V15に戻し（全体バックアップも取れます）、それから cursed os をインストールしてください。公式V15 か cursed os がすでに入っている場合はそのままで大丈夫です。",
     firstStock: "先に公式V15へ戻す",
-    firstOk: "インストールの前に、接続された FM-1 のファームウェアを自動で確認します。公式V15 か JIANT のときだけ書き込みます。",
+    firstOk: "インストールの前に、接続された FM-1 のファームウェアを自動で確認します。公式V15 か cursed os のときだけ書き込みます。",
     checking: "FM-1 のファームウェアを確認中…",
-    otherfw: "この FM-1 には公式V15 でも JIANT でもないファームウェアが入っています。書き込みませんでした。下のボタンで先に公式V15に戻してから、もう一度インストールしてください。 ",
+    otherfw: "この FM-1 には公式V15 でも cursed os でもないファームウェアが入っています。書き込みませんでした。下のボタンで先に公式V15に戻してから、もう一度インストールしてください。 ",
     editor: "エディタ（インストール後、パソコンから音色やシーケンスを編集）",
     verLabel: "バージョン:", verOld: "以前のバージョンにも戻せます（最新が一番上）。新しい版で保存したプロジェクトは古い版で正しく開けないことがあります。先にエディタでバックアップしてください。", latest: "最新", manual: "マニュアル:",
     direct: "USB ケーブルはパソコンに直接つないでください。Probe や Transporter などの機材は不要です。",
     brick: "万一インストールに失敗して起動しなくなった場合は、復旧に Transporter が必要です:",
-    beta: "JIANT FM は開発中のテスト版です。不具合は GitHub で知らせてください。このカスタムファームウェアを使ったことで FM-1 が壊れたり不具合が起きたりしても、作者は一切の責任を負いません。自己責任でお使いください。",
+    beta: "cursed os は開発中のテスト版です。不具合は GitHub で知らせてください。このカスタムファームウェアを使ったことで FM-1 が壊れたり不具合が起きたりしても、作者は一切の責任を負いません。自己責任でお使いください。",
     back: "M-VAVEから公式FM-1 V15を取得し、未変更のFM-1.fwscを選んでください。ファイルはこのブラウザ内で検証し、サーバーへ送りません。",
     stockTitle: "公式V15に戻す", stockFile: "公式FM-1.fwsc", stockGo: "バックアップして公式V15へ戻す",
-    stockBackup: "現在の曲・保存曲・音色バンク・設定を先に保存します（ユーザーサンプルは含まれません）。全体バックアップ非対応版は、JIANT を更新してから行ってください。復元は JIANT を再インストールしてエディタから行います。",
+    stockBackup: "現在の曲・保存曲・音色バンク・設定を先に保存します（ユーザーサンプルは含まれません）。全体バックアップ非対応版は、cursed os を更新してから行ってください。復元は cursed os を再インストールしてエディタから行います。",
     stockRecovery: "更新中断の再開：全体バックアップはすでにパソコンへ保存済み",
-    stockValid: "公式V15を確認しました", stockConfirm: "全体バックアップファイルをパソコンに保存できましたか？ 続けると公式V15へ戻します。JIANT の曲は公式V15では開けません。",
+    stockValid: "公式V15を確認しました", stockConfirm: "全体バックアップファイルをパソコンに保存できましたか？ 続けると公式V15へ戻します。cursed os の曲は公式V15では開けません。",
     stockNeedBackup: "書き込みモードからはバックアップできません。保存済みバックアップがある場合だけ、更新中断の再開にチェックしてください。",
     stockUnsupported: "このファームウェアは全体バックアップに未対応です。先に最新版をインストールしてください。",
     backup: "全体バックアップ保存中 ", stockError: "公式ファイルを確認できません: ",
@@ -136,27 +135,27 @@ const TEXT = {
   en: {
     intro: "Connect the FM-1 by USB. (Works in Chrome or Edge.)",
     warn: "Do not unplug the USB cable while writing.",
-    samples: "Note: JIANT has no user samples. Felucca's user samples (USR1–3) are lost when you install it (that flash holds the songs now). Keep your original WAV files.",
-    dual: "Since 0.6.71 JIANT uses both of the FM-1's cores (experimental). It has passed every virtual test but has not been tried on a real unit yet. If your FM-1 freezes, restarts or clicks more than before, hold REC while switching it on to play on one core, and tell us on GitHub what MENU > ABOUT says (CORES 2, or CORES 1 and why).",
+    samples: "Note: cursed os has no user samples. Felucca's user samples (USR1–3) are lost when you install it (that flash holds the songs now). Keep your original WAV files.",
+    dual: "Since 0.6.71 cursed os uses both of the FM-1's cores (experimental). It has passed every virtual test but has not been tried on a real unit yet. If your FM-1 freezes, restarts or clicks more than before, hold REC while switching it on to play on one core, and tell us on GitHub what MENU > ABOUT says (CORES 2, or CORES 1 and why).",
     install: "Install", other: "日本語",
     firstTitle: "Coming from another custom firmware? Return to official V15 first",
-    firstText: "Writing JIANT straight over another custom firmware (Felucca, baudgirl or any other) can leave the FM-1 unable to start. First return to official V15 with the button below (it also saves a complete backup), then install JIANT. If the FM-1 already runs official V15 or JIANT, go ahead.",
+    firstText: "Writing cursed os straight over another custom firmware (Felucca, baudgirl or any other) can leave the FM-1 unable to start. First return to official V15 with the button below (it also saves a complete backup), then install cursed os. If the FM-1 already runs official V15 or cursed os, go ahead.",
     firstStock: "Return to official V15 first",
-    firstOk: "Before installing, the installer checks the connected FM-1's firmware by itself: it writes only over official V15 or JIANT.",
+    firstOk: "Before installing, the installer checks the connected FM-1's firmware by itself: it writes only over official V15 or cursed os.",
     checking: "Checking the FM-1's firmware…",
-    otherfw: "This FM-1 runs a firmware that is neither official V15 nor JIANT: nothing was written. Return to official V15 first with the button below, then install again. Found: ",
+    otherfw: "This FM-1 runs a firmware that is neither official V15 nor cursed os: nothing was written. Return to official V15 first with the button below, then install again. Found: ",
     editor: "Editor (after installing: edit sounds and sequences from the computer)",
     verLabel: "Version:", verOld: "You can go back to an earlier version too (newest on top). Projects saved by a newer version may not open right in an older one: back them up with the editor first.", latest: "latest", manual: "Manual:",
     direct: "Connect the USB cable directly to the computer. No probe or Transporter is needed.",
     brick: "If an install fails and the FM-1 no longer starts, recovering it needs a Transporter:",
-    beta: "JIANT FM is a development release; please report problems on GitHub. The author accepts no responsibility if your FM-1 is damaged or misbehaves because of this custom firmware. Use it at your own risk.",
+    beta: "cursed os is a development release; please report problems on GitHub. The author accepts no responsibility if your FM-1 is damaged or misbehaves because of this custom firmware. Use it at your own risk.",
     back: "Get official FM-1 V15 from M-VAVE and select the unmodified FM-1.fwsc. The browser validates it locally; it is not sent to a server.",
     stockTitle: "Return to official V15", stockFile: "Official FM-1.fwsc", stockGo: "Back up and return to official V15",
-    stockBackup: "Current music, saved music, sound banks and settings are saved first (not user samples). Older firmware needs an update for complete backups. To restore an archive later, reinstall JIANT and use the editor.",
+    stockBackup: "Current music, saved music, sound banks and settings are saved first (not user samples). Older firmware needs an update for complete backups. To restore an archive later, reinstall cursed os and use the editor.",
     stockRecovery: "Resume an interrupted update: I already saved a complete backup to this computer",
-    stockValid: "Official V15 verified", stockConfirm: "Has the complete backup file been saved to this computer? Continue to return to official V15. Official V15 cannot open JIANT music.",
+    stockValid: "Official V15 verified", stockConfirm: "Has the complete backup file been saved to this computer? Continue to return to official V15. Official V15 cannot open cursed os music.",
     stockNeedBackup: "An update loader cannot export a backup. Only select resume if you already saved a complete backup.",
-    stockUnsupported: "This firmware does not support complete backups. Install the current JIANT first.",
+    stockUnsupported: "This firmware does not support complete backups. Install the current cursed os first.",
     backup: "Saving complete backup ", stockError: "Cannot validate official firmware: ",
     nomidi: "This browser cannot do it. Open the page in Chrome or Edge.", loadfail: "Could not load: ",
     start: "Starting", verify: "Verifying", loader: "Switching to update mode", write: "Writing",
@@ -221,7 +220,7 @@ async function loadVersion(i) {
     if (epoch !== loadEpoch) return;
     if (productOf(pkg) !== meta.product) { sayK("badpkg"); return; }
     image = logicalImage(pkg);
-    say(`JIANT FM ${v.version}`);
+    say(`cursed os ${v.version}`);
     $("go").disabled = writing;
   } catch (e) { if (epoch === loadEpoch) sayK("loadfail", e.message); }
 }
@@ -326,7 +325,7 @@ $("stock-file").addEventListener("change", async () => {
 });
 function saveArchive(archive) {
   const url = URL.createObjectURL(new Blob([JSON.stringify(archive)], {type:"application/json"}));
-  const a = document.createElement("a"); a.href = url; a.download = `JIANT-backup-${new Date().toISOString().slice(0,10)}.json`;
+  const a = document.createElement("a"); a.href = url; a.download = `cursed-os-backup-${new Date().toISOString().slice(0,10)}.json`;
   document.body.append(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 function archiveInfo(a) {

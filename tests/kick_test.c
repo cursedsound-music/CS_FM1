@@ -1,4 +1,5 @@
-/* SPDX-License-Identifier: GPL-3.0-only
+/* SPDX-License-Identifier: GPL-3.0-only OR MIT
+ * Copyright (C) 2026 cursedsound
  * (cursedsound) cursed-os 0.10.0: the KICK engine (eng_kick.c) and the power-on layout (T1 DRUM without its kick, T2
  * KICK), every KIND sounding, the keys tuning it, one voice, the KICK KILL, GEN's PATTERN.
  *   cc -O1 -w -DCOS_SLIM=1 -Ibuild/gen -Ifirmware/src -Itests -o build/t/kick_test tests/kick_test.c -lm && build/t/kick_test */

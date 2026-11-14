@@ -1,4 +1,4 @@
-/* SPDX-License-Identifier: GPL-3.0-only
+/* SPDX-License-Identifier: GPL-3.0-only OR MIT
  * Copyright (C) 2026 cursedsound */
 /* (cursedsound) cursed-os's knobs wired: every knob on every page of every mode, on each kind of track, turned a long
  * way (40 detents right, or left at the top) while a pattern plays on all five tracks: the sound must change. The

@@ -1,4 +1,4 @@
-/* SPDX-License-Identifier: GPL-3.0-only
+/* SPDX-License-Identifier: GPL-3.0-only OR MIT
  * Copyright (C) 2026 cursedsound */
 /* (cursedsound) GEN > DUB: dub techno chord stabs in one press. Included by ui_graph.c after ui_acid.c (its hash ac_h and
  * key finder ac_key's way). A groove is two parts, each with its own seed: the RHYTHM (stabs mostly on the offbeat

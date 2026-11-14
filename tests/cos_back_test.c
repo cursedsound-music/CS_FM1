@@ -1,4 +1,5 @@
-/* SPDX-License-Identifier: GPL-3.0-only
+/* SPDX-License-Identifier: GPL-3.0-only OR MIT
+ * Copyright (C) 2026 cursedsound
  * (cursedsound) cursed-os 0.10.3: HOME > LIVE (the DJ FILTER, the global REVERB and DELAY sends, the delay's FEEDBACK;
  * white 1..8 the drums' sounds, black 1..6 the tracks) and BACK TO NORMAL (OCT-): at once with MUTE Q NOW or stopped,
  * on the bar with BAR, everything together; the sends heard; the phone's CC 99..102.

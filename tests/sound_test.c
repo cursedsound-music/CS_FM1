@@ -1,4 +1,5 @@
-/* SPDX-License-Identifier: GPL-3.0-only
+/* SPDX-License-Identifier: GPL-3.0-only OR MIT
+ * Copyright (C) 2026 cursedsound
  * (cursedsound) cursed-os 0.10.2: ALGO picks the engine, PRESETS the sound inside it (and the user presets made with
  * it), EDIT held + ALGO the track; SAVE > SOUNDS saves, loads and erases user presets; the LFO's USER shapes from the
  * phone (frame 02): heard at once, to flash when stopped.

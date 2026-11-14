@@ -1,4 +1,5 @@
-/* SPDX-License-Identifier: GPL-3.0-only
+/* SPDX-License-Identifier: GPL-3.0-only OR MIT
+ * Copyright (C) 2026 cursedsound
  * (cursedsound) the phone remote, the device's side (firmware/src/cos_remote.c):
  *   remote_test   its own checks: the CCs, TEXT, the sampler's frames refused (0.10.0: gone), BLE's frame assembly */
 #include <stdio.h>

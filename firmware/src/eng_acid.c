@@ -1,4 +1,4 @@
-/* SPDX-License-Identifier: GPL-3.0-only
+/* SPDX-License-Identifier: GPL-3.0-only OR MIT
  * Copyright (C) 2026 cursedsound */
 /* ACID (cursed-os, engine 15): a TB-303 bass voice. The sound is X0X's port of Open303 (x0x/bass303.c, from
  * github.com/charlesvestal/fm1-x0x ca2d377: Open303 by Robin Schmidt (MIT), the Devilfish ranges after jc303 (midilab),

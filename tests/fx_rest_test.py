@@ -16,6 +16,7 @@ if out["rest"]["gate_shut_at"] != out["reference"]["gate_shut_at"]:
 if out["rest"]["pre_hash"] != out["reference"]["pre_hash"]:
     raise SystemExit("fx-rest: the output differed before the rest")
 r, f = int(out["rest"]["wake_peak"]), int(out["reference"]["wake_peak"])
-if abs(r - f) > 512:
+tol = max(512, 2 * int(out["reference"].get("leak_peak", 0)) + 64)   # (cursed-os: the reference's own residue, still
+if abs(r - f) > tol:                                                # ringing where the rest silenced it, adds or cancels at the wake)
     raise SystemExit(f"fx-rest: the wake's level differs ({r} vs {f})")
 print("fx-rest: the same until the gate shuts, exact zeros through the rest both ways, the rest engaged, the wake at level PASS")

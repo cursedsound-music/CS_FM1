@@ -1,4 +1,5 @@
-/* SPDX-License-Identifier: GPL-3.0-only
+/* SPDX-License-Identifier: GPL-3.0-only OR MIT
+ * Copyright (C) 2026 cursedsound
  * (cursedsound) cursed-os 0.17.0, GG 2026-11-13: "complete the syntakt integration. It should be easy to setup and
  * allow for easy song and jam creation", the FM-1 as additional voices to the Syntakt in DJ sets, its audio into the
  * Syntakt's INPUT, the Syntakt's tempo set by hand to the CDJs. GLO > SYNTAKT:

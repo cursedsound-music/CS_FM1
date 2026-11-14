@@ -1923,6 +1923,9 @@ static void proj_fetch(uint32_t slot)
 }
 #endif
 
+#if FELUCCA_FLASH
+static void flash_say_none(char *b);                   /* (cursedsound: below; the tests include project.c alone) */
+#endif
 static void project_capture(project_t *p)
 {
     uint32_t i;

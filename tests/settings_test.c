@@ -65,14 +65,15 @@ int main(void)
     }
 #ifdef FELUCCA_FAVORITES
     assert(favorite_has(8, 0) && favorite_has(NENGINES, 31) && favorites.filter);
-    {   /* SAMPLE's PERC starred (preset 4, retired): DRUM's kit (preset 0) instead; SAMPLE's others kept; twice the same */
+    {   /* (cursed-os 0.10.0) engine 4 is KICK, SAMPLE's old number: its stars stay as saved (no PERC -> DRUM); twice the same */
         persist_t q = original;
-        q.favorites.factory[ENGI_SAMPLE][0] = 1u << SMP_SET_PERC | 1u << 2;
-        assert(settings_import(&q, sizeof q) == 1 && favorites.factory[ENGI_SAMPLE][0] == 1u << 2 &&
-               favorites.factory[ENGI_DRUM][0] == 1u);
+        uint32_t d0 = original.favorites.factory[ENGI_DRUM][0];
+        q.favorites.factory[ENGI_KICK][0] = 1u << SMP_SET_PERC | 1u << 2;
+        assert(settings_import(&q, sizeof q) == 1 && favorites.factory[ENGI_KICK][0] == (1u << SMP_SET_PERC | 1u << 2) &&
+               favorites.factory[ENGI_DRUM][0] == d0);
         settings_export(&q);
-        assert(settings_import(&q, sizeof q) == 1 && favorites.factory[ENGI_SAMPLE][0] == 1u << 2 &&
-               favorites.factory[ENGI_DRUM][0] == 1u);
+        assert(settings_import(&q, sizeof q) == 1 && favorites.factory[ENGI_KICK][0] == (1u << SMP_SET_PERC | 1u << 2) &&
+               favorites.factory[ENGI_DRUM][0] == d0);
         p = original; assert(settings_import(&p, sizeof p) == 1);
     }
 #endif

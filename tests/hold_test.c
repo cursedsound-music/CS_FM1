@@ -1,4 +1,5 @@
-/* SPDX-License-Identifier: GPL-3.0-only
+/* SPDX-License-Identifier: GPL-3.0-only OR MIT
+ * Copyright (C) 2026 cursedsound
  * (cursedsound) cursed-os 0.18.3, GG 2026-11-14: "I haven't found a way to make atmospheric long chords".
  *   GEN > DUB LENGTH past 100 %: 1/2, 1, 2, 4 BARS: a chord on each stretch's first step, tied through it; the
  *   sound held (no gap), not struck again. The quick starts' atmospheres: chords held a bar.

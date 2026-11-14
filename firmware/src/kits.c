@@ -1,4 +1,4 @@
-/* SPDX-License-Identifier: GPL-3.0-only
+/* SPDX-License-Identifier: GPL-3.0-only OR MIT
  * Copyright (C) 2026 cursedsound */
 /* (cursed-os 0.13.0) the user KITS (GG: "the drums should be highly customizable"): SAVE > KITS, K01 .. K16. A kit:
  * its eight sounds as made (dx_kit: the WAVE, FILTER, FM, A and B; LAYER / FEEDBK), each one's LEVEL (the DRUM track's

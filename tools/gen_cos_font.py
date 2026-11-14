@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
-# SPDX-License-Identifier: GPL-3.0-only
+# SPDX-License-Identifier: GPL-3.0-only OR MIT
+# Copyright (C) 2026 cursedsound
 """(cursedsound) cursed-os's face: Press Start 2P (SIL OFL 1.1, The Press Start 2P Project Authors) on its own 8 x 8 grid,
 1 bit a pixel, printable ASCII 32..95 (the UI folds to capitals). cos.c draws it 1:1 for labels and twice as tall for
 values. 512 bytes, where two antialiased faces took 4.7 KB of the flash.

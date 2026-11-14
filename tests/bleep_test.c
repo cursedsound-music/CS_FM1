@@ -1,4 +1,5 @@
-/* SPDX-License-Identifier: GPL-3.0-only
+/* SPDX-License-Identifier: GPL-3.0-only OR MIT
+ * Copyright (C) 2026 cursedsound
  * (cursedsound) cursed-os 0.15.1, GG: hypnotic techno's bleeps and bloops, "random but consistent": GEN > BLEEP
  * (ui_bleep.c) and DUB's BLEEP type (eng_dub.c).
  *   the same SEED: the same line; another: another; every note in the key; the beat lighter than the offbeats; VARY 0:

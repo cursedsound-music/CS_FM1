@@ -1,4 +1,4 @@
-/* SPDX-License-Identifier: GPL-3.0-only
+/* SPDX-License-Identifier: GPL-3.0-only OR MIT
  * Copyright (C) 2026 cursedsound */
 /* (cursedsound) cursed-os's MORPH (HOME > MORPH, included in cos.c): two snapshots, A and B, of what a set is played
  * with, and a glide between them, like a crossfader between two scenes:

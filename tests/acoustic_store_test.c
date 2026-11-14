@@ -17,6 +17,6 @@ int main(void)
     bad+=check("KIT 4 is reachable only on DRUM",page<NPAGES&&page_visible(page));
     ui.home=0;ui.page=page;dx_kit3_knob(0,64);bad+=check("KIT 4 knob 1 edits ACOUSTIC",dx_acoustic==64);
     set_engine_of(TSEL,ENGI_ANALOG);bad+=check("KIT 4 hidden on other engines",!page_visible(page));
-    bad+=check("ADD kept at engine 13; no SAMPLE engine",ENGINES[13]==&ENG_ADD&&eng_gone(ENGI_SAMPLE));
+    bad+=check("ADD kept at engine 13; KICK in SAMPLE's 4 (cursed-os)",ENGINES[13]==&ENG_ADD&&ENGINES[ENGI_KICK]==&ENG_KICK);
     return !!bad;
 }
