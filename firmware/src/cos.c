@@ -51,10 +51,19 @@ enum { CC_OUTCH, CC_MOUT, CC_CLOCK, CC_SLOT, CC_TRKS, CC_LOAD, CC_COMP, CC_CATK,
        CC_CTLM, CC_CTLCH, CC_EXT,                        /* (0.13.0) GLO > MIDI 2: the knobs as a controller; SOUND */
        CC_TCOND, CC_TSLD, CC_TSND,                       /* (0.14.0) TRIG > COND: the held steps' CONDITION, SLIDE, SOUND */
        CC_DPAN, CC_DCHN,                                 /* (0.14.1) EDIT > SOUND on a kit: the drum's PAN, CHANCE */
-       CC_STON, CC_STPAT, CC_STLEN };                    /* (0.17.0) GLO > SYNTAKT: ON, PATTERNS, PAT LEN */
-_Static_assert(CC_STLEN < 0xFBu && CC_DCH7 < 0xFBu, "the CK_COS ids fit a page's byte (0xFB..0xFF: BFINE, MUTE Q, BPM, OCTAVE, none)");
+       CC_STON, CC_STPAT, CC_STLEN,                      /* (0.17.0) GLO > SYNTAKT: ON, PATTERNS, PAT LEN */
+       CC_LSAT, CC_QSTY, CC_QDRM };                      /* (0.18.0) GLO > LIMIT's SATURATE; SAVE > START's STYLE, DRUMS */
+_Static_assert(CC_QDRM < 0xFBu && CC_DCH7 < 0xFBu, "the CK_COS ids fit a page's byte (0xFB..0xFF: BFINE, MUTE Q, BPM, OCTAVE, none)");
 _Static_assert(X2_N <= 16u, "CC_X2 .. CC_X2E: room for every trk_x2 field");
 static void cos_syntakt(uint32_t id, int32_t v);    /* (0.17.0) GLO > SYNTAKT's knobs */
+/* (0.18.0, GG: "quick starts") SAVE > START: a jam ready in one press (cos_qs_load) */
+enum { QS_HYPNO, QS_ACID, QS_DUB, QS_BLEEPS, QS_N };
+static const char *const QS_NAME[QS_N + 1u] = {"HYPNOTIC", "ACID", "DUB TECHNO", "BLEEPS", 0};
+static const char *const QS_DRN[4] = {"FULL", "PERC", "NONE", 0};
+static uint8_t qs_sty, qs_drm;                          /* (qs_drm: 0 the default, else DRUMS + 1) */
+static uint8_t qs_mute, qs_have;                        /* (the mutes before it, bit a track: not in the UNDO's project) */
+static void cos_qs_undo(void);
+static uint32_t qs_drm_get(void);
 #define ID_MUTEQ 0xFCu                          /* (HOME 2's: MUTE Q, cos_knob) */
 #define ID_BFINE 0xFBu                          /* (0.10.1) PERFORM's K2: the tempo's hundredths, .00 .. .99 */
 #define ID_BPM 0xFDu                            /* (HOME's: BPM in tenths, cos_knob) */
@@ -198,11 +207,12 @@ static const cpg_t CZP_MIX[] = {{"MIX", CK_TRK, {P_LEVEL, P_PAN, P_GLIDE, P_MUTE
                                {"COMP", CK_COS, {CC_COMP, CC_CTHR, CC_CRAT, CC_CMK}},
                                {"COMP 2", CK_COS, {CC_CIN, CC_CATK, CC_CREL, CC_CKNEE}},
                                {"COMP 3", CK_COS, {CC_CSC, CC_CMIX, X, X}},
-                               {"LIMIT", CK_COS, {CC_LIN, CC_LIM, CC_LREL, CC_LVL}},
+                               {"LIMIT", CK_COS, {CC_LIN, CC_LIM, CC_LREL, CC_LSAT}},   /* (0.18.0: SATURATE; AUTO LV to SYNTAKT) */
                                {"MIDI", CK_COS, {CC_OUTCH, CC_MOUT, CC_CLOCK, CC_LOCAL}},   /* (0.9.4 LOCAL: OFF, the keys play Ableton only) */
                                {"MIDI 2", CK_COS, {CC_CTLM, CC_CTLCH, CC_EXT, X}},   /* (0.13.0) KNOBS: the FM-1's / + MIDI / MIDI
                                                          * only; the track's SOUND: here or another instrument's (EXT) */
-                               {"SYNTAKT", CK_COS, {CC_STON, CC_STPAT, CC_STLEN, CC_PCCH}},   /* (0.17.0) one knob: follow it */
+                               {"SYNTAKT", CK_COS, {CC_STON, CC_STPAT, CC_STLEN, CC_LVL}},   /* (0.17.0) one knob: follow it;
+                                                         * 0.18.0: K4 the leveler, off with it (PC CH on LINK) */
                                {"LINK", CK_COS, {CC_PCCH, CC_PCOUT, CC_VJCH, X}},   /* (a Syntakt's patterns: the sections) */
                                {"LINK 2", CK_COS, {CC_MCCH, CC_MCDIR, CC_MCMAP, CC_MOCC}},   /* (the macros and MORPH as CCs, both
                                                          * ways) */
@@ -213,7 +223,8 @@ static const cpg_t CZP_KEY[] = {{"KEY", CK_COS, {CC_SCALE, CC_QUANT, X, X}}};   
 static const cpg_t CZP_PERF[] = {{"FX PAD", CK_COS, {CC_PF0, CC_PF0 + 1u, CC_PF0 + 2u, CC_PF3}}};   /* (FX held) */
 static const cpg_t CZP_PROJ[] = {{"PROJECT", CK_COS, {CC_SLOT, CC_NAME, X, X}},
                                 {"SOUNDS", CK_COS, {CC_USLOT, X, X, X}},
-                                {"KITS", CK_COS, {CC_KSLOT, X, X, X}}};   /* (0.13.0) the user kits: kits.c */   /* (0.10.2) the user presets: KNOB 1 the slot */   /* (KNOB 1 the slot, every song's: 1A ..
+                                {"KITS", CK_COS, {CC_KSLOT, X, X, X}},
+                                {"START", CK_COS, {CC_QSTY, CC_QDRM, X, X}}};   /* (0.18.0) quick starts: cos_qs_load */   /* (0.13.0) the user kits: kits.c */   /* (0.10.2) the user presets: KNOB 1 the slot */   /* (KNOB 1 the slot, every song's: 1A ..
                                                          * 8D; white keys 1..4 this song's, 9..16 the songs; KNOB 2 a name) */
 #undef X
 static const char *const CM_NAME[CM_N] = {"HOME", "TRIG", "SRC", "AMP", "DRUMS", "FX", "GEN", "MIX", "KEY", "SAVE"};
@@ -271,10 +282,10 @@ static int cos_dead(const track_t *t, uint32_t id);      /* (below: a parameter 
 static void cos_pages(uint32_t m, const cpg_t **p, uint32_t *n)
 {
     static const cpg_t *const P[CM_N] = {CZP_HOME, CZP_TRIG, CZP_SRC, CZP_AMP, CZP_DRUMS, CZP_FX, CZP_GENA, CZP_MIX, CZP_KEY, CZP_PROJ};
-    static const uint8_t N[CM_N] = {7, 5, 9, 9, 3, 9, 4, 16, 1, 3};   /* (each at most CZ_TABS: cos_tabs) */
+    static const uint8_t N[CM_N] = {7, 5, 9, 9, 3, 9, 4, 16, 1, 4};   /* (each at most CZ_TABS: cos_tabs) */
     _Static_assert(NELEM(CZP_HOME) == 7 && NELEM(CZP_TRIG) == 5 && NELEM(CZP_SRC) == 9 && NELEM(CZP_AMP) == 9 &&
                    NELEM(CZP_DRUMS) == 3 && NELEM(CZP_FX) == 9 && NELEM(CZP_GENA) == 4 && NELEM(CZP_MIX) == 16 &&
-                   NELEM(CZP_KEY) == 1 && NELEM(CZP_PROJ) == 3 && NELEM(CZP_SRCD) <= CZ_TABS && NELEM(CZP_GENS) <= CZ_TABS &&
+                   NELEM(CZP_KEY) == 1 && NELEM(CZP_PROJ) == 4 && NELEM(CZP_SRCD) <= CZ_TABS && NELEM(CZP_GENS) <= CZ_TABS &&
                    NELEM(CZP_SRCV) == 10 && NELEM(CZP_AMPA) == 9 && NELEM(CZP_SRCN) == 9,
                    "N: the pages each mode has (0.9.2: a count past its list read past it)");
     int vo = m == CM_SRC && trk_engp(TSEL) == &ENG_FORMANT;
@@ -321,7 +332,7 @@ static const char *const CZ_ESS[CM_N] = {
     "AMP|FILTER 1|LFO 1",                               /* ENV */
     "", "SEND|DELAY|REVERB",                            /* LFO: DRUMS (3), FX */
     "ACID|DUB|BLEEP|EUCLID|KICK",                       /* GEN: each generator's first */
-    "MIX|LIMIT|SYNTAKT", "", ""};                       /* GLO (0.17.0: SYNTAKT); KEY, SAVE */
+    "MIX|LIMIT|SYNTAKT", "", "PROJECT|SOUNDS|KITS|START"};   /* GLO (0.17.0: SYNTAKT); KEY; SAVE (0.18.0: all four) */
 static int cos_ess(uint32_t m, const cpg_t *p, uint32_t i, uint32_t n)
 {
     const char *l = CZ_ESS[m % CM_N], *t = p[i].tab;
@@ -827,6 +838,20 @@ static const param_desc_t *cos_cdesc(uint32_t id, int16_t **vp)
         return &DEX;
     }
     if (id == CC_TCOND || id == CC_TSLD || id == CC_TSND) return cos_cnd_desc(id, vp);   /* (0.14.0) TRIG > COND */
+    if (id == CC_LSAT) {                                 /* (0.18.0) GLO > LIMIT's SATURATE: STRING's row 8, byte 23 */
+        static const char *const SN[14] = {"OFF", "0 dB", "+1 dB", "+2 dB", "+3 dB", "+4 dB", "+5 dB", "+6 dB", "+7 dB",
+                                           "+8 dB", "+9 dB", "+10 dB", "+11 dB", "+12 dB"};
+        static const param_desc_t DS = {"SAT", F_ENUM, 0, 13, 0, SN, 0};
+        cz.cc_v[3] = (int16_t)(favorites.factory[8][23] <= 13u ? favorites.factory[8][23] : 0u);
+        *vp = &cz.cc_v[3];
+        return &DS;
+    }
+    if (id == CC_QSTY || id == CC_QDRM) {                /* (0.18.0) SAVE > START */
+        static const param_desc_t DS[2] = {{"STYLE", F_ENUM, 0, QS_N - 1u, 0, QS_NAME, 0}, {"DRUMS", F_ENUM, 0, 2, 0, QS_DRN, 0}};
+        cz.cc_v[3] = (int16_t)(id == CC_QSTY ? qs_sty : qs_drm_get());
+        *vp = &cz.cc_v[3];
+        return &DS[id - CC_QSTY];
+    }
     if (id >= CC_STON && id <= CC_STLEN) {               /* (0.17.0) GLO > SYNTAKT */
         static const char *const OO[] = {"OFF", "ON", 0}, *const PF[] = {"OFF", "ON", 0},
                                  *const PL[] = {"1", "2", "4", "8", "16", 0};
@@ -1146,6 +1171,13 @@ static void cos_cput(uint32_t id, int32_t v)
         settings_save();
     } else if (id >= CC_STON && id <= CC_STLEN) {
         cos_syntakt(id, v);                              /* (0.17.0) GLO > SYNTAKT */
+    } else if (id == CC_LSAT) {
+        favorites.factory[8][23] = (uint8_t)clamp(v, 0, 13);
+        cz.set_ms = fm1_ms;
+    } else if (id == CC_QSTY) {
+        qs_sty = (uint8_t)clamp(v, 0, QS_N - 1);
+    } else if (id == CC_QDRM) {
+        qs_drm = (uint8_t)(clamp(v, 0, 2) + 1);
     } else if (id == CC_DPAN) {
         dx_pan[dx_ui_lane & 7u] = (int8_t)clamp(v, -64, 63);
     } else if (id == CC_DCHN) {
@@ -2008,8 +2040,10 @@ static __attribute__((noinline)) void cos_kit_erase(void)
     cz.snd_ms = 0;
     cos_say(kit_erase(k) ? "NOT ERASED" : "ERASED");
 }
+static void cos_qs_load(void);
 static __attribute__((noinline)) void cos_proj_oct(int up)
 {
+    if (cz.tab[CM_PROJ] == 3u) { if (up) cos_qs_load(); else cos_say("OCT+: LOAD IT"); return; }   /* (0.18.0) START */
     if (cz.tab[CM_PROJ] == 2u) { cos_kit_oct(up); return; }
     if (cz.tab[CM_PROJ] == 1u) { cos_snd_oct(up); return; }
     if (up) cos_name_auto();                             /* (a music with no name: one drawn for it) */
@@ -2025,6 +2059,8 @@ static __attribute__((noinline)) void cos_proj_oct(int up)
  * steps, no automation, the mix and the effects at their defaults, no name; the saved slots and the setup kept). The
  * transport stops; GLO held + G4 (UNDO) brings the music back */
 static void undo_mark(void);                             /* (project.c) */
+static int undo_gen(void);
+static int undo_do(void);
 static __attribute__((noinline)) void cos_proj_new(void)
 {
     if (chain_busy()) { cos_say("STOP THE SONG FIRST"); return; }
@@ -2035,6 +2071,99 @@ static __attribute__((noinline)) void cos_proj_new(void)
     system_init();
     cos_say("NEW PROJECT");
     cos_proj_scan();
+}
+/* (0.18.0, GG: "quick starts") SAVE > START: OCT+ a jam in one press, the FM-1 as extra voices to a Syntakt or on its
+ * own; again: another of the same STYLE (new seeds). Each track its sound and a generated line, the ones not needed
+ * muted; DRUMS: FULL (the KICK track 4/4 and the kit's percussion), PERC (the kit's only: a Syntakt's kick), NONE (the
+ * default PERC with SYNTAKT ON, else FULL). The tempo and the key stay. An UNDO point first (REC on the page brings
+ * the music before back: undo_do). The transport plays on.
+ *   HYPNOTIC   T3 ACID rolling, T5 ATMOS DARK held, T6 a SONAR PING 5-step motif
+ *   ACID       T3 ACID busy, T6 R2 BLIPS 3-step
+ *   DUB TECHNO T4 DUB STAB chords, T5 ATMOS DARK held, T6 GLASS PING 6-step
+ *   BLEEPS     T4 WOOD BLOCK 3-step, T5 ATMOS DARK held, T6 WATER DROP 5-step (two motifs across each other) */
+static uint32_t qs_drm_get(void)
+{
+    if (qs_drm) return (uint32_t)(qs_drm - 1u) % 3u;
+    return (favorites.factory[8][31] & 1u) && song.g[G_CLOCK] == 2 ? 1u : 0u;
+}
+static void qs_sound(uint32_t k, uint32_t e, const char *nm)
+{
+    const engine_t *en = ENGINES[e];
+    uint32_t i;
+    set_engine_of(&trk[k], e);
+    for (i = 0; i < en->npresets && !str_eq(en->presets[i].name, nm); i++) {}
+    apply_preset_to(&trk[k], i < en->npresets ? i : 0u);
+    trk[k].p[P_MUTE] = 0;
+}
+static void qs_bleep(uint32_t k, const char *nm, int32_t motif)
+{
+    qs_sound(k, ENGI_DUB, nm);
+    track_select(k);
+    bl_put(BK_MOTIF, motif);
+    bl_oct(1, 0);
+}
+static void qs_atmos(uint32_t k)
+{
+    qs_sound(k, ENGI_DUB, "ATMOS DARK");
+    track_select(k);
+    db_put(DK_DENS, 12);
+    db_put(DK_LEN, 100);
+    db_throw(k, 1);
+}
+static __attribute__((noinline)) void cos_qs_load(void)
+{
+    uint32_t k, sel = song.sel % NTRK, st = qs_sty % QS_N, dm = qs_drm_get(), gi;
+    static const char *const GN[QS_N] = {"HYPNOTIC", "TECHNO", "DUB TECHNO", "HYPNOTIC"};
+    if (chain_busy()) { cos_say("STOP THE SONG FIRST"); return; }
+    undo_mark();
+    for (k = 0, qs_mute = 0; k < NTRK; k++) qs_mute |= (uint8_t)((trk[k].p[P_MUTE] != 0) << k);
+    qs_have = 1;
+    ac_ms = db_ms = eu_ms = fm1_ms;                      /* (one UNDO point: this one, not the generators' own) */
+    for (k = 0; k < NTRK; k++) {
+        track_defaults_steps(&trk[k]);
+        trk[k].p[P_SLEN] = 16;
+        trk[k].p[P_MUTE] = 1;
+    }
+    /* drums: T2 the KICK 4/4, T1 the kit's percussion (GEN's drums of the style's genre) */
+    qs_sound(1, ENGI_KICK, "TECHNO");
+    cos_kick_pat(&trk[1], 0);
+    trk[1].p[P_MUTE] = (int16_t)(dm != 0u);
+    for (gi = 0; gi < NELEM(GENRE) && !str_eq(GENRE[gi].name, GN[st]); gi++) {}
+    gs.gi = (uint8_t)(gi % NELEM(GENRE));
+    gs.g = &GENRE[gs.gi];
+    gp.seed = (uint16_t)(fm1_ms * 2654435761u >> 16);
+    trk[0].p[P_MUTE] = (int16_t)(dm == 2u);
+    gen_drums(&trk[0], 16);
+    /* the voices */
+    if (st == QS_HYPNO || st == QS_ACID) {
+        qs_sound(2, ENGI_ACID, "");
+        track_select(2);
+        ac_put(AK_DENS, st == QS_ACID ? 78 : 50);
+        ac_oct(1, 0);
+    }
+    if (st == QS_DUB) {
+        qs_sound(3, ENGI_ANALOG, "DUB STAB");
+        track_select(3);
+        db_throw(3, 1);
+    }
+    if (st == QS_BLEEPS) qs_bleep(3, "WOOD BLOCK", 1);
+    if (st != QS_ACID) qs_atmos(4);
+    qs_bleep(5, st == QS_HYPNO ? "SONAR PING" : st == QS_ACID ? "R2 BLIPS" : st == QS_DUB ? "GLASS PING" : "WATER DROP",
+             st == QS_ACID ? 1 : st == QS_DUB ? 3 : 2);
+    track_select(sel);
+    ac_ms = db_ms = eu_ms = fm1_ms;
+    cos_say(QS_NAME[st]);
+}
+static __attribute__((noinline)) void cos_qs_undo(void)
+{
+    uint32_t k;
+    uint8_t m = qs_mute;
+    if (undo_do()) { cos_say("NOTHING TO UNDO"); return; }
+    if (qs_have) {                                       /* (the mutes back too; again: the quick start's) */
+        for (k = 0, qs_mute = 0; k < NTRK; k++) qs_mute |= (uint8_t)((trk[k].p[P_MUTE] != 0) << k);
+        for (k = 0; k < NTRK; k++) trk[k].p[P_MUTE] = (int16_t)((m >> k) & 1u);
+    }
+    cos_say("UNDONE");
 }
 static void cos_mode(uint32_t m)
 {
@@ -2263,6 +2392,8 @@ static __attribute__((noinline)) void cos_input(void)
                                                          * REC, twice */
         else if (b == B_REC && cz.mode == CM_PROJ && cz.tab[CM_PROJ] == 1u) cos_snd_erase();   /* (0.10.2) SOUNDS: x2 erase */
         else if (b == B_REC && cz.mode == CM_PROJ && cz.tab[CM_PROJ] == 2u) cos_kit_erase();   /* (0.13.0) KITS: x2 erase */
+        else if (b == B_REC && cz.mode == CM_PROJ && cz.tab[CM_PROJ] == 3u) cos_qs_undo();   /* (0.18.0) START: the music
+                                                         * before the quick start */
         else if (b == B_REC && cz.mode == CM_PROJ) cos_proj_new();   /* (0.9.3) SAVE: REC twice = a new, empty project */
         else if (b == B_REC && cz.mode == CM_TRIG && cos_held()) {   /* a step held + REC: its locks go */
             uint64_t h = cos_held();
@@ -2275,7 +2406,8 @@ static __attribute__((noinline)) void cos_input(void)
             cos_si_rest((fm1_in.notes & ((1u << 27) - 1u)) != 0u);   /* (STEP: a rest; a key held, a tie) */
         else if (b == B_SEQ && cz.mode == CM_TRIG) { cz.sq_down = 1; cz.sq_used = 0; }   /* (on SEQ: its tap the next way,
                                                          * let go; held + REC twice, the clear) */
-        else if (b == B_REC && cz.mode == CM_GEN) cos_say(undo_do() ? "NOTHING TO UNDO" : "UNDONE");
+        else if (b == B_REC && cz.mode == CM_GEN) cos_say(undo_gen() ? "NOTHING TO UNDO" : "UNDONE");   /* (0.18.0: the
+                                                         * track's steps, the transport on) */
         else if (b == B_REC && chain_busy()) cos_say("STOP THE SONG TO RECORD");
         else if (b == B_REC) { cz.rec_down = 1; cz.rec_used = 0; }   /* REC: a tap arms the track (playing, its knobs and keys
                                                          * record into it, saved with the section); held + OCT-: its motion
@@ -3878,12 +4010,12 @@ static void cos_body_master(void)
 static void cos_body_lim(void)
 {
     int32_t gr = lim_env > lim_t ? comp_lg2((uint32_t)lim_env) - comp_lg2((uint32_t)lim_t) : 0;
-    cos_tx(8, 40, "DRIVE>LIMIT>CLIP>OUT", C_MID);
+    cos_tx(8, 40, "DRIVE>LIMIT>SAT>OUT", C_MID);
     cos_gr_meter(58, "LIMIT GAIN REDUCTION", gr, 1);
     cos_tx(8, 88, "CEILING: THE PEAK OUT, DBFS", C_DIM);
     cos_tx(8, 100, "DRIVE: HARDER INTO CEILING", C_DIM);
-    cos_tx(8, 112, "AUTO LV ON: THE LEVELER", C_DIM);
-    cos_tx(8, 124, "RIDES THE LOUDNESS. OFF: NOT", C_DIM);
+    cos_tx(8, 112, "SAT: OFF CLEAN; ON A WARM", C_DIM);
+    cos_tx(8, 124, "CLIP, SET WHEN YOU WANT IT", C_DIM);
 }
 
 /* FX > RUMBLE: what it is, and its level now (a meter of the return's peak, the kick's pump in it) */
@@ -3944,6 +4076,21 @@ static void cos_body_link2(void)
     cos_tx(8, 132, "IN: MIDI JACK  OUT: USB, BT", C_DIM);
 }
 
+/* (0.18.0) SAVE > START: what the STYLE puts on the tracks, how to load it */
+static void cos_body_start(void)
+{
+    static const char *const L1[QS_N] = {"T3 ACID ROLLING", "T3 ACID BUSY", "T4 DUB STABS", "T4 WOOD 3-STEP"};
+    static const char *const L2[QS_N] = {"T5 ATMOS, T6 SONAR 5", "T6 R2 BLIPS 3-STEP", "T5 ATMOS, T6 GLASS 6", "T5 ATMOS, T6 DROP 5"};
+    static const char *const DR[3] = {"DRUMS: KICK + KIT PERC", "DRUMS: KIT PERC ONLY", "DRUMS: NONE"};
+    uint32_t st = qs_sty % QS_N;
+    cos_tx(8, 40, L1[st], C_FG);
+    cos_tx(8, 52, L2[st], C_FG);
+    cos_tx(8, 64, DR[qs_drm_get()], C_MID);
+    cos_tx(8, 84, "OCT+ LOADS; AGAIN: ANOTHER", C_FG);
+    cos_tx(8, 96, "TEMPO AND KEY STAY", C_DIM);
+    cos_tx(8, 108, "REC: THE MUSIC BEFORE IT", C_DIM);
+}
+
 /* (0.17.0) GLO > SYNTAKT: what comes in on the jack now (the cable, its clock, PLAY, its last pattern) and what to set
  * on the Syntakt */
 static void cos_body_syntakt(void)
@@ -3999,11 +4146,13 @@ static void cos_syntakt(uint32_t id, int32_t v)
         song.g[G_CLOCK] = 2;
         if (!cos_pc_ch) { lk[0] = 15; cos_pc_ch = 15; }
         lk[1] = 0; cos_pc_out = 0;
+        favorites.factory[6][17] = 1;                    /* (0.18.0) AUTO LV OFF: the Syntakt's compressor after it */
         cos_say("SYNTAKT LEADS");
     } else {
         *st &= (uint8_t)~1u;
         song.g[G_CLOCK] = 0;
         lk[0] = 0; cos_pc_ch = 0;
+        favorites.factory[6][17] = 0;                    /* (0.18.0) AUTO LV ON again */
         cos_say("OWN CLOCK");
     }
     cz.set_ms = fm1_ms;
@@ -4081,7 +4230,7 @@ static void cos_scene(void)
     case CM_TRIG: cos_body_trig(); break;
     case CM_GEN: cos_body_gen(); break;
     case CM_KEY: cos_body_key(); break;
-    case CM_PROJ: cos_body_proj(); break;
+    case CM_PROJ: if (cz.tab[CM_PROJ] == 3u) cos_body_start(); else cos_body_proj(); break;   /* (0.18.0) START */
     case CM_DRUMS: cos_body_drm(); break;
     case CM_MIX: {
         const cpg_t *pg = cos_page();
@@ -4095,6 +4244,7 @@ static void cos_scene(void)
         else if (pg->kind == CK_COS && pg->id[0] == CC_LIN) cos_body_lim();
         else if (pg->kind == CK_COS && pg->id[0] == CC_PCCH) cos_body_link();
         else if (pg->kind == CK_COS && pg->id[0] == CC_STON) cos_body_syntakt();   /* (0.17.0) */
+        else if (pg->kind == CK_COS && pg->id[0] == CC_QSTY) cos_body_start();     /* (0.18.0) */
         else if (pg->kind == CK_COS && (pg->id[0] == CC_MCCH || pg->id[0] == CC_MC0)) cos_body_link2();
         else if (pg->kind == CK_COS && pg->id[0] == CC_CTLM) cos_body_ctl();   /* (0.13.0) */
         else cos_body_sound();
@@ -4121,7 +4271,7 @@ dials:
 /* the splash (ui_draw.c draw_splash / splash_write under COS_SLIM; main.c's boot loop calls it every ~4 ms for
  * SPL_WRITE + SPL_HOLD ms): black, a few still stars, the name 2x, the version, a 16-block bar filling like a pattern
  * (the block being filled red), READY. Drawn whole once, then only the bar's strip when a block fills */
-#define COS_VERSION "0.17.0"
+#define COS_VERSION "0.18.0"
 static void cos_px2(int32_t x, int32_t y, const char *s, uint16_t c)      /* (the face 2 x 2) */
 {
     int32_t r, b, b0;

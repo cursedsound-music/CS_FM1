@@ -293,6 +293,10 @@ static void track_dist(track_t *t, int32_t *b, uint32_t n)
 static volatile int32_t lim_t = LIM_T0;               /* (cursed-os) GLO > MASTER LIMIT: the ceiling, the output's peak -6 ..
                                                          * -18 dBFS (ui_input.c ui_polls' LIM) */
 #define LIM_T lim_t
+/* (cursed-os 0.18.0, GG: "soft clip not always on, i want to set it when I need it") GLO > LIMIT's SATURATE: 0 (OFF, the
+ * power-on) the master clean, the limiter's ceiling the output's peak; else softclip(x g) k after the limiter, g its
+ * drive (0 .. +12 dB, Q15), k so the ceiling stays the peak (ui_input.c ui_polls); 0 dB: the clip as before 0.18 */
+static volatile int32_t sat_g, sat_k = 32768;
 static int32_t lim_env = LIM_T0;
 static uint16_t lim_hold;                             /* (cursed-os 0.12.2) the peak held this long before the release */
 #define LIM_HOLD 1200u                                /* (27 ms: a 40 Hz kick's cycle) */
@@ -851,8 +855,9 @@ static inline void master_out(int32_t *l, int32_t *r)
         *r = lowcut1(*r, &lc_r1, &lce[2], sh);
         *r = lowcut1(*r, &lc_r2, &lce[3], sh) + b;
     }
-    *l = (clamp(*l, -262143, 262143) * (lev_cur >> 4)) >> 11;   /* (JIANT 0.5) the leveler's gain (lev_block) */
-    *r = (clamp(*r, -262143, 262143) * (lev_cur >> 4)) >> 11;
+    *l = (clamp(*l, -262143, 262143) * (lev_cur >> 4) + (int32_t)dth()) >> 11;   /* (JIANT 0.5) the leveler's gain (lev_block;
+                                                         * 0.18.0: dithered, was floored) */
+    *r = (clamp(*r, -262143, 262143) * (lev_cur >> 4) + (int32_t)dth()) >> 11;
     lev_cur += lev_dg;
     al = *l < 0 ? -*l : *l;
     ar = *r < 0 ? -*r : *r;
@@ -873,14 +878,18 @@ static inline void master_out(int32_t *l, int32_t *r)
         lim_g += gt < lim_g ? (gt - lim_g) >> 3 : gt - lim_g;   /* (down over ~8 samples, of the 32 ahead; up: the
                                                          * envelope's release itself) */
         if (lim_g < 32768) {
-            dl = mix_mul(clamp(dl, -(1 << 21) + 1, (1 << 21) - 1), lim_g);   /* (0.13.1: was (dl >> 4) * g: 11 bits while it */
-            dr = mix_mul(clamp(dr, -(1 << 21) + 1, (1 << 21) - 1), lim_g);   /* limited, the hiss under a DRIVE) */
+            dl = mix_mul_d(clamp(dl, -(1 << 21) + 1, (1 << 21) - 1), lim_g, dth());   /* (0.13.1: was (dl >> 4) * g: 11 bits */
+            dr = mix_mul_d(clamp(dr, -(1 << 21) + 1, (1 << 21) - 1), lim_g, dth());   /* while it limited; 0.18.0 dithered) */
         }
         *l = dl;
         *r = dr;
     }
-    *l = softclip(*l);
-    *r = softclip(*r);
+    if (sat_g) {                                        /* (0.18.0) SATURATE on */
+        *l = mix_mul_d(softclip(mix_mul(clamp(*l, -(1 << 21) + 1, (1 << 21) - 1), sat_g)), sat_k, dth());
+        *r = mix_mul_d(softclip(mix_mul(clamp(*r, -(1 << 21) + 1, (1 << 21) - 1), sat_g)), sat_k, dth());
+    }
+    *l = clamp(*l, -32767, 32767);                      /* (OFF: clean; the limiter keeps it under the ceiling) */
+    *r = clamp(*r, -32767, 32767);
 }
 
 /* length of one division (N_DIV order) in samples at the song tempo */
@@ -2930,8 +2939,8 @@ static __attribute__((noinline)) void perf_master(int32_t *out, uint32_t n)
     uint32_t i;
     int32_t mg = fx_usb_fixed ? MASTER_FULL : (int32_t)song.master_q12;   /* (USB LEVEL FIXED: MASTER after) */
     for (i = 0; i < n; i++) {
-        mix_l[i] = mix_mul(clamp(mix_l[i] + wet[i], -(1 << 21) + 1, (1 << 21) - 1), mg << 3);   /* (0.16.0: all its bits; */
-        mix_r[i] = mix_mul(clamp(mix_r[i] + wet[i], -(1 << 21) + 1, (1 << 21) - 1), mg << 3);   /* was >> 2 first) */
+        mix_l[i] = mix_mul_d(clamp(mix_l[i] + wet[i], -(1 << 21) + 1, (1 << 21) - 1), mg << 3, dth());   /* (0.16.0: all its */
+        mix_r[i] = mix_mul_d(clamp(mix_r[i] + wet[i], -(1 << 21) + 1, (1 << 21) - 1), mg << 3, dth());   /* bits; 0.18.0 dither) */
     }
     perf_block(mix_l, mix_r, n);
     for (i = 0; i < n; i++) {
@@ -3332,8 +3341,8 @@ static __attribute__((noinline)) void mix_block(int32_t *out, uint32_t n)   /* (
         return;
     }
     for (i = 0; i < n; i++) {
-        int32_t l = mix_mul(clamp(mix_l[i] + wet[i], -(1 << 21) + 1, (1 << 21) - 1), mg << 3);   /* (0.16.0) */
-        int32_t r = mix_mul(clamp(mix_r[i] + wet[i], -(1 << 21) + 1, (1 << 21) - 1), mg << 3);
+        int32_t l = mix_mul_d(clamp(mix_l[i] + wet[i], -(1 << 21) + 1, (1 << 21) - 1), mg << 3, dth());   /* (0.16.0; 0.18.0 */
+        int32_t r = mix_mul_d(clamp(mix_r[i] + wet[i], -(1 << 21) + 1, (1 << 21) - 1), mg << 3, dth());   /* dithered) */
         master_out(&l, &r);
         out[2u * i] = l;
         out[2u * i + 1u] = r;

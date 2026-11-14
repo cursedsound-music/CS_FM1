@@ -2399,6 +2399,27 @@ static int undo_do(void)                                /* 0: done */
     return 0;
 }
 
+/* (cursed-os 0.18.0, GG: "undo for gen") GEN's REC: the selected track's steps and their LENGTH, SPEED, GATE back from
+ * the last UNDO point (a GEN gesture's start, a quick start), the rest and the transport as they are (undo_do stopped
+ * and restarted it: a jump in a set); what it replaced kept, so REC again goes forward. 0: done */
+static int undo_gen(void)
+{
+    uint32_t k = song.sel % NTRK, j;
+    static const uint8_t PK[3] = {P_SLEN, P_SDIV, P_SGATE};
+    if (!undo_ok)
+        return 1;
+    project_capture(&proj_scratch);
+    if (!proj_pack(&undo_st[1], &proj_scratch) || !proj_import(&proj_scratch, &undo_st[0], sizeof undo_st[0]))
+        return 1;
+    fm1_irq_off();                                      /* (the sequencer reads them in the audio interrupt) */
+    memcpy(trk[k].step, proj_scratch.t[k].step, sizeof trk[k].step);
+    for (j = 0; j < 3u; j++) trk[k].p[PK[j]] = proj_scratch.t[k].p[PK[j]];
+    fm1_irq_on();
+    undo_st[0] = undo_st[1];                            /* (REC again: what it replaced) */
+    ui.force = 1;
+    return 0;
+}
+
 /* (0.6.65) the sound dice's CANCEL (ui_input.c CF_DICE_SOUND): track k's sound back from the undo mark taken just
  * before the dice; only that track's sound, so the transport and the rest play on. 0 done */
 static int undo_sound(uint32_t k)

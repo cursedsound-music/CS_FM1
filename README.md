@@ -53,8 +53,8 @@ STOP and the patterns; the FM-1 follows.
 - Audio: FM-1 out -> Syntakt **INPUT L/R** (3.5 mm stereo to two 6.3 mm mono jacks). The FM-1 then runs through the
   Syntakt's FX block, delay and reverb, and the Syntakt's main out is one channel on the DJ mixer.
 
-**On the FM-1**: GLO > SYNTAKT, turn KNOB 1 to **ON**. That sets CLOCK TRS, follows the Syntakt's patterns on channel 15
-and sends nothing back; it stays on after a power-off. The page shows what comes in: CABLE, the CLOCK's BPM, PLAYING,
+**On the FM-1**: GLO > SYNTAKT, turn KNOB 1 to **ON**. That sets CLOCK TRS, follows the Syntakt's patterns on channel 15,
+sends nothing back and turns the leveler (AUTO LV, KNOB 4) off; it stays on after a power-off. The page shows what comes in: CABLE, the CLOCK's BPM, PLAYING,
 the last PATTERN and the section it plays.
 
 **On the Syntakt** (SETTINGS > MIDI CONFIG):
@@ -68,6 +68,9 @@ the last PATTERN and the section it plays.
 A05 A ...). Set PAT BARS (KNOB 3) to the Syntakt pattern's length in bars: the FM-1 switches when the Syntakt does, at
 the end of its pattern. So a jam: build A on both, store it (SAVE + OCT+), then B ...; SONG REC records the order you
 play them in as a song.
+
+**A quick start**: SAVE > START, pick a STYLE and DRUMS (PERC by default with SYNTAKT ON: the Syntakt plays the kick),
+OCT+ loads a ready jam; REC on the page goes back.
 
 **In a set**: dial the Syntakt's BPM to the CDJ track and nudge it; the FM-1 follows. With the Syntakt's kick, the
 FM-1's own KICK track can stay muted (HOME held + white 1).

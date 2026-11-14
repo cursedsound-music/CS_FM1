@@ -231,6 +231,7 @@ static void uin_run(int32_t level, int32_t pan, int mute, int32_t rev, int on, d
     fresh();
     lim_env = LIM_T; lim_hold = 0; lim_g = 32768; memset(lim_dl, 0, sizeof lim_dl); memset(lim_dr, 0, sizeof lim_dr);   /* (0.12.2) */
     lev_env = 0; lev_g = lev_cur = 32768; lev_dg = 0; dc_l = dc_r = dce_l = dce_r = 0;
+    dth_s = 0x2545F491u;                               /* (0.18.0) the dither from the top, as at a power-on */
     song.master_q12 = 4096;
     for (t = 0; t < NTRK; t++) trk[t].p[P_DIST] = trk[t].p[P_CHOR] = trk[t].p[P_DLY] = trk[t].p[P_REV] = 0;
     t = trk_live - 1u;
@@ -377,7 +378,8 @@ static void boot_keys(void)
     check("#137 boot: a key held across the splash's end stays silent until pressed again",
           busy == 0u && busy0 == 0u && busy_old > 0u);
     check("#137 boot: after the splash the keys play at the pot's level, as set by hand (pot 0: silent)",
-          ref > 100.0 && fabs(quiet - ref) < 1e-9 && silent == 0.0);
+          ref > 100.0 && fabs(quiet - ref) < ref * 1e-3 && silent == 0.0);   /* (0.18.0: within 0.1 %: the master's
+                                                         * dither drawn on since the boot, not from the same point) */
 }
 
 /* Admission changes the total budget, never the per-engine slots or the

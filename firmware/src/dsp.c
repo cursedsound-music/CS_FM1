@@ -78,6 +78,23 @@ static inline int32_t mix_mul(int32_t x, int32_t g)
     return (((x >> 4) * gq) >> 7) + (((x & 15) * gq + 1024) >> 11);
 }
 
+/* (cursed-os 0.18.0, GG: dither) mix_mul rounded with a TPDF dither (d: dth(), 0 .. 2046 over the dropped 11 bits'
+ * 2048, triangular): where a gain re-quantises the mix (the MASTER below full, the leveler, the limiter, SATURATE), the
+ * error noise, not a pattern following the signal: a quiet tail fades into a smooth floor at -96 dB, not into grain. A
+ * gain of exactly 1 changes nothing (d < 2048) */
+static inline int32_t mix_mul_d(int32_t x, int32_t g, uint32_t d)
+{
+    int32_t gq = g >> 4;
+    return (((x >> 4) * gq) >> 7) + (((x & 15) * gq + (int32_t)d) >> 11);
+}
+static uint32_t dth_s = 0x2545F491u;                     /* (from the top at each PLAY: seq.c seq_start, so a render
+                                                         * repeats bit for bit) */
+static inline uint32_t dth(void)                       /* (an LCG: two 10-bit draws, their sum triangular) */
+{
+    dth_s = dth_s * 1664525u + 1013904223u;
+    return ((dth_s >> 22) & 1023u) + ((dth_s >> 12) & 1023u);
+}
+
 /* xorshift32 */
 static inline uint32_t noise32(int32_t *st)
 {

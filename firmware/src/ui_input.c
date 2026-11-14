@@ -2205,7 +2205,21 @@ static __attribute__((noinline)) void ui_polls(void)
         mc_amt = (uint8_t)(m[0] <= 100u ? m[0] : 0u);
         mc_atk = (uint8_t)(m[1] && m[1] <= 101u ? m[1] - 1u : 20u);
         mc_rel = (uint8_t)(m[2] && m[2] <= 101u ? m[2] - 1u : 40u);
-        lim_t = LIM[m[3] <= 12u ? m[3] : 0u];
+        {                                                /* (0.18.0) SATURATE (STRING's row 8, byte 23: 0 OFF, 1 .. 13 its
+                                                         * drive 0 .. +12 dB): OFF, the ceiling the output's peak itself
+                                                         * (OUT: -6 .. -18 dBFS); on, LIM's ceiling into the clip, k so its
+                                                         * peak comes out at the same OUT */
+            static const uint16_t OUT[13] = {16423, 14637, 13045, 11627, 10362, 9235, 8231, 7336, 6538, 5827, 5193, 4629, 4125};
+            static const int32_t SG[13] = {32768, 36766, 41252, 46286, 51934, 58271, 65381, 73358, 82309, 92353, 103622, 116265, 130452};
+            uint32_t c = m[3] <= 12u ? m[3] : 0u, s = favorites.factory[8][23];
+            if (!s || s > 13u) { lim_t = OUT[c]; sat_g = 0; sat_k = 32768; }
+            else {
+                int32_t g = SG[s - 1u], pk = softclip(mix_mul(LIM[c], g));
+                lim_t = LIM[c];
+                sat_k = pk > 0 ? (int32_t)(((uint32_t)OUT[c] << 15) / (uint32_t)pk) : 32768;
+                sat_g = g;
+            }
+        }
     }
     {                                                   /* (cursed-os) the rest of COMP and LIMIT: bytes 8 .. 17 of TRIO's
                                                          * retired row (6; never read before: 0 there is each default) */

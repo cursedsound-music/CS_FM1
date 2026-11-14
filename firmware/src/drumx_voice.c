@@ -26,7 +26,10 @@ enum { DXF_LP, DXF_BP, DXF_HP, DXF_FM };
 #define DXF_LR(y) ((uint32_t)(y) & 15u)
 #define DXF_LW(y) (((uint32_t)(y) >> 4) & 7u)
 #define DXF_LT(y) (((uint32_t)(y) >> 7) & 1u)
-#define DX_CUBIC(ln) ((ln) == 0u || (ln) == 5u)          /* (0.13.0) the low drums, KICK and TOM: dx_run's cubic upsampling */   /* (cursed-os 0.12.0) FM: the sound by FMDRUM's voice (dx_fmd) */
+#define DX_CUBIC(ln) ((ln) != 2u)                         /* (0.13.0) the low drums, KICK and TOM: dx_run's cubic upsampling;
+                                                          * (0.18.0, GG: the drums' rate conversion) every lane but CLAP (its
+                                                          * HANDS keep hsum, hseed): the hats' and the bells' tops mirrored near
+                                                          * 22 kHz by the mean, a metallic haze; DV_CLAP 2 */   /* (cursed-os 0.12.0) FM: the sound by FMDRUM's voice (dx_fmd) */
 #define DX_MODE(w, f, snap) ((uint8_t)((w) | (f) << 2 | (snap) << 4))
 enum { DXM_DECAY, DXM_LONG, DXM_NOISE, DXM_SINE };       /* (JIANT 0.4) the pitch modulation: mode bits 5..6 */
 #define DX_DRIVE 0x80u                                   /* .. the oscillator driven: bit 7 */

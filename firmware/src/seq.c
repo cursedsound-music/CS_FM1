@@ -1287,6 +1287,7 @@ static void seq_start(void)
     memset(shift_valid, 0, sizeof shift_valid);
     uint32_t i;
     ms_clock = 0;                                  /* (JIANT) the modulation sequences from their step 0 */
+    dth_s = 0x2545F491u;                           /* (cursed-os 0.18.0) the master's dither from the top */
     if (mo_clock_on()) {                           /* (0.6.72) MIDI OUT CLOCK / ALL: START, the clock from here */
         mo_send(0xFAu, 0, 0);
         mo_pulse_acc = 0;

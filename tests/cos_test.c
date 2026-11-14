@@ -274,7 +274,7 @@ int main(void)
         CHECK(comp_gr == 0, "quiet: no reduction once released (%d)", comp_gr);
         CHECK(mix_l[20] >= 800 && mix_l[20] <= 1700, "quiet: about as it was, the makeup on it (%d)", mix_l[20]);
         favorites.factory[15][4] = 0; favorites.factory[15][7] = 6; ui_polls();
-        CHECK(mc_amt == 0 && lim_t == 8412, "COMP 0 off; LIMIT byte 6: CEILING -12 dBFS (%d)", lim_t);
+        CHECK(mc_amt == 0 && lim_t == 8231, "COMP 0 off; LIMIT byte 6: CEILING -12 dBFS, the peak itself (0.18.0: SATURATE OFF) (%d)", lim_t);
         favorites.factory[15][7] = 0; ui_polls();
     }
 
