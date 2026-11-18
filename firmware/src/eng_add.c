@@ -16,9 +16,21 @@
  * Memory: none of its own. WHEEL's per voice state (eng_wheel.c drw_v: nine phases and gains a voice, by part) is a
  * part's either way (a part is WHEEL or ADD); the voice's age in blocks in its perc. Cost: WHEEL's (a table lookup and a
  * multiply-add a partial a sample); the levels and the decays once a block. A note from silence starts its partials in
- * phase (a bell's, a pluck's attack the same every time). */
-static const char *const N_ADD_MODE[] = {"HARM", "ODD", "WIDE", "BELL", "BAR", "DRUM", "PRIME", "FIFTH", "SUB", "PLATE"};
-enum { AD_HARM, AD_ODD, AD_WIDE, AD_BELL, AD_BAR, AD_DRUM, AD_PRIME, AD_FIFTH, AD_SUB, AD_PLATE, AD_N };
+ * phase (a bell's, a pluck's attack the same every time). The modal modes' strike: WHEEL's click state (clk nz hp),
+ * unused by ADD otherwise. */
+static const char *const N_ADD_MODE[] = {"HARM", "ODD", "WIDE", "BELL", "BAR", "DRUM", "PRIME", "FIFTH", "SUB", "PLATE",
+                                        "MARIMBA", "KALIMBA", "STEEL", "TUBE", "LOG", "GLASS"};
+enum { AD_HARM, AD_ODD, AD_WIDE, AD_BELL, AD_BAR, AD_DRUM, AD_PRIME, AD_FIFTH, AD_SUB, AD_PLATE,
+       AD_MRB, AD_KAL, AD_STEEL, AD_TUBE, AD_LOG, AD_GLASS, AD_N };
+/* (cursed-os 0.19.0, GG: "a true extra voice for the syntakt ... sounds we cant do on syntakt") MODAL: the modes from
+ * MARIMBA on are struck bodies, a mallet on a bar, a tine, a pan, a tube, a log, a glass. Their partials are the body's
+ * modes (ascending), each its own level (ADD_MW: what a strike in the middle wakes), and they ring out as the material
+ * damps them: wood the high modes far sooner (the k^2 law, ADD_DL), metal and glass nearly evenly. The strike itself is
+ * heard: a short burst of noise, low-passed by the mallet's hardness (VELOCITY and BRIGHT), louder on wood (ADD_CK);
+ * VELOCITY also brightens the modes (a harder mallet wakes the high ones). COMB is where it is struck (notches over the
+ * modes), SHIFT bends them, MOTION blooms or shimmers them as on every mode. Appended: the older modes and every sound
+ * made with them unchanged (PLATE's MORPH still goes to HARM: add_next) */
+#define AD_M0 AD_MRB
 #define AD_R(x) ((uint16_t)((x) * 1024.0 + 0.5))         /* a ratio, Q10 */
 static const uint16_t ADD_RATIO[AD_N][DRW_NP] = {
     {AD_R(1), AD_R(2), AD_R(3), AD_R(4), AD_R(5), AD_R(6), AD_R(7), AD_R(8), AD_R(9)},
@@ -35,7 +47,31 @@ static const uint16_t ADD_RATIO[AD_N][DRW_NP] = {
     {AD_R(1), AD_R(1.5), AD_R(2), AD_R(3), AD_R(4), AD_R(4.5), AD_R(6), AD_R(8), AD_R(9)},
     {AD_R(0.25), AD_R(0.5), AD_R(1), AD_R(1.5), AD_R(2), AD_R(3), AD_R(4), AD_R(5), AD_R(6)},
     {AD_R(1), AD_R(1.414), AD_R(1.732), AD_R(2), AD_R(2.236), AD_R(2.449), AD_R(2.646), AD_R(2.828), AD_R(3)},
+    /* MARIMBA a rosewood bar tuned 1 : 4 : 9.2 (its arch cut), KALIMBA a steel tine (a cantilever's 1 : 6.27 : 17.55,
+     * the box's octave and the tine's buzz near 6), STEEL a pan's note (tuned to octave and twelfth, the rest a little
+     * off), TUBE a tubular bell ((2n + 1)^2 modes: the note heard is the virtual pitch of modes 4..6), LOG a slit drum's
+     * wood, GLASS a wine glass's rim */
+    {AD_R(1), AD_R(3.93), AD_R(9.2), AD_R(15.7), AD_R(23.3), AD_R(31.9), AD_R(41.5), AD_R(52.6), AD_R(64.8)},
+    {AD_R(1), AD_R(2.01), AD_R(5.93), AD_R(6.27), AD_R(11.6), AD_R(17.55), AD_R(25.2), AD_R(34.39), AD_R(47.1)},
+    {AD_R(1), AD_R(2.003), AD_R(2.995), AD_R(3.98), AD_R(5.02), AD_R(6.1), AD_R(7.07), AD_R(8.1), AD_R(9.3)},
+    {AD_R(0.617), AD_R(1.21), AD_R(2), AD_R(2.99), AD_R(4.17), AD_R(5.56), AD_R(7.14), AD_R(8.91), AD_R(10.9)},
+    {AD_R(1), AD_R(1.58), AD_R(2.35), AD_R(2.84), AD_R(3.6), AD_R(4.34), AD_R(5.2), AD_R(6.1), AD_R(7.3)},
+    {AD_R(1), AD_R(2.32), AD_R(4.25), AD_R(6.63), AD_R(9.38), AD_R(12.5), AD_R(16), AD_R(19.9), AD_R(24.1)},
 };
+/* the modal modes' own: each mode's level (Q8), the damping law (how much sooner mode k fades: rate (1 + k^2 DL / 8)),
+ * the strike's noise (0..127) */
+static const uint8_t ADD_MW[AD_N - AD_M0][DRW_NP] = {
+    {255, 150, 70, 40, 25, 15, 10, 6, 4},
+    {255, 30, 40, 100, 15, 45, 10, 15, 6},
+    {255, 200, 140, 70, 50, 30, 20, 15, 10},
+    {110, 170, 255, 235, 200, 150, 110, 80, 50},
+    {255, 160, 110, 70, 50, 30, 20, 12, 8},
+    {255, 110, 55, 30, 15, 10, 6, 4, 3},
+};
+static const uint8_t ADD_DL[AD_N - AD_M0] = {7, 2, 1, 1, 8, 0};
+static const uint8_t ADD_CK[AD_N - AD_M0] = {90, 60, 45, 70, 110, 18};
+/* MORPH's other end: the next mode, PLATE's HARM (as before the modal ones), GLASS's MARIMBA (round the struck ones) */
+static uint32_t add_next(uint32_t mo) { return mo == AD_PLATE ? AD_HARM : mo == AD_N - 1u ? AD_M0 : (mo + 1u) % AD_N; }
 /* log2(k + 1), Q8: the tilt over the partials' ranks */
 static const uint16_t ADD_LOG2[DRW_NP] = {0, 256, 406, 512, 594, 662, 719, 768, 811};
 #define AD_TOP 1932735283u                               /* ~19.8 kHz as a phase increment: above it a partial is silent */
@@ -52,6 +88,12 @@ static void add_note_on(track_t *t, voice_t *v)
     }
     V->perc = 0;                                         /* (its age in blocks: the partials' decays from the note) */
     V->init = 1;
+    if ((uint32_t)t->p[P_E0] % AD_N >= AD_M0) {          /* (0.19.0) MODAL: the mallet's strike */
+        V->clk = 32767;
+        V->hp = 0;
+        if (!v->env || !V->nz)                           /* (from silence: the same strike every time) */
+            V->nz = (int32_t)(0x2545F491u + vi * 2654435761u);
+    }
 }
 
 static void add_render(track_t *t, voice_t *v, int32_t *out, uint32_t n, const vmod_t *m)
@@ -59,7 +101,8 @@ static void add_render(track_t *t, voice_t *v, int32_t *out, uint32_t n, const v
     const int16_t *p = t->p;
     drw_vc_t *V = &drw_v[drw_part(t)][(uint32_t)(v - t->v) % NVOICE];
     uint32_t mo = (uint32_t)p[P_E0] % AD_N;
-    const uint16_t *R = ADD_RATIO[mo], *R2 = ADD_RATIO[(mo + 1u) % AD_N];
+    const uint16_t *R = ADD_RATIO[mo], *R2 = ADD_RATIO[add_next(mo)];
+    uint32_t mi = mo >= AD_M0 ? mo - AD_M0 + 1u : 0u;    /* (0.19.0) a modal mode + 1, 0 none */
     int32_t acc[CTL], lv[DRW_NP], sum = 0, norm, mp = clamp(p[P_E1], 0, 127), slope = (96 - clamp(p[P_E2], 0, 127)) * 5;
     int32_t np = 256 + clamp(p[P_E3], 0, 127) * 2048 / 127, sh = clamp(p[P_E4], -64, 63), dec = clamp(p[P_E6], 0, 127);
     int32_t mot = clamp(p[P_E7], -64, 63), cmb = clamp(p[P_E5] + ((m->shape - (64 << 8)) >> 8), 0, 127) * 2;
@@ -67,6 +110,8 @@ static void add_render(track_t *t, voice_t *v, int32_t *out, uint32_t n, const v
     uint32_t shz = sh > 0 ? (uint32_t)(sh * sh) * 19478u : 0u;   /* (SHIFT up: + sh^2 / 5 Hz to every partial) */
     if (n > CTL)
         n = CTL;
+    if (mi)                                              /* (MODAL) a harder strike: the high modes woken */
+        slope -= ((int32_t)v->vel - 80) * 3;
     for (k = 0; k < DRW_NP; k++) {                       /* the levels: BRIGHT's tilt, COMB's notches, PARTIALS */
         uint32_t lt = slope >= 0 ? (uint32_t)(slope * ADD_LOG2[k]) : (uint32_t)(-slope * (ADD_LOG2[DRW_NP - 1u] - ADD_LOG2[k]));
         int32_t l = (int32_t)(str_exp2n(lt >> 8) >> 1), kq = (int32_t)k << 8;
@@ -75,6 +120,8 @@ static void add_render(track_t *t, voice_t *v, int32_t *out, uint32_t n, const v
             c = c < 0 ? -c : c;
             l = (l * (c + 1024)) >> 15;              /* (l < 2^15, c < 2^15: in 32 bits) */
         }
+        if (mi)
+            l = l * ADD_MW[mi - 1u][k] >> 8;
         if (kq >= np) l = 0;
         else if (np - kq < 256) l = l * (np - kq) >> 8;  /* (the last one in by its fraction: a smooth sweep) */
         lv[k] = l;
@@ -92,7 +139,9 @@ static void add_render(track_t *t, voice_t *v, int32_t *out, uint32_t n, const v
         if (inc >= AD_TOP || !lv[k])
             g1 = 0;
         else {
-            uint32_t rk = rate + rate * k / 2u, x;       /* (its decay: Q16 octaves a block; the higher ones sooner) */
+            uint32_t rk = mi ? rate + ((rate * k * k * ADD_DL[mi - 1u]) >> 3) : rate + rate * k / 2u, x;   /* (its decay:
+                                                         * Q16 octaves a block; the higher ones sooner; MODAL: the
+                                                         * material's law) */
             x = !rk ? 0u : age >= 0xFFFFFFFFu / rk ? 0xFFFFu : (age * rk) >> 8;
             g1 = mulq15(mulq15(lv[k], norm), (int32_t)(str_exp2n(x) >> 1));
             if (mot < 0 && k) {                          /* BLOOM: partial k full after k * |MOTION| * 2 blocks */
@@ -123,6 +172,21 @@ static void add_render(track_t *t, voice_t *v, int32_t *out, uint32_t n, const v
         }
         V->ph[k] = ph;
     }
+    if (mi && V->clk) {                                  /* (MODAL) the strike: noise, low-passed by the mallet's
+                                                         * hardness, ~3 ms */
+        uint32_t z = (uint32_t)V->nz;
+        int32_t lp = V->hp, ck = V->clk, c = clamp(24 + clamp(p[P_E2], 0, 127) + (int32_t)v->vel, 24, 255);
+        int32_t lvl = ADD_CK[mi - 1u] * (int32_t)v->vel;  /* (<= 127 * 127) */
+        for (i = 0; i < n; i++) {
+            z = z * 1664525u + 1013904223u;
+            lp += (((int32_t)(z >> 16) - 32768 - lp) * c) >> 8;
+            acc[i] += (((lp * ck) >> 15) * lvl) >> 15;
+            ck -= ck >> 5;
+        }
+        V->nz = (int32_t)z;
+        V->hp = lp;
+        V->clk = ck > 32 ? ck : 0;
+    }
     V->perc = (int32_t)(age < 0x7FFFFFu ? age + 1u : age);
     for (i = 0; i < n; i++)
         out[i] += voice_amp(acc[i] >> 1, m, i) << 1;
@@ -146,6 +210,15 @@ static const preset_t ADD_PRESETS[] = {
     {"QUINT", {AD_FIFTH, 0, 80, 127, 0, 24, 127, 20}, {6, 64, 127, 50}, 0, TAG(PAD), FX(0, 25, 10, 45), PAT(5)},
     {"DRONE", {AD_SUB, 50, 70, 127, 0, 30, 127, 40}, {40, 64, 127, 90}, 0, TAG(PAD), FX(0, 20, 15, 70), PAT(5)},
     {"GONG", {AD_PLATE, 30, 104, 127, -12, 0, 88, 30}, {0, 64, 127, 90}, 0, TAG(BELL), FX(0, 0, 20, 70), PAT(6)},
+    /* (0.19.0) MODAL: struck bodies (appended: the sounds before keep their numbers) */
+    {"ROSEWOOD", {AD_MRB, 0, 80, 127, 0, 20, 62, 0}, {0, 64, 127, 50}, 0, TAG(PLUCK), FX(0, 0, 10, 30), PAT(3)},
+    {"KALIMBA", {AD_KAL, 0, 84, 127, 0, 30, 72, 0}, {0, 64, 127, 60}, 0, TAG(PLUCK), FX(0, 0, 15, 40), PAT(3)},
+    {"STEEL PAN", {AD_STEEL, 0, 92, 127, 0, 12, 74, 10}, {0, 64, 127, 60}, 0, TAG(BELL), FX(0, 15, 15, 35), PAT(6)},
+    {"TUBULAR", {AD_TUBE, 0, 96, 127, -6, 0, 94, 15}, {0, 64, 127, 90}, 0, TAG(BELL), FX(0, 0, 20, 65), PAT(7)},
+    {"LOG DRUM", {AD_LOG, 0, 70, 127, 0, 40, 50, 0}, {0, 64, 127, 35}, 0, TAG(DRUM), FX(0, 0, 20, 25), PAT(3)},
+    {"WINE GLASS", {AD_GLASS, 0, 100, 127, 0, 0, 102, 25}, {0, 64, 127, 90}, 0, TAG(BELL), FX(0, 20, 15, 70), PAT(7)},
+    {"SING BOWL", {AD_GLASS, 40, 90, 127, -8, 10, 118, 40}, {4, 64, 127, 110}, 0, TAG(PAD), FX(0, 15, 10, 80), PAT(5)},
+    {"GAMELAN", {AD_STEEL, 70, 100, 127, -15, 0, 86, 20}, {0, 64, 127, 80}, 0, TAG(BELL), FX(0, 0, 25, 55), PAT(7)},
 };
 
 static const engine_t ENG_ADD = {

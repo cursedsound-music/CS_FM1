@@ -668,7 +668,9 @@ static uint32_t lowest_held(const track_t *t)           /* index of the lowest h
 /* the voice to give up for a new one (see the top); soft: only released voices and
  * extra voices of other non-POLY parts (also ones left after a mode change).
  * Returns its index, *pp its part; NVOICE = none */
-static uint32_t voice_victim(const track_t *self, int soft, track_t **pp)
+/* (cursed-os 0.19.0) HOLD (GLO > SYNTAKT 2): guard, the parts whose held voices are not taken (the tracks holding MIDI
+ * notes: a Syntakt's chord rings while the FM-1's own parts give up theirs); with nothing else to take, they are */
+static uint32_t voice_victim_g(const track_t *self, int soft, track_t **pp, uint32_t guard)
 {
     uint32_t p, i, best = NVOICE, cat = 4;
     for (p = 0; p < NPART; p++) {
@@ -684,6 +686,8 @@ static uint32_t voice_victim(const track_t *self, int soft, track_t **pp)
                 continue;
             if (!voice_held(t, v))
                 c = 1;                                  /* released */
+            else if ((guard >> p) & 1u)
+                continue;                               /* (HOLD) a MIDI-held part's */
             else if (mode != V_POLY && i > 0)
                 c = 2;                                  /* extra UNISON, or a voice left by a mode / cap change */
             else if (!soft && mode == V_POLY && i != low)
@@ -698,6 +702,11 @@ static uint32_t voice_victim(const track_t *self, int soft, track_t **pp)
         }
     }
     return best;
+}
+static uint32_t voice_victim(const track_t *self, int soft, track_t **pp)
+{
+    uint32_t g = (cos_st2 & ST2_HOLD) ? midi_held & ~(1u << (uint32_t)(self - trk)) : 0u, k = voice_victim_g(self, soft, pp, g);
+    return k == NVOICE && g ? voice_victim_g(self, soft, pp, 0u) : k;
 }
 
 /* (0.8.9) console status: voices_given_up counts events, one per voice faded out early, whatever asked (a voice

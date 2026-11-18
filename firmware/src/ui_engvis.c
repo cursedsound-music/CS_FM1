@@ -1897,7 +1897,7 @@ static VX_CODE void vx_add(const track_t *t, const int32_t *A, int32_t en_home)
         }
     vx_line(&f, 0, 48 * 16, 0, -38 * 16, 40);           /* the pole */
     for (k = 0; k < DRW_NP; k++) {
-        int32_t R = ADD_RATIO[mode][k], r = R + (ADD_RATIO[(mode + 1u) % AD_N][k] - R) * clamp(p[P_E1], 0, 127) / 127;
+        int32_t R = ADD_RATIO[mode][k], r = R + (ADD_RATIO[add_next(mode)][k] - R) * clamp(p[P_E1], 0, 127) / 127;
         int32_t y, w, h, wob, x;
         uint32_t a;
         if (sh < 0) r += ((r * ((r - 1024) >> 4)) >> 10) * -sh * 9 >> 8;   /* SHIFT: stretched, or every partial up */

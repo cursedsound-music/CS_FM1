@@ -15,7 +15,7 @@ being turned, REC, a key change waiting for the bar.
 
 ## What it does
 
-- **Quick starts** (SAVE > START): a complete loop in one press, in a style (HYPNO, ACID, DUB, BLEEPS or RAND). Keep
+- **Quick starts** (SAVE > START): a complete loop in one press, in a style (HYPNO, ACID, DUB, BLEEPS, VOICES or RAND). Keep
   the tracks you like and reroll the rest; while playing, a new loop lands at the end of the bar.
 - **Generators** (GEN): controlled-random 303 lines, dub chord stabs and held atmospheres, modular-style bleeps,
   Euclidean rhythms. A new part with OCT+, the one before with OCT−, undo per track.
@@ -26,7 +26,10 @@ being turned, REC, a key change waiting for the bar.
   FM6 (six operators), analog, FMDRUM, DUB, Karplus-Strong strings, additive and others.
 - **Playing live** (HOME): mutes, solos, fills, kills, four sections with morphing, a DJ filter, effect throws.
 - **Elektron Syntakt support** (GLO > SYNTAKT): one knob, and the FM-1 follows the Syntakt's clock, start / stop and
-  patterns.
+  patterns. Its MIDI tracks can play the FM-1 as an extra voice (GLO > SYNTAKT 2): chords, program changes that pick
+  from a set of 32 sounds the Syntakt has no machine for, CCs, velocity and aftertouch.
+- **Struck sounds** (MODAL, in the ADD engine): marimba, kalimba, steel pan, tubular bell, slit drum and glass, with
+  the mallet's hit and velocity.
 - **A clean output**: a look-ahead limiter, an optional soft clipper (SAT), dither.
 
 ## Docs

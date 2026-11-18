@@ -2,7 +2,7 @@
 
 cursed os is custom firmware for the M-VAVE FM-1. It turns the FM-1 into a six-track groovebox, with drums, a kick,
 an acid line, a bass, a pad and a sixth voice. Each track has its own sequencer and generators, and it works with an
-Elektron Syntakt. This guide is for cursed os 0.18.5.
+Elektron Syntakt. This guide is for cursed os 0.19.0.
 
 All screenshots come from the browser emulator, which runs the same firmware.
 
@@ -11,6 +11,8 @@ All screenshots come from the browser emulator, which runs the same firmware.
 - [Cheat sheet](#cheat-sheet)
 - [The modes, one by one](#the-modes-one-by-one)
 - [With an Elektron Syntakt](#with-an-elektron-syntakt)
+  - [The Syntakt playing the FM-1](#the-syntakt-playing-the-fm-1-syntakt-2)
+  - [The voice set](#the-voice-set)
 - [Installing](INSTALL.md)
 
 ## The panel
@@ -48,7 +50,8 @@ cursed os powers on with empty patterns. These five steps get a full loop playin
 
 1. **Open the quick starts.** Press SAVE four times until the tab bar shows START.
 2. **Pick a style.**
-   - KNOB 1, STYLE: HYPNO, ACID, DUB, BLEEPS or RAND (everything drawn at random).
+   - KNOB 1, STYLE: HYPNO, ACID, DUB, BLEEPS, VOICES (mallets, pads, choirs and bells from the
+     [voice set](#the-voice-set)) or RAND (everything drawn at random).
    - KNOB 2, DRUMS: FULL, PERC (no kick) or NONE.
    - KNOB 3, ELEMENTS: ALL (every track plays) or PICKED (a few voices).
    - KNOB 4, BARS: 1, 2 or 4.
@@ -127,6 +130,7 @@ To save the result, go to SAVE > PROJECT, pick a slot with white keys 1–4 and 
 | MIX | LEVEL, PAN, MUTE |
 | LIMIT | DRIVE, CEILING, RELEASE, SAT (0 dB by default; turn it to OFF for a clean output) |
 | SYNTAKT | ON, PATTERNS, PAT BARS, AUTO LV |
+| SYNTAKT 2 | PROGRAMS, FOLLOW, HOLD, TOUCH (the Syntakt's MIDI tracks playing the FM-1) |
 | LINK | PC CH, PC OUT (the program-change channel and whether the FM-1 sends them) |
 
 ### Browser emulator keyboard
@@ -173,6 +177,13 @@ envelope: attack, decay, sustain, release.
 For long pads, load an ATMOS preset on a synth track (here ATMOS DARK on track 5).
 
 ![ATMOS DARK on track 5](guide/17_edit_t5.png)
+
+**Struck sounds (MODAL).** The ADD engine's modes from MARIMBA on are struck bodies: MARIMBA, KALIMBA, STEEL (a steel
+pan), TUBE (a tubular bell), LOG (a slit drum) and GLASS (a wine glass). Their partials are the body's own modes, and
+each mode rings out the way the material damps it: wood loses its high modes quickly, metal and glass ring evenly. You
+hear the mallet hit, and velocity changes it: a harder hit is louder, brighter and has more click. COMB is where the
+bar is struck, DECAY how long it rings, SHIFT bends the modes. The presets: ROSEWOOD, KALIMBA, STEEL PAN, TUBULAR, LOG
+DRUM, WINE GLASS, SING BOWL and GAMELAN.
 
 ### LFO (DRUMS): the kit
 
@@ -282,3 +293,69 @@ show whether CABLE, CLOCK and PATTERN are coming in.
 - KEEP (white 1–6 on START) holds the part that works while you reroll the rest.
 - HOME > LIVE has the DJ filter, reverb and delay on the knobs; the black keys drop parts in and out.
 - If the Syntakt's own drive already colours the sound, turn SAT OFF on GLO > LIMIT.
+
+### The Syntakt playing the FM-1 (SYNTAKT 2)
+
+Each Syntakt track plays one note at a time. A Syntakt MIDI track can send chords, velocity, aftertouch, program changes
+and CCs, all of them lockable per trig. Point it at the FM-1 and the FM-1 becomes an extra voice for it: chords, 6-op
+FM, plucked and bowed strings, struck mallets, choirs and speech, and nature sounds.
+
+On the Syntakt, set a track's machine to MIDI and its channel to 1–6. That channel plays the FM-1's track 1–6. The
+Syntakt's notes and chords play that track. Its program change picks the track's sound, and its CCs move the sound's
+controls (the table below). Locking a program on a trig changes the sound for that trig only. The FM-1 holds that note
+back for a moment until the new sound has loaded, so the note never plays with the old sound.
+
+GLO > SYNTAKT 2 (turning SYNTAKT on sets it to VOICES, FOLLOW ON, HOLD ON, TOUCH LOW until you change it yourself):
+
+| Knob | What it does |
+| --- | --- |
+| PROGRAMS | What a program change picks: VOICES (the voice set below), ENGINE (the sounds of the track's current engine, in order) or LIST (every sound, as in older versions) |
+| FOLLOW | ON: once the Syntakt plays a note on a track's channel, that track's own steps go quiet until you stop the transport. OFF: both play |
+| HOLD | ON: notes the Syntakt is holding keep their voices; the FM-1's own parts give voices up first. All tracks share 8 voices (12 in FULL) |
+| TOUCH | OFF, LOW, MID, HIGH: velocity and aftertouch open the sound's brightness (the control CC74 moves) |
+
+The page also shows which tracks the MIDI is playing right now.
+
+**CCs the FM-1 follows** (on the track's channel). A good set for the Syntakt MIDI track's 8 CC slots is the first
+eight rows:
+
+| CC | Controls |
+| --- | --- |
+| 16, 17, 18, 19 | The engine's first four controls (E1–E4, EDIT's first page) |
+| 74 | Brightness (each engine's own: CUT, BRIGHT, TONE ...) |
+| 71 | Resonance (where the engine has one) |
+| 91 | Reverb send |
+| 94 | Delay send |
+| 20–23 | E5–E8 (EDIT's second page) |
+| 5, 7, 10 | Glide, level, pan |
+| 72, 73, 75 | Release, attack, decay |
+| 93 | Chorus send |
+| 102, 103, 104, 105 | Filter cutoff, filter resonance, drive, sustain |
+
+Pitch bend works on every synth track (±2 semitones unless set by RPN).
+
+**Keep the Syntakt's own tracks off channels 1–6.** In SETTINGS > MIDI CONFIG > CHANNELS, give its audio tracks (and
+the FX track) other channels than the ones its MIDI tracks use for the FM-1, or switch them off. If one of its own
+tracks sends on an FM-1 track's channel, the FM-1 follows its CCs as well: its volume (CC 7) and pan (CC 10) set the
+FM-1 track's level and pan, its filter frequency (CC 74) the brightness, but its mute (CC 94) moves the delay send and
+its machine knobs A–H (CC 17–24) move the FM-1's E2–E8 controls. A test checks every CC in the Syntakt's list
+against this (`tests/syntakt_cc_test.c`, with Pencil Research's MIDI CC list).
+
+### The voice set
+
+PROGRAMS VOICES: program change 0–31 picks one of these 32 sounds, in eight groups of four. On a display that counts
+from 1 (PROG 1–32), each number is one higher.
+
+| Programs | Group | Sounds |
+| --- | --- | --- |
+| 0–3 | Keys | TINE EP, DX KEYS (FM6), PIANO (STRING), GOSPEL (WHEEL) |
+| 4–7 | Bells | ICE BELL (FM6), TUBULAR, WINE GLASS, GONG (ADD) |
+| 8–11 | Mallets | ROSEWOOD, KALIMBA, STEEL PAN, LOG DRUM (ADD, struck) |
+| 12–15 | Strings | NYLON, HARP, KOTO, BOWED (STRING) |
+| 16–19 | Textures | EBOW, SHOEGAZE, FEEDBACK (STRING), FM STRINGS (FM6) |
+| 20–23 | Voices | CHOIR AAH, OOH PAD, TALK BOX, SINGER EN (VOICE) |
+| 24–27 | Pads | DEEP CHORD, ATMOS GLOW (DUB), JUNO PAD (ANALOG), SING BOWL (ADD) |
+| 28–31 | Nature | RAIN, SEA (NOISE), CMOS BIRD, CRICKET (ANIMAL) |
+
+SAVE > START with STYLE VOICES builds a loop from them: a mallet line, held chords on a pad or a choir, a bell's
+motif, and with ELEMENTS ALL a sub bass and the drums under them.

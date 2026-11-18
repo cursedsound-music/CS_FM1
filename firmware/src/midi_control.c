@@ -97,6 +97,14 @@ static int midi_local_held(const track_t *t, uint32_t note)
     return 0;
 }
 
+/* (0.19.0) midi_held: the tracks holding MIDI notes now (voice.c's HOLD) */
+static void midi_held_upd(void)
+{
+    uint32_t i, m = 0;
+    for (i = 0; i < NPART; i++)
+        m |= (midi_owners[i] != 0u) << i;
+    midi_held = (uint8_t)m;
+}
 static void midi_release(uint32_t ch, uint32_t note)
 {
     uint32_t id = mn_get(ch, note) & 0x7u;
@@ -112,6 +120,7 @@ static void midi_release(uint32_t ch, uint32_t note)
             input_off(&trk[id - 1u], drum_oct_base(note));
     } else if (id && !midi_local_held(&trk[id - 1u], note))
         input_off(&trk[id - 1u], note);           /* input_off also checks other MIDI owners */
+    midi_held_upd();
 }
 
 /* (cursed-os 0.18.4) a free entry in the held notes' table before a note-on: full (MN_MAX held at once, with a pedal),
@@ -139,12 +148,62 @@ static void midi_play(track_t *t, uint32_t ch, uint32_t note, uint32_t vel)
         input_on(t, note, vel);
 }
 
+/* (cursed-os 0.19.0) a PROGRAM CHANGE and the notes right after it (a Syntakt's PRG locked on a trig sends it before
+ * the trig's notes): the sound is loaded by the UI between frames (ui.c midi_pc_poll), so a note of that track waits
+ * here until it is (midi_pc_busy back at 0), at most PARK_MAX blocks, then plays the new sound and not the old one. Its
+ * note-off before then: it never sounds. events_block plays them (midi_park_poll) */
+#define PARK_N 8u
+#define PARK_MAX (FS / CTL / 10u)                         /* (~100 ms: the UI stuck on a flash write, played anyway) */
+static volatile uint8_t midi_pc_busy[NTRK];
+static struct { uint8_t ch, note, vel, trk; uint32_t at; } midi_pk[PARK_N];
+static uint8_t midi_park_n;
+static uint32_t midi_park_clk;                            /* (blocks: events_block counts them) */
+static void midi_note_event(uint32_t ch, uint32_t note, uint32_t vel);
+static int midi_park(uint32_t ch, uint32_t note, uint32_t vel)
+{
+    uint32_t i, ti = trk_index(midi_track(ch)) % NTRK;
+    for (i = 0; i < midi_park_n; i++)                     /* (its note-off: never sounds; struck again: once) */
+        if (midi_pk[i].ch == ch && midi_pk[i].note == note) {
+            if (vel) { midi_pk[i].vel = (uint8_t)vel; return 1; }
+            midi_pk[i] = midi_pk[--midi_park_n];
+            return 1;
+        }
+    if (!vel || !midi_pc_busy[ti] || midi_park_n >= PARK_N)
+        return 0;
+    midi_pk[midi_park_n].ch = (uint8_t)ch;
+    midi_pk[midi_park_n].note = (uint8_t)note;
+    midi_pk[midi_park_n].vel = (uint8_t)vel;
+    midi_pk[midi_park_n].trk = (uint8_t)ti;
+    midi_pk[midi_park_n++].at = midi_park_clk;
+    return 1;
+}
+static __attribute__((noinline)) void midi_park_poll(void)
+{
+    uint32_t i = 0;
+    while (i < midi_park_n) {
+        if (midi_pc_busy[midi_pk[i].trk] && midi_park_clk - midi_pk[i].at < PARK_MAX) { i++; continue; }
+        midi_pc_busy[midi_pk[i].trk] = 0;              /* (waited too long: played as it is) */
+        {
+            uint32_t ch = midi_pk[i].ch, note = midi_pk[i].note, vel = midi_pk[i].vel;
+            midi_pk[i] = midi_pk[--midi_park_n];
+            midi_note_event(ch, note, vel);
+        }
+    }
+}
+
 static void midi_note_event(uint32_t ch, uint32_t note, uint32_t vel)
 {
     midi_channel_t *c = midi_channel(ch);
     uint32_t id = mn_get(ch, note) & 0x7u;
+    if (midi_park_n || (vel && midi_pc_busy[trk_index(midi_track(ch)) % NTRK]))
+        if (midi_park(ch, note, vel)) return;
     if (vel) {
         track_t *t = midi_track(ch);
+        if (!((midi_live >> trk_index(t)) & 1u)) {     /* (0.19.0) this track's MIDI from here; FOLLOW: its own
+                                                         * pattern quiet (seq.c seq_step), its note now let go */
+            midi_live = (uint8_t)(midi_live | 1u << trk_index(t));
+            if (cos_st2 & ST2_FOLLOW) seq_release(t);
+        }
         /* Repeated notes replace the previous press, including a pedal-held one. */
         if (id)
             midi_release(ch, note);
@@ -157,6 +216,7 @@ static void midi_note_event(uint32_t ch, uint32_t note, uint32_t vel)
         mn_set(ch, note, (uint8_t)(trk_index(t) + 1u));
         midi_owners[trk_index(t)]++;
         c->owned[trk_index(t)]++;
+        midi_held_upd();
     } else if (id) {
         if (c->pedal && !drum_track(&trk[id - 1u]))
             mn_set(ch, note, mn_get(ch, note) | MIDI_PEDAL_NOTE);
@@ -190,6 +250,7 @@ static void __attribute__((noinline)) midi_forget_track(uint32_t track)
     }
     midi_owners[track] = 0;
     midi_bend_q8[track] = midi_bend_target[track] = 0;
+    midi_held_upd();
 }
 
 static void midi_silence_track(uint32_t track)
@@ -235,15 +296,7 @@ static const uint8_t MIDI_CC_MAP[][2] = {
     {16, P_E0}, {17, P_E1}, {18, P_E2}, {19, P_E3}, {20, P_E4}, {21, P_E5}, {22, P_E6}, {23, P_E7},
     {102, P_FCUT}, {103, P_FRES}, {104, P_DIST}, {105, P_SUS},
 };
-/* per engine (ENGINES[] order): CC74's E index + 1 in the high nibble, CC71's in the low one, 0 = none */
-static const uint8_t MIDI_CC_ENG[NENGINES] = {
-    0x56, 0x00, 0x30, 0x80, 0x50, 0x07, 0x36, 0x00,   /* (0.15.0: 6 DUB COLOR RES) */   /* ANALOG CUT RES, -, PHASE DCW, LOFI TONE, SAMPLE CUT, VOICE Q,
-                                                       * TRIO CUT RES, WHEEL - */
-    0x32, 0x30, 0x30, 0x34, 0x30,                     /* (snd5) STRING BRIGHT DECAY, PHYS BRIT, DRUM TONE, NOISE FREQ RES, FM6 MLVL */
-    0x26,                                             /* (snd5) ADD BRIGHT FORMNT */
-    0x23,                                             /* ANIMAL PRESS (TOUCH CLICK BUZZ MOUTH), CHAOS (COUPLE Q DRIFT ROUGH) */
-    0x12,                                             /* (cursed-os) ACID CUTOFF RESO */
-};
+/* (MIDI_CC_ENG: mod.c, 0.19.0) */
 /* a CC's value 0..127 over parameter id's range of track t, as a knob sets it; AUTOMATION records it */
 static void __attribute__((noinline)) midi_cc_set(track_t *t, uint32_t id, uint32_t value)
 {
@@ -534,6 +587,9 @@ static void __attribute__((noinline)) midi_event(uint32_t st, uint32_t ch, uint3
         midi_control(ch, d1, d2);
     } else if (st == 0xD0u)
         mod_midi(midi_track(ch), st, d1, d2);
-    else if (st == 0xC0u)                          /* (0.6.72) PROGRAM CHANGE: the UI loads it (ui.c midi_pc_poll) */
-        midi_pc_req[trk_index(midi_track(ch)) % NTRK] = (uint8_t)(d1 + 1u);
+    else if (st == 0xC0u) {                        /* (0.6.72) PROGRAM CHANGE: the UI loads it (ui.c midi_pc_poll) */
+        uint32_t ti = trk_index(midi_track(ch)) % NTRK;
+        midi_pc_req[ti] = (uint8_t)(d1 + 1u);
+        midi_pc_busy[ti] = 1;                          /* (0.19.0) its notes wait for the sound (midi_park) */
+    }
 }

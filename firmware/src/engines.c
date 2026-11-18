@@ -117,6 +117,36 @@ static const uint8_t ENGINE_PC_ORDER[NENG_SHOWN] = {
     ENGI_DUB,                    /* (cursed-os 0.15.0) */
 };
 
+/* (cursed-os 0.19.0, GG: "a true extra voice for syntakt ... sounds that we cant do on syntakt") the VOICE SET: the
+ * sounds a Syntakt has no machine for (more than one note at once, 6-op FM, plucked and bowed strings, struck bodies,
+ * speech and choirs, held chords, nature), eight groups of four. GLO > SYNTAKT 2's PROGRAMS VOICES: PROGRAM CHANGE n
+ * (0..31) on a track's channel loads the n + 1-th (ui.c midi_pc_poll), so a Syntakt MIDI track's PRG picks them and a
+ * PRG lock changes the sound for one trig; SAVE > START's VOICES draws from it (cos.c). By name: a sound's number may
+ * move, its name stays (tests/syntakt_test.c: every one found) */
+static const struct { uint8_t e; const char *name; } VOICE_SET[] = {
+    {ENGI_FM6, "TINE EP"}, {ENGI_FM6, "DX KEYS"}, {ENGI_STRING, "PIANO"}, {ENGI_WHEEL, "GOSPEL"},             /* 1-4 KEYS */
+    {ENGI_FM6, "ICE BELL"}, {ENGI_ADD, "TUBULAR"}, {ENGI_ADD, "WINE GLASS"}, {ENGI_ADD, "GONG"},             /* 5-8 BELLS */
+    {ENGI_ADD, "ROSEWOOD"}, {ENGI_ADD, "KALIMBA"}, {ENGI_ADD, "STEEL PAN"}, {ENGI_ADD, "LOG DRUM"},         /* 9-12 MALLETS */
+    {ENGI_STRING, "NYLON"}, {ENGI_STRING, "HARP"}, {ENGI_STRING, "KOTO"}, {ENGI_STRING, "BOWED"},           /* 13-16 STRINGS */
+    {ENGI_STRING, "EBOW"}, {ENGI_STRING, "SHOEGAZE"}, {ENGI_STRING, "FEEDBACK"}, {ENGI_FM6, "FM STRINGS"},  /* 17-20 TEXTURES */
+    {ENGI_VOICE, "CHOIR AAH"}, {ENGI_VOICE, "OOH PAD"}, {ENGI_VOICE, "TALK BOX"}, {ENGI_VOICE, "SINGER EN"}, /* 21-24 VOICES */
+    {ENGI_DUB, "DEEP CHORD"}, {ENGI_DUB, "ATMOS GLOW"}, {ENGI_ANALOG, "JUNO PAD"}, {ENGI_ADD, "SING BOWL"},  /* 25-28 PADS */
+    {ENGI_NOISE, "RAIN"}, {ENGI_NOISE, "SEA"}, {ENGI_ANIMAL, "CMOS BIRD"}, {ENGI_ANIMAL, "CRICKET"},        /* 29-32 NATURE */
+};
+#define NVOICE_SET (sizeof VOICE_SET / sizeof VOICE_SET[0])
+/* the VOICE SET's n-th sound: its engine, *k its preset; NENGINES none (past the set, a name not found) */
+static uint32_t voice_set_at(uint32_t n, uint32_t *k)
+{
+    const engine_t *en;
+    uint32_t i;
+    if (n >= NVOICE_SET) return NENGINES;
+    en = ENGINES[VOICE_SET[n].e];
+    for (i = 0; i < en->npresets && !str_eq(en->presets[i].name, VOICE_SET[n].name); i++) {}
+    if (i == en->npresets) return NENGINES;
+    *k = i;
+    return VOICE_SET[n].e;
+}
+
 /* the engines one can pick (engine 1 only with FELUCCA_FM4), in ENGINE_ORDER: eng_ok(e), the n-th of them
  * eng_vis(n), e's place among them eng_rank(e), the next / previous one eng_step(e, dir) (wraps) */
 static int eng_ok(uint32_t e) { return e < NENGINES && (FELUCCA_FM4 || e != ENGI_DIGITAL) && !eng_gone(e); }

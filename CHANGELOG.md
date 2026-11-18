@@ -2,6 +2,25 @@
 
 cursed os versions, newest first. The full detail of each one is in the git history (`git log`).
 
+## 0.19.0
+
+The FM-1 as an extra voice for an Elektron Syntakt, with sounds the Syntakt has no machine for.
+
+- MODAL: struck sounds in the ADD engine (new modes MARIMBA, KALIMBA, STEEL, TUBE, LOG, GLASS). Each mode rings out as
+  its material damps it, the mallet hit is heard, and velocity makes it harder and brighter. Eight new presets:
+  ROSEWOOD, KALIMBA, STEEL PAN, TUBULAR, LOG DRUM, WINE GLASS, SING BOWL, GAMELAN. ADD's older modes and sounds are
+  unchanged.
+- The voice set: 32 sounds in eight groups (keys, bells, mallets, strings, textures, voices, pads, nature) that a
+  Syntakt MIDI track picks with its program change.
+- GLO > SYNTAKT 2: PROGRAMS (VOICES, ENGINE or LIST), FOLLOW (a track the Syntakt plays goes quiet on its own steps),
+  HOLD (notes the Syntakt holds keep their voices) and TOUCH (velocity and aftertouch open the brightness). Turning
+  SYNTAKT on sets VOICES, FOLLOW, HOLD and TOUCH LOW until you change them.
+- A program change and the note right after it: the note now waits for the new sound to load (up to about 100 ms),
+  so it no longer plays the old sound.
+- SAVE > START: a VOICES style (a mallet line, chords on a pad or a choir, a bell's motif).
+- The guide: the Syntakt MIDI track setup, the CCs the FM-1 follows and the voice set.
+- Saved projects, sounds, kits, favourites and settings from 0.18.x load unchanged.
+
 ## 0.18.5
 
 - cursed os has its own identity, `FM-1_420`, instead of JIANT's `FM-1_909`. Nothing else changes for an install: the update loader and the flash layout are the same, and both

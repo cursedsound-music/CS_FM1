@@ -58,11 +58,12 @@ static void setup(int32_t pi, const int16_t *e)
 }
 
 /* the voices' sum (before the mix) of a held note, n samples after `skip` s */
+static uint32_t vr_vel = 100;                            /* (0.19.0: MODAL's strike by velocity) */
 static void voice_render(uint32_t note, double skip, double *y, uint32_t n)
 {
     static int32_t b[CTL];
     uint32_t i, k, sk = (uint32_t)(skip * FS) / CTL;
-    trk_note_on(&trk[0], note, 100);
+    trk_note_on(&trk[0], note, vr_vel);
     for (i = 0; i < sk; i++)
         track_render(&trk[0], b, CTL);
     for (i = 0; i < n; i += CTL) {
@@ -344,7 +345,7 @@ static void add_partials(void)
     double worst = 0;
     char what[200];
     EG = &ENG_ADD;
-    for (mo = 0; mo < AD_N; mo++) {
+    for (mo = 0; mo < AD_M0; mo++) {                     /* (0.19.0: the modal modes have levels of their own: add_modal) */
         int16_t e[8] = {(int16_t)mo, 0, 96, 127, 0, 0, 127, 0};   /* (flat, held) */
         double f0 = want_hz(36), top = -999, l;
         setup(-1, e);
@@ -408,6 +409,69 @@ static void add_alias(void)
     }
     snprintf(what, sizeof what, "ADD: no alias at the top (WIDE, BRIGHT 127, SHIFT +63, the key C8): %.1f dB below the fundamental", 10 * log10(hi / all + 1e-30));
     check(what, hi / all < 1e-3);
+}
+
+/* (0.19.0) MODAL: the struck modes. Wood damps its high modes far sooner than glass (MARIMBA's 3rd mode against its
+ * 1st, after 0.3 s, against GLASS's); a harder strike wakes the high modes (velocity 127 against 40: the 3rd mode's
+ * level over the 1st); the strike is heard (the first 3 ms carry noise above the modes: LOG's more than GLASS's) and is
+ * gone after 20 ms; every modal mode's partials where its ratios put them */
+static void add_modal(void)
+{
+    /* {MODE, MORPH, BRIGHT, PARTIAL, SHIFT, COMB, DECAY, MOTION} */
+    int16_t mrb[8] = {AD_MRB, 0, 96, 127, 0, 0, 80, 0}, gls[8] = {AD_GLASS, 0, 96, 127, 0, 0, 80, 0};
+    int16_t lg[8] = {AD_LOG, 0, 96, 127, 0, 0, 80, 0};
+    double f0 = want_hz(48), m0, m1, g0, g1, hv, lv, nz[3], tail;
+    static double y[FS / 2];
+    uint32_t i, mo, k;
+    int ratios = 1;
+    char what[300];
+    EG = &ENG_ADD;
+    setup(-1, mrb); voice_render(48, 0.0, Y, NFFT * 2); spectrum(Y, NFFT * 2, PS);
+    m0 = lvl_at(PS, f0 * 9.2) - lvl_at(PS, f0);
+    setup(-1, mrb); voice_render(48, 0.3, Y, NFFT * 2); spectrum(Y, NFFT * 2, PS);
+    m1 = lvl_at(PS, f0 * 9.2) - lvl_at(PS, f0);
+    setup(-1, gls); voice_render(48, 0.0, Y, NFFT * 2); spectrum(Y, NFFT * 2, PS);
+    g0 = lvl_at(PS, f0 * 4.25) - lvl_at(PS, f0);
+    setup(-1, gls); voice_render(48, 0.3, Y, NFFT * 2); spectrum(Y, NFFT * 2, PS);
+    g1 = lvl_at(PS, f0 * 4.25) - lvl_at(PS, f0);
+    vr_vel = 127; setup(-1, mrb); voice_render(48, 0.03, Y, NFFT * 2); spectrum(Y, NFFT * 2, PS);
+    hv = lvl_at(PS, f0 * 3.93) - lvl_at(PS, f0);
+    vr_vel = 40; setup(-1, mrb); voice_render(48, 0.03, Y, NFFT * 2); spectrum(Y, NFFT * 2, PS);
+    lv = lvl_at(PS, f0 * 3.93) - lvl_at(PS, f0);
+    vr_vel = 100;
+    {                                                    /* the strike: the first 3 ms, what is above the modes (a
+                                                         * first difference: the modes low at C3, the noise broad) */
+        const int16_t *E[3] = {lg, gls, mrb};
+        for (k = 0; k < 3u; k++) {
+            double d = 0;
+            setup(-1, E[k]);
+            voice_render(36, 0.0, y, FS / 2);
+            for (i = 1; i < FS * 3 / 1000; i++) d += (y[i] - y[i - 1]) * (y[i] - y[i - 1]);
+            nz[k] = d;
+        }
+        setup(-1, mrb);                                  /* .. 20 ms on: its envelope at 0 (MARIMBA's) */
+        voice_render(36, 0.0, y, FS / 50);
+        tail = drw_v[drw_part(&trk[0])][0].clk;
+    }
+    for (mo = AD_M0; mo < AD_N; mo++) {                  /* the modes where the ratios put them: each a peak */
+        int16_t e[8] = {(int16_t)mo, 0, 127, 127, 0, 0, 127, 0};
+        double f = want_hz(36), top = -999;
+        setup(-1, e);
+        trk[0].v[0].vel = 0;
+        voice_render(36, 0.05, Y, NFFT * 2);
+        spectrum(Y, NFFT * 2, PS);
+        for (k = 0; k < 3u; k++) {                       /* (the three strongest-weighted: always well above the floor) */
+            double l = lvl_at(PS, f * ADD_RATIO[mo][k] / 1024.0);
+            if (l > top) top = l;
+        }
+        for (k = 0; k < 3u; k++)
+            if (ADD_MW[mo - AD_M0][k] >= 100u && f * ADD_RATIO[mo][k] / 1024.0 < 19000)
+                ratios &= lvl_at(PS, f * ADD_RATIO[mo][k] / 1024.0) > top - 24;
+    }
+    snprintf(what, sizeof what, "ADD MODAL: wood's 3rd mode %+.0f -> %+.0f dB in 0.3 s, glass's %+.0f -> %+.0f; velocity 127 / 40: "
+             "the 2nd %+.0f / %+.0f dB; the strike LOG %.2g GLASS %.2g, gone at 20 ms (envelope %.0f); the modes at their ratios",
+             m0, m1, g0, g1, hv, lv, nz[0], nz[1], tail);
+    check(what, m0 - m1 > (g0 - g1) + 10 && hv > lv + 4 && nz[0] > nz[1] * 2 && tail == 0 && nz[2] > nz[1] && ratios);
 }
 
 /* -------------------------------------------------------- every preset --- */
@@ -517,6 +581,7 @@ int main(int argc, char **argv)
     add_partials();
     add_shape();
     add_alias();
+    add_modal();
     presets(&ENG_STRING);
     presets(&ENG_ADD);
     corners(&ENG_STRING);

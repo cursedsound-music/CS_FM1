@@ -54,13 +54,15 @@ enum { CC_OUTCH, CC_MOUT, CC_CLOCK, CC_SLOT, CC_TRKS, CC_LOAD, CC_COMP, CC_CATK,
        CC_DPAN, CC_DCHN,                                 /* (0.14.1) EDIT > SOUND on a kit: the drum's PAN, CHANCE */
        CC_STON, CC_STPAT, CC_STLEN,                      /* (0.17.0) GLO > SYNTAKT: ON, PATTERNS, PAT LEN */
        CC_LSAT, CC_QSTY, CC_QDRM,                        /* (0.18.0) GLO > LIMIT's SATURATE; SAVE > START's STYLE, DRUMS */
-       CC_QELM, CC_QBAR };                               /* (0.18.1) START's ELEMENTS, BARS */
-_Static_assert(CC_QBAR < 0xFBu && CC_DCH7 < 0xFBu, "the CK_COS ids fit a page's byte (0xFB..0xFF: BFINE, MUTE Q, BPM, OCTAVE, none)");
+       CC_QELM, CC_QBAR,                                 /* (0.18.1) START's ELEMENTS, BARS */
+       CC_STPC, CC_STFOL, CC_STHLD, CC_STTCH };          /* (0.19.0) GLO > SYNTAKT 2: PROGRAMS, FOLLOW, HOLD, TOUCH */
+_Static_assert(CC_STTCH < 0xFBu && CC_DCH7 < 0xFBu, "the CK_COS ids fit a page's byte (0xFB..0xFF: BFINE, MUTE Q, BPM, OCTAVE, none)");
 _Static_assert(X2_N <= 16u, "CC_X2 .. CC_X2E: room for every trk_x2 field");
 static void cos_syntakt(uint32_t id, int32_t v);    /* (0.17.0) GLO > SYNTAKT's knobs */
+static void cos_syntakt2(uint32_t id, int32_t v);   /* (0.19.0) GLO > SYNTAKT 2's */
 /* (0.18.0, GG: "quick starts") SAVE > START: a jam ready in one press (cos_qs_load) */
-enum { QS_HYPNO, QS_ACID, QS_DUB, QS_BLEEPS, QS_RAND, QS_N };   /* (0.18.2: RANDOM) */
-static const char *const QS_NAME[QS_N + 1u] = {"HYPNOTIC", "ACID", "DUB TECHNO", "BLEEPS", "RAND", 0};   /* (RAND: the knob shows five letters) */
+enum { QS_HYPNO, QS_ACID, QS_DUB, QS_BLEEPS, QS_VOICES, QS_RAND, QS_N };   /* (0.18.2: RANDOM; 0.19.0: VOICES) */
+static const char *const QS_NAME[QS_N + 1u] = {"HYPNOTIC", "ACID", "DUB TECHNO", "BLEEPS", "VOICES", "RAND", 0};   /* (RAND: the knob shows five letters) */
 static const char *const QS_DRN[4] = {"FULL", "PERC", "NONE", 0};
 static uint8_t qs_sty, qs_drm;                          /* (qs_drm: 0 the default, else DRUMS + 1) */
 static uint8_t qs_elm, qs_bar = 2;                      /* (0.18.1) ELEMENTS: 0 ALL, 1 PICKED; BARS: 1 2 4 (0 .. 2) */
@@ -177,7 +179,7 @@ static const cpg_t CZP_AMPA[] = {{"AMP", CK_TRK, {P_ATK, P_DEC, P_SUS, P_REL}},
 static const cpg_t CZP_DRUMS[] = {{"ROLL", CK_COS, {CC_RRATE, CC_RRAMP, CC_RVEL, X}},   /* (0.13.0) LFO: DRUMS (cos_drm.c) */
                                  {"CHANCE", CK_COS, {CC_DCH0, CC_DCH0 + 1u, CC_DCH0 + 2u, CC_DCH0 + 3u}},
                                  {"CHANCE 2", CK_COS, {CC_DCH0 + 4u, CC_DCH0 + 5u, CC_DCH0 + 6u, CC_DCH7}}};
-#define CZ_TABS 16u                                 /* (the most pages a mode may have: cos_tabs's names) */
+#define CZ_TABS 18u                                 /* (the most pages a mode may have: cos_tabs's names) */
 static const cpg_t CZP_FX[] = {{"DJ", CK_COS, {CC_DJF, CC_EQL, CC_EQM, CC_EQH}},   /* (the mixer's: DJ FILTER, the ISOLATOR) */
                               {"SEND", CK_TRK, {P_DIST, P_CHOR, P_DLY, P_REV}}, {"DIST", CK_TRK, {P_DTYPE, P_DTONE, X, X}},
                               {"DELAY", CK_GLO, {G_DTIME, G_DFDBK, G_DCOLOR, G_DPING}},    /* (the buses: every track's) */
@@ -220,6 +222,8 @@ static const cpg_t CZP_MIX[] = {{"MIX", CK_TRK, {P_LEVEL, P_PAN, P_GLIDE, P_MUTE
                                                          * only; the track's SOUND: here or another instrument's (EXT) */
                                {"SYNTAKT", CK_COS, {CC_STON, CC_STPAT, CC_STLEN, CC_LVL}},   /* (0.17.0) one knob: follow it;
                                                          * 0.18.0: K4 the leveler, off with it (PC CH on LINK) */
+                               {"SYNTAKT 2", CK_COS, {CC_STPC, CC_STFOL, CC_STHLD, CC_STTCH}},   /* (0.19.0) the FM-1 as
+                                                         * the Syntakt's MIDI tracks' voice */
                                {"LINK", CK_COS, {CC_PCCH, CC_PCOUT, CC_VJCH, X}},   /* (a Syntakt's patterns: the sections) */
                                {"LINK 2", CK_COS, {CC_MCCH, CC_MCDIR, CC_MCMAP, CC_MOCC}},   /* (the macros and MORPH as CCs, both
                                                          * ways) */
@@ -290,9 +294,9 @@ static int cos_dead(const track_t *t, uint32_t id);      /* (below: a parameter 
 static void cos_pages(uint32_t m, const cpg_t **p, uint32_t *n)
 {
     static const cpg_t *const P[CM_N] = {CZP_HOME, CZP_TRIG, CZP_SRC, CZP_AMP, CZP_DRUMS, CZP_FX, CZP_GENA, CZP_MIX, CZP_KEY, CZP_PROJ};
-    static const uint8_t N[CM_N] = {7, 5, 9, 9, 3, 9, 4, 16, 1, 4};   /* (each at most CZ_TABS: cos_tabs) */
+    static const uint8_t N[CM_N] = {7, 5, 9, 9, 3, 9, 4, 17, 1, 4};   /* (each at most CZ_TABS: cos_tabs) */
     _Static_assert(NELEM(CZP_HOME) == 7 && NELEM(CZP_TRIG) == 5 && NELEM(CZP_SRC) == 9 && NELEM(CZP_AMP) == 9 &&
-                   NELEM(CZP_DRUMS) == 3 && NELEM(CZP_FX) == 9 && NELEM(CZP_GENA) == 4 && NELEM(CZP_MIX) == 16 &&
+                   NELEM(CZP_DRUMS) == 3 && NELEM(CZP_FX) == 9 && NELEM(CZP_GENA) == 4 && NELEM(CZP_MIX) == 17 &&
                    NELEM(CZP_KEY) == 1 && NELEM(CZP_PROJ) == 4 && NELEM(CZP_SRCD) <= CZ_TABS && NELEM(CZP_GENS) <= CZ_TABS &&
                    NELEM(CZP_SRCV) == 10 && NELEM(CZP_AMPA) == 9 && NELEM(CZP_SRCN) == 9,
                    "N: the pages each mode has (0.9.2: a count past its list read past it)");
@@ -340,7 +344,7 @@ static const char *const CZ_ESS[CM_N] = {
     "AMP|FILTER 1|LFO 1",                               /* ENV */
     "", "SEND|DELAY|REVERB",                            /* LFO: DRUMS (3), FX */
     "ACID|DUB|BLEEP|EUCLID|KICK",                       /* GEN: each generator's first */
-    "MIX|LIMIT|SYNTAKT", "", "PROJECT|SOUNDS|KITS|START"};   /* GLO (0.17.0: SYNTAKT); KEY; SAVE (0.18.0: all four) */
+    "MIX|LIMIT|SYNTAKT|SYNTAKT 2", "", "PROJECT|SOUNDS|KITS|START"};   /* GLO (0.17.0: SYNTAKT; 0.19.0: 2); KEY; SAVE (0.18.0: all four) */
 static int cos_ess(uint32_t m, const cpg_t *p, uint32_t i, uint32_t n)
 {
     const char *l = CZ_ESS[m % CM_N], *t = p[i].tab;
@@ -862,6 +866,17 @@ static const param_desc_t *cos_cdesc(uint32_t id, int16_t **vp)
         *vp = &cz.cc_v[3];
         return id >= CC_QELM ? &DE[id - CC_QELM] : &DS[id - CC_QSTY];
     }
+    if (id >= CC_STPC && id <= CC_STTCH) {               /* (0.19.0) GLO > SYNTAKT 2 */
+        static const char *const PG[] = {"LIST", "VOICES", "ENGINE", 0}, *const OO[] = {"OFF", "ON", 0},
+                                 *const TC[] = {"OFF", "LOW", "MID", "HIGH", 0};
+        static const param_desc_t DS[4] = {{"PROGRAMS", F_ENUM, 0, 2, 0, PG, 0}, {"FOLLOW", F_ENUM, 0, 1, 0, OO, 0},
+                                           {"HOLD", F_ENUM, 0, 1, 0, OO, 0}, {"TOUCH", F_ENUM, 0, 3, 0, TC, 0}};
+        uint32_t b = cos_st2;
+        cz.cc_v[3] = (int16_t)(id == CC_STPC ? ST2_PC(b) % 3u : id == CC_STFOL ? !!(b & ST2_FOLLOW)
+                               : id == CC_STHLD ? !!(b & ST2_HOLD) : ST2_TOUCH(b));
+        *vp = &cz.cc_v[3];
+        return &DS[id - CC_STPC];
+    }
     if (id >= CC_STON && id <= CC_STLEN) {               /* (0.17.0) GLO > SYNTAKT */
         static const char *const OO[] = {"OFF", "ON", 0}, *const PF[] = {"OFF", "ON", 0},
                                  *const PL[] = {"1", "2", "4", "8", "16", 0};
@@ -1181,6 +1196,8 @@ static void cos_cput(uint32_t id, int32_t v)
         settings_save();
     } else if (id >= CC_STON && id <= CC_STLEN) {
         cos_syntakt(id, v);                              /* (0.17.0) GLO > SYNTAKT */
+    } else if (id >= CC_STPC && id <= CC_STTCH) {
+        cos_syntakt2(id, v);                             /* (0.19.0) GLO > SYNTAKT 2 */
     } else if (id == CC_LSAT) {
         favorites.factory[8][23] = (uint8_t)(v <= 0 ? 14 : v == 1 ? 0 : clamp(v, 2, 13));   /* (0.18.1: OFF 14, 0 dB 0) */
         cz.set_ms = fm1_ms;
@@ -2176,6 +2193,12 @@ static void qs_sound_i(uint32_t k, uint32_t e, uint32_t pr)
     apply_preset_to(&trk[k], pr);
     trk[k].p[P_MUTE] = 0;
 }
+/* (0.19.0) track k: the VOICE SET's n-th sound (engines.c), its steps kept */
+static void qs_voice(uint32_t k, uint32_t n)
+{
+    uint32_t pr = 0, e = voice_set_at(n, &pr);
+    if (e < NENGINES) qs_sound_i(k, e, pr);
+}
 /* a random part on track k: 0 acid, 1 sub bass, 2 stabs, 3 atmosphere, 4 bleep */
 static void qs_rand_part(uint32_t k, uint32_t role, uint32_t bars)
 {
@@ -2210,9 +2233,9 @@ static __attribute__((noinline)) void cos_qs_load(void)
 {
     uint32_t k, sel = song.sel % NTRK, st = qs_sty % QS_N, dm = qs_drm_get(), gi, all = !qs_elm, bars = qs_bar % 3u;
     uint32_t kp = qs_keep;
-    static const char *const GN[QS_N] = {"HYPNOTIC", "TECHNO", "DUB TECHNO", "HYPNOTIC", ""};
-    static const char *const BL[QS_N] = {"SONAR PING", "R2 BLIPS", "GLASS PING", "WATER DROP", ""};
-    static const uint8_t BM[QS_N] = {2, 1, 3, 2, 2};
+    static const char *const GN[QS_N] = {"HYPNOTIC", "TECHNO", "DUB TECHNO", "HYPNOTIC", "DUB TECHNO", ""};
+    static const char *const BL[QS_N] = {"SONAR PING", "R2 BLIPS", "GLASS PING", "WATER DROP", "GLASS PING", ""};
+    static const uint8_t BM[QS_N] = {2, 1, 3, 2, 3, 2};
     if (chain_busy()) { cos_say("STOP THE SONG FIRST"); return; }
     if ((kp & ((1u << NTRK) - 1u)) == (1u << NTRK) - 1u) { cos_say("ALL TRACKS KEPT"); return; }
     undo_mark();
@@ -2260,6 +2283,14 @@ static __attribute__((noinline)) void cos_qs_load(void)
         if (!((kp >> 3) & 1u)) { qs_rand_part(3, r4, bars); if (m & 2u) trk[3].p[P_MUTE] = 1; }
         if (!((kp >> 4) & 1u)) { qs_rand_part(4, r5, bars); if ((m & 4u) && m != 7u) trk[4].p[P_MUTE] = 1; }
         if (!((kp >> 5) & 1u)) qs_rand_part(5, 4, bars);
+    } else if (st == QS_VOICES) {                        /* (0.19.0) the VOICE SET's sounds, what a Syntakt has none of:
+                                                         * T3 a sub bass (ALL), T4 a mallet's line, T5 held chords on a
+                                                         * pad or a choir, T6 a bell's or a pluck's motif; each drawn */
+        static const uint8_t PADS[8] = {24, 25, 26, 27, 20, 21, 19, 15}, BELLS[7] = {4, 5, 6, 9, 10, 13, 14};
+        if (!((kp >> 2) & 1u) && all) qs_line(2, 1, 30, 36u, bars);
+        if (!((kp >> 3) & 1u)) { qs_line(3, 1, 38 + (int32_t)qs_r(25), 55u, bars); qs_voice(3, 8u + qs_r(4)); }
+        if (!((kp >> 4) & 1u)) { qs_chords(4, 1, bars); qs_voice(4, PADS[qs_r(8)]); }
+        if (!((kp >> 5) & 1u)) { qs_bleep(5, BL[st], 1 + (int32_t)qs_r(4)); qs_voice(5, BELLS[qs_r(7)]); }
     } else {
         if (!((kp >> 2) & 1u)) {
             if (st == QS_HYPNO || st == QS_ACID) qs_line(2, 0, st == QS_ACID ? 78 : 50, all ? 48u : 40u, bars);
@@ -4234,10 +4265,10 @@ static void cos_body_link2(void)
 /* (0.18.0) SAVE > START: what the STYLE puts on the tracks, how to load it */
 static void cos_body_start(void)
 {
-    static const char *const A1[QS_N] = {"T3 ACID  T4 SUB BASS", "T3 ACID  T4 SUB BASS", "T3 SUB BASS  T4 STABS", "T3 SUB BASS  T4 WOOD 3", "EVERY PART DRAWN:"};
-    static const char *const A2[QS_N] = {"T5 ATMOS  T6 SONAR 5", "T5 STABS  T6 R2 BLIPS 3", "T5 ATMOS  T6 GLASS 6", "T5 ATMOS  T6 DROP 5", "ROLES, SOUNDS, MOTIFS"};
-    static const char *const P1[QS_N] = {"T3 ACID ROLLING", "T3 ACID BUSY", "T4 DUB STABS", "T4 WOOD 3-STEP", "EVERY PART DRAWN,"};
-    static const char *const P2[QS_N] = {"T5 ATMOS, T6 SONAR 5", "T6 R2 BLIPS 3-STEP", "T5 ATMOS, T6 GLASS 6", "T5 ATMOS, T6 DROP 5", "SOME OF T3..T5 OUT"};
+    static const char *const A1[QS_N] = {"T3 ACID  T4 SUB BASS", "T3 ACID  T4 SUB BASS", "T3 SUB BASS  T4 STABS", "T3 SUB BASS  T4 WOOD 3", "T3 SUB BASS  T4 MALLET", "EVERY PART DRAWN:"};
+    static const char *const A2[QS_N] = {"T5 ATMOS  T6 SONAR 5", "T5 STABS  T6 R2 BLIPS 3", "T5 ATMOS  T6 GLASS 6", "T5 ATMOS  T6 DROP 5", "T5 PAD / CHOIR  T6 BELL", "ROLES, SOUNDS, MOTIFS"};
+    static const char *const P1[QS_N] = {"T3 ACID ROLLING", "T3 ACID BUSY", "T4 DUB STABS", "T4 WOOD 3-STEP", "T4 MALLET LINE", "EVERY PART DRAWN,"};
+    static const char *const P2[QS_N] = {"T5 ATMOS, T6 SONAR 5", "T6 R2 BLIPS 3-STEP", "T5 ATMOS, T6 GLASS 6", "T5 ATMOS, T6 DROP 5", "T5 PAD, T6 BELL MOTIF", "SOME OF T3..T5 OUT"};
     static const char *const DR[3] = {"T1 KIT GROOVE, T2 KICK", "T1 KIT GROOVE (NO KICK)", "NO DRUMS"};
     char b[32];
     uint32_t st = qs_sty % QS_N, k, n = 5;
@@ -4310,6 +4341,9 @@ static void cos_syntakt(uint32_t id, int32_t v)
         if (!cos_pc_ch) { lk[0] = 15; cos_pc_ch = 15; }
         lk[1] = 0; cos_pc_out = 0;
         favorites.factory[6][17] = 1;                    /* (0.18.0) AUTO LV OFF: the Syntakt's compressor after it */
+        if (!(favorites.factory[8][20] & 0x80u))         /* (0.19.0) SYNTAKT 2 never set by hand: VOICES, FOLLOW, HOLD,
+                                                         * TOUCH LOW (an older setting's 0 there: the same once) */
+            favorites.factory[8][20] = cos_st2 = (uint8_t)(1u | ST2_FOLLOW | ST2_HOLD | 1u << 4);
         cos_say("SYNTAKT LEADS");
     } else {
         *st &= (uint8_t)~1u;
@@ -4319,6 +4353,41 @@ static void cos_syntakt(uint32_t id, int32_t v)
         cos_say("OWN CLOCK");
     }
     cz.set_ms = fm1_ms;
+}
+
+/* (0.19.0) GLO > SYNTAKT 2's knobs: PROGRAMS (a PROGRAM CHANGE on a track's channel: LIST every sound, 0.9.8's
+ * numbers, as ever; VOICES the VOICE SET, engines.c; ENGINE the track's engine's sounds), FOLLOW (the MIDI's tracks: their
+ * own steps quiet until STOP), HOLD (the MIDI-held voices kept), TOUCH (velocity and aftertouch: the brightness). Kept:
+ * STRING's row 8, byte 20 (mod.c cos_st2's bits; bit 7: set by hand, SYNTAKT ON leaves it) */
+static void cos_syntakt2(uint32_t id, int32_t v)
+{
+    uint32_t b = cos_st2;
+    if (id == CC_STPC) b = (b & ~3u) | (uint32_t)clamp(v, 0, 2);
+    else if (id == CC_STFOL) b = v ? b | ST2_FOLLOW : b & ~ST2_FOLLOW;
+    else if (id == CC_STHLD) b = v ? b | ST2_HOLD : b & ~ST2_HOLD;
+    else b = (b & ~0x30u) | (uint32_t)clamp(v, 0, 3) << 4;
+    cos_st2 = (uint8_t)(b & 0x3Fu);
+    favorites.factory[8][20] = (uint8_t)(0x80u | cos_st2);
+    cz.set_ms = fm1_ms;
+}
+/* (0.19.0) GLO > SYNTAKT 2: which tracks the MIDI plays now, what each knob does, the Syntakt MIDI track's setup */
+static void cos_body_syntakt2(void)
+{
+    char b[40];
+    uint32_t i, n, pm = ST2_PC(cos_st2), lv = midi_live;
+    str_cpy(b, "MIDI PLAYS:", sizeof b);
+    for (i = 0, n = 11; i < NPART; i++)
+        if ((lv >> i) & 1u) { b[n++] = ' '; b[n++] = 'T'; b[n++] = (char)('1' + i); }
+    b[n] = 0;
+    cos_tx(8, 38, lv ? b : "MIDI PLAYS: NO TRACK YET", lv ? C_FG : C_DIM);
+    cos_tx(8, 50, pm == 1u ? "PRG: THE VOICE SET (32)" : pm == 2u ? "PRG: THE TRACK'S ENGINE" : "PRG: EVERY SOUND, LISTED",
+           C_MID);
+    cos_tx(8, 62, cos_st2 & ST2_FOLLOW ? "FOLLOW: OWN STEPS QUIET" : "FOLLOW OFF: BOTH PLAY", C_DIM);
+    cos_tx(8, 74, cos_st2 & ST2_HOLD ? "HOLD: MIDI NOTES KEEP VOICES" : "HOLD OFF: VOICES SHARED", C_DIM);
+    cos_tx(8, 86, ST2_TOUCH(cos_st2) ? "TOUCH: VEL + AT -> BRIGHT" : "TOUCH OFF", C_DIM);
+    cos_tx(8, 104, "ON THE SYNTAKT, A MIDI TRACK:", C_FG);
+    cos_tx(8, 116, "CHAN 1-6 = FM-1 TRACK 1-6", C_DIM);
+    cos_tx(8, 128, "PROG = SOUND, CC 16-19 = E1-4", C_DIM);
 }
 
 /* GLO > LINK: what the PROGRAM CHANGEs do */
@@ -4407,6 +4476,7 @@ static void cos_scene(void)
         else if (pg->kind == CK_COS && pg->id[0] == CC_LIN) cos_body_lim();
         else if (pg->kind == CK_COS && pg->id[0] == CC_PCCH) cos_body_link();
         else if (pg->kind == CK_COS && pg->id[0] == CC_STON) cos_body_syntakt();   /* (0.17.0) */
+        else if (pg->kind == CK_COS && pg->id[0] == CC_STPC) cos_body_syntakt2();  /* (0.19.0) */
         else if (pg->kind == CK_COS && pg->id[0] == CC_QSTY) cos_body_start();     /* (0.18.0) */
         else if (pg->kind == CK_COS && (pg->id[0] == CC_MCCH || pg->id[0] == CC_MC0)) cos_body_link2();
         else if (pg->kind == CK_COS && pg->id[0] == CC_CTLM) cos_body_ctl();   /* (0.13.0) */
@@ -4434,7 +4504,7 @@ dials:
 /* the splash (ui_draw.c draw_splash / splash_write under COS_SLIM; main.c's boot loop calls it every ~4 ms for
  * SPL_WRITE + SPL_HOLD ms): black, a few still stars, the name 2x, the version, a 16-block bar filling like a pattern
  * (the block being filled red), READY. Drawn whole once, then only the bar's strip when a block fills */
-#define COS_VERSION "0.18.5"
+#define COS_VERSION "0.19.0"
 static void cos_px2(int32_t x, int32_t y, const char *s, uint16_t c)      /* (the face 2 x 2) */
 {
     int32_t r, b, b0;

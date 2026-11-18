@@ -1838,12 +1838,18 @@ static void midi_pc_poll(void)
     }
     for (i = 0; i < NTRK; i++)
         if (midi_pc_req[i]) {
-            uint32_t n = midi_pc_req[i] - 1u, all, k, e;
+            uint32_t n = midi_pc_req[i] - 1u, all, k = 0, e = NENGINES + 1u, pm = ST2_PC(cos_st2);
             midi_pc_req[i] = 0;
             song.sel = (uint8_t)i;
             preset_all_pos(&all);
-            if (n < all) {
+            if (pm == 1u)                              /* (cursed-os 0.19.0) PROGRAMS VOICES: the VOICE SET's n + 1-th */
+                e = voice_set_at(n, &k);
+            else if (pm == 2u) {                       /* .. ENGINE: the track's engine's n + 1-th sound (shown order) */
+                uint32_t te = trk_eng(TSEL);
+                if (n < preset_shown(te)) { e = te; k = preset_nth(ENGINES[te], n); }
+            } else if (n < all)
                 e = preset_all_at_in(n, &k, ENGINE_PC_ORDER);   /* (0.9.9: 0.9.8's numbers) */
+            if (e < NENGINES || (e == NENGINES && pm == 0u)) {
                 if (e == NENGINES) {
                     up_load(k);
                 } else {
@@ -1854,6 +1860,8 @@ static void midi_pc_poll(void)
                 ui.force = 1;
             }
             song.sel = (uint8_t)sel;
+            RING_PUBLISH();
+            midi_pc_busy[i] = 0;                       /* (0.19.0) the sound in: its waiting notes play (midi_park) */
         }
 }
 

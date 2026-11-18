@@ -70,8 +70,15 @@ int main(void)
         cos_proj_oct(1);
         for (k = 0; k < 4u; k++) frame16();
         for (k = 0; k < NTRK; k++) used += !trk[k].p[P_MUTE];
-        CHECK(!trk[0].p[P_MUTE] && !trk[1].p[P_MUTE] && notes(0) && notes(1) && trk[5].eng_req == ENGI_DUB && notes(5) && used >= 4u,
-              "%s: the kit, the kick, a BLEEP on T6 and more (%u tracks)", QS_NAME[s], used);
+        CHECK(!trk[0].p[P_MUTE] && !trk[1].p[P_MUTE] && notes(0) && notes(1) && (s == QS_VOICES || trk[5].eng_req == ENGI_DUB) &&
+              notes(5) && used >= 4u, "%s: the kit, the kick, a BLEEP on T6 and more (%u tracks)", QS_NAME[s], used);
+        if (s == QS_VOICES) {                            /* (0.19.0) the VOICE SET's: a mallet, a pad, a bell */
+            uint32_t k4 = trk[3].preset, ok = trk[3].eng_req == ENGI_ADD && ENGINES[ENGI_ADD]->presets[k4].e[0] >= AD_M0;
+            CHECK(ok && notes(3) && notes(4) && !trk[4].p[P_MUTE] && trk[2].p[P_MUTE] && trk[5].eng_req != ENGI_DUB,
+                  "VOICES: T4 a struck mallet's line (%s), T5 held chords (%s), T6 a bell's motif (%s), T3 muted",
+                  ENGINES[ENGI_ADD]->presets[k4].name, ENGINES[trk[4].eng_req]->presets[trk[4].preset].name,
+                  ENGINES[trk[5].eng_req]->presets[trk[5].preset].name);
+        }
         if (s == QS_ACID) CHECK(trk[2].eng_req == ENGI_ACID && notes(2) && trk[4].p[P_MUTE], "ACID: T3 an acid line, T5 muted");
         if (s == QS_DUB) CHECK(!trk[3].p[P_MUTE] && notes(3) && !trk[4].p[P_MUTE] && trk[2].p[P_MUTE], "DUB TECHNO: T4 stabs, T5 the atmosphere, T3 muted");
         if (s == QS_BLEEPS) CHECK(trk[3].eng_req == ENGI_DUB && trk[3].p[P_SLEN] == 3 && trk[5].p[P_SLEN] == 5, "BLEEPS: a 3-step and a 5-step motif across each other");

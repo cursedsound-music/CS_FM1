@@ -2243,6 +2243,7 @@ static __attribute__((noinline)) void ui_polls(void)
             static const uint8_t PL[5] = {1, 2, 4, 8, 16};
             uint8_t st = favorites.factory[8][31];
             cos_pc_bars = PL[(st >> 1) % 5u];
+            cos_st2 = (uint8_t)(favorites.factory[8][20] & 0x3Fu);   /* (0.19.0) GLO > SYNTAKT 2 */
             if (!cos_st_boot) {                          /* (once, at power-on: CLOCK can be changed after) */
                 cos_st_boot = 1;
                 if (st & 1u) song.g[G_CLOCK] = 2;

@@ -35,7 +35,33 @@
  * in the audio ISR, so nothing outside it ever sees a modulated value (the UI, the editor, projects and
  * presets read and write t->p from the main loop, which the ISR preempts; TIMER5 only fills the MIDI rings),
  * and the engines read t->p as before. An engine reads its parameters in note_on (events_block) unmodulated.
- * Nothing active (every slot with SRC, DST or AMT at 0): no work, and the sound is bit-identical. */
+ * Nothing active (every slot with SRC, DST or AMT at 0): no work, and the sound is bit-identical.
+ *
+ * (cursed-os 0.19.0) TOUCH (GLO > SYNTAKT 2): on a track the MIDI notes play (midi_live), the latest note's velocity
+ * and the channel's aftertouch open the engine's brightness (the parameter CC74 sets, MIDI_CC_ENG), as one more
+ * per-block slot: a Syntakt's velocity and aftertouch locks shape the sound. Off, or a track the MIDI does not play:
+ * nothing added (bit-identical). */
+/* (cursed-os 0.19.0) GLO > SYNTAKT 2 (favorites row 8 byte 20: ui_input.c applies it, cos.c's knobs set it): bits 0..1
+ * PROGRAMS (0 LIST, 1 VOICES, 2 ENGINE: ui.c midi_pc_poll), bit 2 FOLLOW (seq.c seq_step), bit 3 HOLD (voice.c
+ * voice_victim), bits 4..5 TOUCH (0 OFF, 1..3) */
+static volatile uint8_t cos_st2;
+#define ST2_PC(x) ((uint32_t)(x) & 3u)
+#define ST2_FOLLOW 4u
+#define ST2_HOLD 8u
+#define ST2_TOUCH(x) (((uint32_t)(x) >> 4) & 3u)
+/* (0.19.0) the tracks MIDI notes play: a note-on on their channel since the transport last started or stopped
+ * (midi_control.c sets it, seq.c seq_start / seq_stop clear it); the tracks holding MIDI notes now (midi_owners) */
+static volatile uint8_t midi_live, midi_held;
+/* per engine (ENGINES[] order): CC74's E index + 1 in the high nibble, CC71's in the low one, 0 = none (midi_control.c
+ * midi_cc_map; 0.19.0: here, TOUCH's brightness too) */
+static const uint8_t MIDI_CC_ENG[NENGINES] = {
+    0x56, 0x00, 0x30, 0x80, 0x50, 0x07, 0x36, 0x00,   /* (0.15.0: 6 DUB COLOR RES) */   /* ANALOG CUT RES, -, PHASE DCW, LOFI TONE, SAMPLE CUT, VOICE Q,
+                                                       * TRIO CUT RES, WHEEL - */
+    0x32, 0x30, 0x30, 0x34, 0x30,                     /* (snd5) STRING BRIGHT DECAY, PHYS BRIT, DRUM TONE, NOISE FREQ RES, FM6 MLVL */
+    0x26,                                             /* (snd5) ADD BRIGHT FORMNT */
+    0x23,                                             /* ANIMAL PRESS (TOUCH CLICK BUZZ MOUTH), CHAOS (COUPLE Q DRIFT ROUGH) */
+    0x12,                                             /* (cursed-os) ACID CUTOFF RESO */
+};
 enum { MS_OFF, MS_LFO, MS_ENV, MS_VEL, MS_KEY, MS_RAND, MS_MODW, MS_AT, MS_EXPR, MS_M1, MS_STEP = MS_M1 + 4, MS_NOISE, MS_PROX, MS_LFO2, MS_N };
 static volatile int16_t mod_prox;   /* (V10.14) PROX, the Bluetooth proximity: 0..32767 (bt.c bt_prox_step, the main loop; 0
                                      * with Bluetooth off or no central connected) */
@@ -83,8 +109,8 @@ typedef struct {                 /* the part in mix_part (one at a time) */
     int32_t pit, cut, shp, gain; /* per voice, from the per-track sources (gain Q15) */
     uint8_t vsrc[NMSLOT], vdst[NMSLOT];
     int8_t vamt[NMSLOT];
-    uint8_t kid[NMSLOT];         /* per-block: the parameter, its stored value */
-    int16_t keep[NMSLOT];
+    uint8_t kid[NMSLOT + 1u];    /* per-block: the parameter, its stored value (+ 1: TOUCH's) */
+    int16_t keep[NMSLOT + 1u];
 } mod_t;
 static mod_t mod_c[2];                      /* (JIANT 0.6.71) one a core: each renders its own parts at once (fx.c mix_block) */
 #define MOD (mod_c[MC_CPU() & 1u])
@@ -185,17 +211,26 @@ static __attribute__((noinline)) void ms_tick(track_t *t)
 
 /* before a part's block (fx.c mix_part): the per-track offsets, the per-block destinations into t->p.
  * 0 = no slot active (then nothing changed) */
+/* (0.19.0) TOUCH's parameter on track t (P_E0 + its brightness), 0 none */
+static uint32_t touch_id(const track_t *t)
+{
+    uint32_t e;
+    if (!ST2_TOUCH(cos_st2) || !((midi_live >> (uint32_t)(t - trk)) & 1u))
+        return 0;
+    e = MIDI_CC_ENG[t->engine % NENGINES] >> 4;
+    return e ? P_E0 + e - 1u : 0u;
+}
 static __attribute__((noinline)) int mod_begin(track_t *t)
 {
     mod_t *const mp = &MOD;                          /* (0.6.71) this core's */
     const int16_t *p = t->p;
-    int32_t lfo, off[NMSLOT];
-    uint32_t k, j;
+    int32_t lfo, off[NMSLOT + 1u];
+    uint32_t k, j, tid = touch_id(t);
     mp->on = 0;
     for (k = 0; k < NMSLOT; k++)
         if (p[P_M1SRC + 3u * k] && p[P_M1DST + 3u * k] && p[P_M1AMT + 3u * k])
             break;
-    if (k == NMSLOT)
+    if (k == NMSLOT && !tid)
         return 0;
     lfo = mulq15(t->lfo_val, t->lfo_fade);              /* (the LFO of the block before: track_render ticks it) */
     for (j = k; j < NMSLOT; j++)
@@ -239,6 +274,20 @@ static __attribute__((noinline)) int mod_begin(track_t *t)
             off[j] += (((x * a) >> 6) * (id == P_LRATE ? 127 : pd->max - pd->min)) >> 15;   /* (0.6.51: RATE's free span,
                                                                                                * as before its in-time values) */
         }
+    }
+    if (tid) {                                          /* (0.19.0) TOUCH: velocity about 64 and aftertouch, the
+                                                         * brightness up to 30 % of its range a step (LOW MID HIGH) */
+        const param_desc_t *pd = &ENGINES[t->engine]->edit[tid - P_E0];
+        int32_t x = clamp(((int32_t)t->m_vel - 64) * 512 + t->at * 258, -32767, 32767), a = (int32_t)ST2_TOUCH(cos_st2) * 10;
+        for (j = 0; j < mp->nk && mp->kid[j] != tid; j++)
+            ;
+        if (j == mp->nk) {
+            mp->kid[j] = (uint8_t)tid;
+            mp->keep[j] = p[tid];
+            off[j] = 0;
+            mp->nk++;
+        }
+        off[j] += (((x * a) >> 6) * (pd->max - pd->min)) >> 15;
     }
     for (j = 0; j < mp->nk; j++) {
         uint32_t id = mp->kid[j];

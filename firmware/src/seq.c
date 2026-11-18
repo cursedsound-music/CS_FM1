@@ -2089,6 +2089,8 @@ static void seq_stop(void)
     if (song.playing && mo_clock_on())             /* (0.6.72) MIDI OUT CLOCK / ALL: STOP */
         mo_send(0xFCu, 0, 0);
     song.playing = 0;
+    midi_live = 0;                                 /* (cursed-os 0.19.0) FOLLOW, TOUCH: the MIDI's tracks again
+                                                     * from its next note */
     cin_left = 0;                                  /* (a count-in: cancelled, nothing recorded) */
     cin_flush = 0;
     memset(cin_n, 0, sizeof cin_n);
@@ -2279,6 +2281,11 @@ static __attribute__((noinline)) void seq_step(track_t *t, const step_t *s, uint
     uint32_t qseq = t->p[P_QUANT] == QN_SEQ && !kit;
     int32_t up = (kit ? 0 : t->p[P_POFS] + live_up(t)) +   /* SHIFT PIT: the notes up (a kit keeps its lanes); LIVE OCT */
                  (t->p[P_AMODE] == AM_TRNS ? t->trn : 0);   /* ARP TRNS: the keys' interval */
+    if ((cos_st2 & ST2_FOLLOW) && ((midi_live >> trk_index(t)) & 1u)) {   /* (cursed-os 0.19.0) FOLLOW: the MIDI
+                                                         * plays this track, its own steps quiet until STOP */
+        seq_release(t);
+        return;
+    }
     if (!(skip & SEQ_REP)) {
         t->rat_left = 0;
         t->lr_on = 0;
@@ -2919,6 +2926,9 @@ static void events_block(uint32_t n)
         t->aholdp = t->p[P_AHOLD];
     }
     keyboard_block();
+    midi_park_clk++;                                  /* (0.19.0) notes waiting for a PROGRAM CHANGE's sound: after
+                                                     * the sound load's panic above, before what comes in now */
+    if (midi_park_n) midi_park_poll();
     while (mi_r != mi_w) {                            /* USB-MIDI (and TRS) in */
         uint32_t at = mi_r % MQ, pkt = midi_in_q[at], status = (pkt >> 8) & 0xFFu;
         uint32_t st = status & 0xF0u, ch = status & 0x0Fu;

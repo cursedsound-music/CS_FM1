@@ -267,6 +267,12 @@ if [ -f build/gen/felucca_tables.h ]; then
     run "cursed-os: every knob on every page, right is more (the dial too), back again; the power-on values" "$OUT/cos_knob_test"
     $CC -O2 -w -DCOS_SLIM=1 -Ibuild/gen -Ifirmware/src -Itests -o "$OUT/cos_wire_test" tests/cos_wire_test.c -lm
     run "cursed-os: every knob on every track changes the sound, or is a setting with its reason (the device's image, COS_SLIM)" "$OUT/cos_wire_test"
+    $CC -O1 -w -DCOS_SLIM=1 -Ibuild/gen -Ifirmware/src -Itests -o "$OUT/syntakt_test" tests/syntakt_test.c -lm
+    run "cursed-os: GLO > SYNTAKT (clock, patterns as sections) and SYNTAKT 2 (0.19.0: the VOICE SET, PROGRAMS, the note after a PC, FOLLOW, HOLD, TOUCH)" "$OUT/syntakt_test"
+    $CC -O1 -w -DCOS_SLIM=1 -Ibuild/gen -Ifirmware/src -Itests -o "$OUT/syntakt_cc_test" tests/syntakt_cc_test.c -lm
+    run "cursed-os: every CC of the Syntakt's list (Pencil Research's, tests/data/syntakt_cc.csv) on a track's channel: only what the map names moves, nothing hangs; LINK 2's Syntakt CCs" "$OUT/syntakt_cc_test" tests/data/syntakt_cc.csv
+    $CC -O1 -w -DCOS_SLIM=1 -Ibuild/gen -Ifirmware/src -Itests -o "$OUT/start_test" tests/start_test.c -lm
+    run "cursed-os: SAVE > START, every STYLE (0.19.0: VOICES), PICKED / ALL, KEEP, the undo" "$OUT/start_test"
     $CC -O1 -w -DCOS_SLIM=1 -Ibuild/gen -Ifirmware/src -Itests -o "$OUT/cos_acc_test" tests/cos_acc_test.c -lm
     run "cursed-os: the values as shown, measured: BPM, the delay's TIME, COMP, LIMIT's CEILING in dBFS, the ISOLATOR" "$OUT/cos_acc_test"
     $CC -O2 -w -DCOS_SLIM=1 -Ibuild/gen -Ifirmware/src -Itests -o "$OUT/cos_pad_test" tests/cos_pad_test.c -lm
