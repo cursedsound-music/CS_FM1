@@ -577,6 +577,9 @@ static void __attribute__((noinline)) midi_event(uint32_t st, uint32_t ch, uint3
     }
     if (ch >= NPART && !song.g[G_ROUTE])
         return;
+    if (((midi_fm1 >> (trk_index(midi_track(ch)) % NTRK)) & 1u) &&   /* (0.19.0) handed back: the FM-1's own */
+        !(st == 0x80u || (st == 0x90u && !d2) || (st == 0xB0u && d1 >= 120u)))
+        return;
     if (st == 0x90u || st == 0x80u)
         midi_note_event(ch, d1, st == 0x90u ? d2 : 0);
     else if (st == 0xE0u) {

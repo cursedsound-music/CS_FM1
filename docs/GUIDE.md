@@ -314,7 +314,13 @@ GLO > SYNTAKT 2 (turning SYNTAKT on sets it to VOICES, FOLLOW ON, HOLD ON, TOUCH
 | HOLD | ON: notes the Syntakt is holding keep their voices; the FM-1's own parts give voices up first. All tracks share 8 voices (12 in FULL) |
 | TOUCH | OFF, LOW, MID, HIGH: velocity and aftertouch open the sound's brightness (the control CC74 moves) |
 
-The page also shows which tracks the MIDI is playing right now.
+**Handing a track back.** On GLO > SYNTAKT 2, white keys 1–6 switch tracks 1–6 between the Syntakt and the FM-1. A
+track you hand back to the FM-1 plays its own sequencer (its steps, GEN parts, acid, bleeps) and ignores the Syntakt's
+notes, program changes and CCs on its channel. Press the key again and the Syntakt plays it from its next note. The
+top line shows each track: S the Syntakt plays it, F handed back to the FM-1, – nothing yet. The keys of handed-back
+tracks are lit, and the Syntakt's tracks blink. Tracks the Syntakt never sends notes to always play their own
+sequencer, so you can mix both ways in one set: the FM-1's own drums and acid on some tracks, and the Syntakt
+playing chords or bells on others. After a power-off, every track is back to normal.
 
 **CCs the FM-1 follows** (on the track's channel). A good set for the Syntakt MIDI track's 8 CC slots is the first
 eight rows:

@@ -52,6 +52,10 @@ static volatile uint8_t cos_st2;
 /* (0.19.0) the tracks MIDI notes play: a note-on on their channel since the transport last started or stopped
  * (midi_control.c sets it, seq.c seq_start / seq_stop clear it); the tracks holding MIDI notes now (midi_owners) */
 static volatile uint8_t midi_live, midi_held;
+/* (0.19.0, GG: "sometimes use the custom sequencers ... sometimes make the syntakt play the fm1": "a hand back by hand")
+ * the tracks handed back to the FM-1 (GLO > SYNTAKT 2, white 1..6): their own steps play, the MIDI's notes, program
+ * changes and CCs on their channel are left out (note-offs and CC 120.. still in: nothing hangs) until handed over again */
+static volatile uint8_t midi_fm1;
 /* per engine (ENGINES[] order): CC74's E index + 1 in the high nibble, CC71's in the low one, 0 = none (midi_control.c
  * midi_cc_map; 0.19.0: here, TOUCH's brightness too) */
 static const uint8_t MIDI_CC_ENG[NENGINES] = {

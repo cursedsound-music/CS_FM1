@@ -60,6 +60,7 @@ _Static_assert(CC_STTCH < 0xFBu && CC_DCH7 < 0xFBu, "the CK_COS ids fit a page's
 _Static_assert(X2_N <= 16u, "CC_X2 .. CC_X2E: room for every trk_x2 field");
 static void cos_syntakt(uint32_t id, int32_t v);    /* (0.17.0) GLO > SYNTAKT's knobs */
 static void cos_syntakt2(uint32_t id, int32_t v);   /* (0.19.0) GLO > SYNTAKT 2's */
+static void cos_hand(uint32_t w);                  /* (0.19.0) SYNTAKT 2: a track to the FM-1 / back */
 /* (0.18.0, GG: "quick starts") SAVE > START: a jam ready in one press (cos_qs_load) */
 enum { QS_HYPNO, QS_ACID, QS_DUB, QS_BLEEPS, QS_VOICES, QS_RAND, QS_N };   /* (0.18.2: RANDOM; 0.19.0: VOICES) */
 static const char *const QS_NAME[QS_N + 1u] = {"HYPNOTIC", "ACID", "DUB TECHNO", "BLEEPS", "VOICES", "RAND", 0};   /* (RAND: the knob shows five letters) */
@@ -2352,9 +2353,10 @@ static void cos_mode(uint32_t m)
     cz.hot = 0;
 }
 /* the keys are the interface's (silent) on HOME, TRIG and a kit's GEN; elsewhere they play the track */
+static int cos_on_st2(void);
 static int cos_keys_ui(void)
 {
-    return cz.mode == CM_HOME || (cz.mode == CM_TRIG && !cz.si) || cz.mode == CM_KEY || cz.mode == CM_PROJ || cz.mode == CM_DRUMS || (cz.mode == CM_GEN && cos_kit()) ||
+    return cz.mode == CM_HOME || cos_on_st2() || (cz.mode == CM_TRIG && !cz.si) || cz.mode == CM_KEY || cz.mode == CM_PROJ || cz.mode == CM_DRUMS || (cz.mode == CM_GEN && cos_kit()) ||
            ((fm1_in.buttons >> panel.btn[B_SCL]) & 1u);
 }
 
@@ -2775,6 +2777,8 @@ static __attribute__((noinline)) void cos_input(void)
             cos_drm_key(k);                              /* (0.13.0: a press shown; holding rolls / repeats: cos_drm_poll) */
         } else if (cz.mode == CM_TRIG && cz.si) {
             cos_si_key(k);                               /* (STEP INPUT: the note into the cursor's step) */
+        } else if (cos_on_st2()) {                       /* (0.19.0) SYNTAKT 2: white 1 .. 6 a track to the FM-1 / back */
+            if (w < NPART) cos_hand(w);
         } else if (cz.mode == CM_PROJ && cz.tab[CM_PROJ] == 3u) {   /* (0.18.2) START: white 1 .. 6 KEEP a track */
             if (w < NTRK) {
                 qs_keep ^= (uint8_t)(1u << w);
@@ -4370,24 +4374,41 @@ static void cos_syntakt2(uint32_t id, int32_t v)
     favorites.factory[8][20] = (uint8_t)(0x80u | cos_st2);
     cz.set_ms = fm1_ms;
 }
-/* (0.19.0) GLO > SYNTAKT 2: which tracks the MIDI plays now, what each knob does, the Syntakt MIDI track's setup */
+/* (0.19.0) on GLO > SYNTAKT 2 */
+static int cos_on_st2(void) { return cz.mode == CM_MIX && cos_page()->kind == CK_COS && cos_page()->id[0] == CC_STPC; }
+/* (0.19.0, GG: "a hand back by hand") track w to the FM-1 (its own steps; the MIDI's notes held on it let go) or back
+ * to the MIDI (it plays it from its next note; FOLLOW: its steps quiet then). RAM only: every power-on all the MIDI's */
+static void cos_hand(uint32_t w)
+{
+    uint32_t b = 1u << w;
+    fm1_irq_off();                                       /* (the ISR reads both; a held note let go with them) */
+    midi_fm1 = (uint8_t)(midi_fm1 ^ b);
+    midi_live = (uint8_t)(midi_live & ~b);
+    if (midi_fm1 & b) midi_silence_track(w);
+    fm1_irq_on();
+    cos_say(midi_fm1 & b ? "FM-1 PLAYS IT" : "SYNTAKT PLAYS IT");
+}
+/* (0.19.0) GLO > SYNTAKT 2: who plays each track (SYNTAKT: the MIDI's notes now; FM-1: handed back), what each knob
+ * does, the Syntakt MIDI track's setup */
 static void cos_body_syntakt2(void)
 {
     char b[40];
-    uint32_t i, n, pm = ST2_PC(cos_st2), lv = midi_live;
-    str_cpy(b, "MIDI PLAYS:", sizeof b);
-    for (i = 0, n = 11; i < NPART; i++)
-        if ((lv >> i) & 1u) { b[n++] = ' '; b[n++] = 'T'; b[n++] = (char)('1' + i); }
+    uint32_t i, n, pm = ST2_PC(cos_st2), lv = midi_live, f = midi_fm1;
+    for (i = 0, n = 0; i < NPART; i++) {                 /* "T1 . T2 S T3 F ..": S the Syntakt's, F the FM-1's (kept) */
+        b[n++] = 'T'; b[n++] = (char)('1' + i);
+        b[n++] = (f >> i) & 1u ? 'F' : (lv >> i) & 1u ? 'S' : '-';
+        if (i + 1u < NPART) b[n++] = ' ';
+    }
     b[n] = 0;
-    cos_tx(8, 38, lv ? b : "MIDI PLAYS: NO TRACK YET", lv ? C_FG : C_DIM);
+    cos_tx(8, 38, b, lv | f ? C_FG : C_DIM);
     cos_tx(8, 50, pm == 1u ? "PRG: THE VOICE SET (32)" : pm == 2u ? "PRG: THE TRACK'S ENGINE" : "PRG: EVERY SOUND, LISTED",
            C_MID);
     cos_tx(8, 62, cos_st2 & ST2_FOLLOW ? "FOLLOW: OWN STEPS QUIET" : "FOLLOW OFF: BOTH PLAY", C_DIM);
     cos_tx(8, 74, cos_st2 & ST2_HOLD ? "HOLD: MIDI NOTES KEEP VOICES" : "HOLD OFF: VOICES SHARED", C_DIM);
     cos_tx(8, 86, ST2_TOUCH(cos_st2) ? "TOUCH: VEL + AT -> BRIGHT" : "TOUCH OFF", C_DIM);
-    cos_tx(8, 104, "ON THE SYNTAKT, A MIDI TRACK:", C_FG);
-    cos_tx(8, 116, "CHAN 1-6 = FM-1 TRACK 1-6", C_DIM);
-    cos_tx(8, 128, "PROG = SOUND, CC 16-19 = E1-4", C_DIM);
+    cos_tx(8, 104, "WHITE 1-6: HAND A TRACK BACK", C_FG);
+    cos_tx(8, 116, "S: THE SYNTAKT  F: THE FM-1", C_DIM);
+    cos_tx(8, 128, "MIDI TRACK: CHAN 1-6, PROG", C_DIM);
 }
 
 /* GLO > LINK: what the PROGRAM CHANGEs do */
@@ -4648,6 +4669,12 @@ static __attribute__((noinline)) void cos_leds(void)
                 if (!in || wait) led_clear(nl, 14u + WK[k]);
                 if (wait) led_put(nb, 14u + WK[k], 1);
             }
+        }
+    } else if (cos_on_st2()) {                           /* (0.19.0) SYNTAKT 2: the FM-1's tracks lit, the Syntakt's
+                                                         * breathing */
+        for (k = 0; k < NPART; k++) {
+            led_put(nl, 14u + WK[k], (midi_fm1 >> k) & 1u);
+            if (!((midi_fm1 >> k) & 1u) && ((midi_live >> k) & 1u)) led_put(nb, 14u + WK[k], 1);
         }
     } else if (cz.mode == CM_PROJ && cz.tab[CM_PROJ] == 3u) {   /* (0.18.2) START: the kept tracks lit, a load waiting
                                                          * breathes on OCT+'s free ones */

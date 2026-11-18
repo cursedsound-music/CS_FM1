@@ -75,6 +75,11 @@ static void play_r(uint32_t samples)
     }
     song_poll();
 }
+static uint32_t mapped_cut(const track_t *t)            /* (CC 74's parameter on t) */
+{
+    uint32_t e = MIDI_CC_ENG[t->engine % NENGINES] >> 4;
+    return e ? P_E0 + e - 1u : P_LEVEL;
+}
 static void syntakt2(void)
 {
     uint32_t i, j, k, ok = 1;
@@ -151,6 +156,28 @@ static void syntakt2(void)
     CHECK(!has_note(t3, 50), "FOLLOW: still quiet between the MIDI's notes");
     transport_req = 2; play_r(CTL * 4u); transport_req = 1; play_r(FS / 4u);
     CHECK(has_note(t3, 50) && !(midi_live & 4u), "FOLLOW: after STOP its own steps again");
+    /* (GG: "a hand back by hand") T3 handed back while the Syntakt keeps playing it: its own steps, the MIDI's notes,
+     * program changes and CCs on its channel left out, a note it held let go; handed over again: the Syntakt's */
+    {
+        int16_t cut;
+        uint32_t ld;
+        midi_event(0x90u, 2u, 70u, 100u); play_r(FS / 4u);
+        CHECK(has_note(t3, 70) && !has_note(t3, 50), "hand back: before, the Syntakt plays T3");
+        cz.mode = CM_MIX; for (i = 0; i < 17u && !str_eq(cos_page()->tab, "SYNTAKT 2"); i++) cz.tab[CM_MIX] = (uint8_t)i;
+        CHECK(cos_on_st2() && cos_keys_ui(), "SYNTAKT 2: the white keys are the page's (no notes played)");
+        cos_hand(2);
+        ld = t3->preset; cut = t3->p[mapped_cut(t3)];
+        midi_event(0x90u, 2u, 72u, 100u); midi_event(0xC0u, 2u, 5u, 0); midi_event(0xB0u, 2u, 74u, 0u);
+        midi_pc_poll(); play_r(FS / 2u);
+        CHECK((midi_fm1 & 4u) && has_note(t3, 50) && !has_note(t3, 70) && !has_note(t3, 72) && t3->preset == ld &&
+              t3->p[mapped_cut(t3)] == cut && !midi_owners[2],
+              "handed back (white 3): T3's own steps; the Syntakt's notes, PC, CC on channel 3 left out; its held note let go");
+        midi_event(0x80u, 2u, 72u, 0); midi_event(0x80u, 2u, 70u, 0);
+        cos_hand(2);
+        midi_event(0x90u, 2u, 71u, 100u); play_r(FS / 2u);
+        CHECK(!(midi_fm1 & 4u) && has_note(t3, 71) && !has_note(t3, 50), "handed over again: the Syntakt plays T3 from its next note");
+        midi_event(0x80u, 2u, 71u, 0); transport_req = 2; play_r(CTL * 4u); transport_req = 1; play_r(CTL * 4u);
+    }
     cos_syntakt2(CC_STFOL, 0);
     midi_event(0x90u, 2u, 70u, 100u); play_r(FS / 4u);
     CHECK(has_note(t3, 70) && has_note(t3, 50), "FOLLOW OFF: both play");

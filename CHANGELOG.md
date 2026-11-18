@@ -15,6 +15,8 @@ The FM-1 as an extra voice for an Elektron Syntakt, with sounds the Syntakt has 
 - GLO > SYNTAKT 2: PROGRAMS (VOICES, ENGINE or LIST), FOLLOW (a track the Syntakt plays goes quiet on its own steps),
   HOLD (notes the Syntakt holds keep their voices) and TOUCH (velocity and aftertouch open the brightness). Turning
   SYNTAKT on sets VOICES, FOLLOW, HOLD and TOUCH LOW until you change them.
+- Hand a track back by hand: on GLO > SYNTAKT 2, white 1–6 switch a track between the Syntakt (its MIDI plays it)
+  and the FM-1 (its own sequencer, the Syntakt's notes, programs and CCs on that channel ignored).
 - A program change and the note right after it: the note now waits for the new sound to load (up to about 100 ms),
   so it no longer plays the old sound.
 - SAVE > START: a VOICES style (a mallet line, chords on a pad or a choir, a bell's motif).
