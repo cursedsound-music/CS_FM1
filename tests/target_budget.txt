@@ -2,6 +2,8 @@
 # function in build/felucca.dis, x4 per nesting level, divides x9. The check allows +10 %.
 # Rewritten by BUDGET_UPDATE=1. (cursed-os 0.18.4: taken again from the CI build of 895e083: its engines, the drums' cubic
 # upsampling and stereo, the master's dither; the static count weighs the cubic's nested loop in dx_run x4)
+# (0.19.0: from the release build of 36ee310: add_render with MODAL, add_strike new, mod_begin with TOUCH)
+add_strike 17
 analog_render 603
 phase_render 108
 lofi_render 296
@@ -22,13 +24,13 @@ drum_side_add 113
 drum_mix 125
 drum_bus 123
 drum_glue 251
-slicer_bus 798
+slicer_bus 821
 fm1_alnk0_irq 47
 fm1_timer5_irq 36171
 ep4_tx 0
 ep4_fill 88
 click_render 30
-mod_begin 174
+mod_begin 179
 mod_voice 30
 mod_end 6
 perf_begin 34
@@ -46,7 +48,7 @@ drw_dust 29
 dly_lo 2351
 animal_render 731
 string_render 220
-add_render 297
+add_render 325
 formant_word_render 743
 formant_block 103
 djf_block 199
