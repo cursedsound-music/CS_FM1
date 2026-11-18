@@ -72,6 +72,24 @@ static const uint8_t ADD_DL[AD_N - AD_M0] = {7, 2, 1, 1, 8, 0};
 static const uint8_t ADD_CK[AD_N - AD_M0] = {90, 60, 45, 70, 110, 18};
 /* MORPH's other end: the next mode, PLATE's HARM (as before the modal ones), GLASS's MARIMBA (round the struck ones) */
 static uint32_t add_next(uint32_t mo) { return mo == AD_PLATE ? AD_HARM : mo == AD_N - 1u ? AD_M0 : (mo + 1u) % AD_N; }
+/* (0.19.0) MODAL: the strike, noise low-passed by the mallet's hardness (BRIGHT bright, velocity vel), ~3 ms after
+ * a note: added to acc. Its own function (noinline): add_render's loop as before, this one in the target cost's list
+ * on its own (tests/target_budget.py), and it runs only while a strike sounds */
+static __attribute__((noinline)) void add_strike(drw_vc_t *V, int32_t *acc, uint32_t n, uint32_t mi, int32_t bright, int32_t vel)
+{
+    uint32_t z = (uint32_t)V->nz, i;
+    int32_t lp = V->hp, ck = V->clk, c = clamp(24 + bright + vel, 24, 255);
+    int32_t lvl = ADD_CK[mi - 1u] * vel;                 /* (<= 127 * 127) */
+    for (i = 0; i < n; i++) {
+        z = z * 1664525u + 1013904223u;
+        lp += (((int32_t)(z >> 16) - 32768 - lp) * c) >> 8;
+        acc[i] += (((lp * ck) >> 15) * lvl) >> 15;
+        ck -= ck >> 5;
+    }
+    V->nz = (int32_t)z;
+    V->hp = lp;
+    V->clk = ck > 32 ? ck : 0;
+}
 /* log2(k + 1), Q8: the tilt over the partials' ranks */
 static const uint16_t ADD_LOG2[DRW_NP] = {0, 256, 406, 512, 594, 662, 719, 768, 811};
 #define AD_TOP 1932735283u                               /* ~19.8 kHz as a phase increment: above it a partial is silent */
@@ -172,21 +190,8 @@ static void add_render(track_t *t, voice_t *v, int32_t *out, uint32_t n, const v
         }
         V->ph[k] = ph;
     }
-    if (mi && V->clk) {                                  /* (MODAL) the strike: noise, low-passed by the mallet's
-                                                         * hardness, ~3 ms */
-        uint32_t z = (uint32_t)V->nz;
-        int32_t lp = V->hp, ck = V->clk, c = clamp(24 + clamp(p[P_E2], 0, 127) + (int32_t)v->vel, 24, 255);
-        int32_t lvl = ADD_CK[mi - 1u] * (int32_t)v->vel;  /* (<= 127 * 127) */
-        for (i = 0; i < n; i++) {
-            z = z * 1664525u + 1013904223u;
-            lp += (((int32_t)(z >> 16) - 32768 - lp) * c) >> 8;
-            acc[i] += (((lp * ck) >> 15) * lvl) >> 15;
-            ck -= ck >> 5;
-        }
-        V->nz = (int32_t)z;
-        V->hp = lp;
-        V->clk = ck > 32 ? ck : 0;
-    }
+    if (mi && V->clk)                                    /* (MODAL) the strike: its own loop, ~3 ms a note */
+        add_strike(V, acc, n, mi, clamp(p[P_E2], 0, 127), (int32_t)v->vel);
     V->perc = (int32_t)(age < 0x7FFFFFu ? age + 1u : age);
     for (i = 0; i < n; i++)
         out[i] += voice_amp(acc[i] >> 1, m, i) << 1;

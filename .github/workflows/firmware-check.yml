@@ -159,5 +159,6 @@ jobs:
             build/felucca.bin
             build/layout.ld
             build/*.map
+            build/felucca.dis
           if-no-files-found: ignore
           retention-days: 14
