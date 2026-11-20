@@ -2,7 +2,7 @@
 
 cursed os is custom firmware for the M-VAVE FM-1. It turns the FM-1 into a six-track groovebox, with drums, a kick,
 an acid line, a bass, a pad and a sixth voice. Each track has its own sequencer and generators, and it works with an
-Elektron Syntakt. This guide is for cursed os 0.19.0.
+Elektron Syntakt. This guide is for cursed os 0.20.0.
 
 All screenshots come from the browser emulator, which runs the same firmware.
 
@@ -10,6 +10,7 @@ All screenshots come from the browser emulator, which runs the same firmware.
 - [Quick start: a loop in one minute](#quick-start-a-loop-in-one-minute)
 - [Cheat sheet](#cheat-sheet)
 - [The modes, one by one](#the-modes-one-by-one)
+- [On stage](#on-stage)
 - [With an Elektron Syntakt](#with-an-elektron-syntakt)
   - [The Syntakt playing the FM-1](#the-syntakt-playing-the-fm-1-syntakt-2)
   - [The voice set](#the-voice-set)
@@ -93,6 +94,9 @@ To save the result, go to SAVE > PROJECT, pick a slot with white keys 1–4 and 
 | HOME + white 1–8 | Drum sounds in / out |
 | HOME + white 9 | PERC in / out |
 | HOME + OCT− / OCT+ | Tempo nudge |
+| HOME + PLAY (playing) | DOWNBEAT: the bar starts again from the nearest beat |
+| HOME + black 7 / 8 | MIX IN / MIX OUT over MIX BARS |
+| HOME + black 9 | BASS SWAP: the lows out (or back in) on the next bar |
 | Knobs (PERFORM) | BPM, FINE, SWING, DJ FILT |
 | Knobs (LIVE page) | DJ FILT, REVERB, DELAY, FEEDBK |
 
@@ -132,6 +136,8 @@ To save the result, go to SAVE > PROJECT, pick a slot with white keys 1–4 and 
 | SYNTAKT | ON, PATTERNS, PAT BARS, AUTO LV |
 | SYNTAKT 2 | PROGRAMS, FOLLOW, HOLD, TOUCH (the Syntakt's MIDI tracks playing the FM-1) |
 | LINK | PC CH, PC OUT (the program-change channel and whether the FM-1 sends them) |
+| STAGE | LOCK, PHRASE, CHANGES, MIX BARS |
+| STAGE 2 | MONO HZ (MONO BASS) |
 
 ### Browser emulator keyboard
 
@@ -224,6 +230,20 @@ Tap SCL for the KEY page. Hold SCL and press a key to set the song's key: every 
 bar, and the drums stay as they are. SCL + OCT+ turns on KEY LATCH, so the keys you play keep sounding until you press
 them again (the SCL light shows it is on).
 
+The key is always shown two ways, by name and on the Camelot wheel that DJ software uses: `AMIN/8A`, `CMAJ/8B`. It
+appears large on the KEY page and at the top of every page. Major scales (MAJ, MIX, LYD, PEN) count as B, every other
+scale as A. With no scale set, the root counts as minor.
+
+| Knob | What it does |
+| --- | --- |
+| SCALE | The song's scale |
+| QUANT | How the keys keep to the scale |
+| KEY | Turns through the keys. By NAME: C, C#, D … (the scale stays). By CAMELOT: 1A, 1B, 2A … 12B, root and side together, so 8A gives A minor and 8B C major. A scale already on that side stays (D dorian to 9A gives E dorian) |
+| PICK BY | NAME or CAMELOT, remembered |
+
+A key you pick while playing lands on the next bar (shown in red until then), or on the next phrase with CHANGES set
+to PHRASE.
+
 ![KEY](guide/33_key.png)
 
 ### SAVE: projects and quick starts
@@ -249,6 +269,61 @@ LIMIT protects the output, with DRIVE, CEILING, RELEASE and SAT. SAT is a soft c
 it to OFF for a fully clean signal.
 
 ![GLO > LIMIT](guide/31_glo_limit.png)
+
+## On stage
+
+Things that make the FM-1 safer and easier to play live, next to other gear or a DJ mixer.
+
+### GLO > STAGE
+
+| Knob | What it does |
+| --- | --- |
+| LOCK | LIVE LOCK: no new project (REC twice on SAVE), no track emptied (SEQ + REC twice), no saved sound or kit erased. Everything you play keeps working |
+| PHRASE | 16 or 32 bars |
+| CHANGES | BAR or PHR: sections, START loops, key changes and MIX IN / OUT land on the next bar, or wait for the first bar of the next phrase |
+| MIX BARS | How long MIX IN / OUT takes: 4, 8, 16 or 32 bars |
+
+The page shows the bar of the phrase (BAR 5 OF 16, red on the last bar). While playing, HOME's bottom line shows it too.
+
+GLO > STAGE 2 has MONO BASS (MONO HZ: OFF, 80, 120 or 160 Hz). Below that frequency the left and right sides become
+one, so the low end stays solid on a club system. A mono sound passes through unchanged.
+
+### Moves on HOME
+
+- **DOWNBEAT (HOME + PLAY while playing).** Tap it on the "one" of what you're playing along to. Every track starts
+  again from step 1 and the phrase counts from there. The song, its section and the tempo stay as they are. A tap just
+  after a beat (within a sixteenth) takes that beat as the one and catches up at once; any other tap waits for the next
+  beat. With an external clock the beats stay locked to it; only which beat is the one moves.
+- **MIX IN / MIX OUT (HOME + black 7 / black 8).** Brings the muted tracks in, or the playing ones out, one at a time
+  over MIX BARS. In: the pads first and the kick last. Out: the kick first and the pads last. With CHANGES PHR it starts
+  on the next phrase. Press it again while it runs to stop where it is.
+- **BASS SWAP (HOME + black 9).** The FM-1's lows out on the next bar (the isolator's low kill, held), again to bring
+  them back, for trading the low end with another source in the mixer.
+
+### If the clock stops
+
+If an external clock stops arriving while playing (a cable knocked out, USB stalling), the FM-1 keeps playing at the
+last tempo and the top line shows CLOCK LOST in red. When the clock comes back the FM-1 follows it again from where it
+is (CLOCK BACK), in time as long as the tempo didn't change in between. A Stop message or the PLAY button stops it as
+usual.
+
+### From a Syntakt MIDI track (channel 16)
+
+Channel 16's CCs control the FM-1's live moves. Set a Syntakt MIDI track to channel 16, give its CC slots these numbers
+and lock values on trigs. A move happens when the value goes from under 64 to 64 or more, so a lock that repeats on
+every trig counts once.
+
+| CC | Does |
+| --- | --- |
+| 32 | FILL |
+| 33 | BREAK / BUILD / DROP |
+| 28–31 | Section A–D |
+| 22–27 | Mute T1–T6 |
+| 99 | BACK TO NORMAL |
+| 103 | DOWNBEAT |
+| 104 / 105 | MIX IN / MIX OUT |
+| 106 | BASS SWAP |
+| 107 | The key on the Camelot wheel: 0 = 1A, 1 = 1B, 2 = 2A … 23 = 12B (on the next bar or phrase) |
 
 ## With an Elektron Syntakt
 

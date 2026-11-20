@@ -56,6 +56,23 @@ static volatile uint8_t midi_live, midi_held;
  * the tracks handed back to the FM-1 (GLO > SYNTAKT 2, white 1..6): their own steps play, the MIDI's notes, program
  * changes and CCs on their channel are left out (note-offs and CC 120.. still in: nothing hangs) until handed over again */
 static volatile uint8_t midi_fm1;
+/* (cursed-os 0.20.0) the clock lost while playing: running on at its last tempo (seq.c events_block), until its next
+ * pulse (midi_clock.c: followed again, clk_back: the UI says so) or a stop */
+static volatile uint8_t clk_free, clk_back;
+/* (cursed-os 0.20.0, GG: "how can we improve this firmware for live performance with syntakt and cdjs") GLO > STAGE
+ * (favorites row 8 byte 18: ui_input.c applies it, cos.c's knobs set it; 0 everything as before): bit 0 LIVE LOCK,
+ * bit 1 PHRASE 32 bars (else 16), bit 2 CHANGES on the PHRASE (else the bar), bits 4..5 MIX BARS (8 16 32 4), bits 6..7
+ * MONO BASS (OFF 80 120 160 Hz) */
+static volatile uint8_t cos_lv;
+#define LV_LOCK 1u
+#define LV_PH32 2u
+#define LV_PHQ 4u
+#define LV_MIXB(x) ((uint32_t)(x) >> 4 & 3u)
+#define LV_MONO(x) ((uint32_t)(x) >> 6 & 3u)
+static uint32_t lv_phrase(void) { return cos_lv & LV_PH32 ? 32u : 16u; }
+/* (0.20.0) HOME + PLAY playing: the downbeat (seq.c events_block: 1 asked, 2 waiting for the next beat) */
+static volatile uint8_t db_req;
+static void mono_bass_block(uint32_t n);                /* (0.20.0) MONO BASS: cos_live.c; fx.c's master calls it */
 /* per engine (ENGINES[] order): CC74's E index + 1 in the high nibble, CC71's in the low one, 0 = none (midi_control.c
  * midi_cc_map; 0.19.0: here, TOUCH's brightness too) */
 static const uint8_t MIDI_CC_ENG[NENGINES] = {

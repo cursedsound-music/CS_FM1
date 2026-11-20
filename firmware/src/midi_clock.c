@@ -34,6 +34,7 @@ static __attribute__((noinline)) void midi_clock_transport(uint32_t status, uint
 static __attribute__((noinline)) void midi_clock_pulse(uint32_t ms)
 {
     uint32_t q;
+    if (clk_free) { clk_free = 0; clk_back = 1; }    /* (0.20.0) back: followed again from where the FM-1 is */
     if (!midi_clock.tempo_valid) {
         midi_clock.tempo_valid = 1;
         midi_clock.tempo_ms = ms;

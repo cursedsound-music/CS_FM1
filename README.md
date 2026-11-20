@@ -28,6 +28,9 @@ being turned, REC, a key change waiting for the bar.
 - **Elektron Syntakt support** (GLO > SYNTAKT): one knob, and the FM-1 follows the Syntakt's clock, start / stop and
   patterns. Its MIDI tracks can play the FM-1 as an extra voice (GLO > SYNTAKT 2): chords, program changes that pick
   from a set of 32 sounds the Syntakt has no machine for, CCs, velocity and aftertouch.
+- **On stage** (GLO > STAGE): keys shown as `AMIN/8A` (name and Camelot) and picked either way, a LIVE LOCK, a
+  downbeat tap, phrase-aware changes, MIX IN / OUT over a number of bars, BASS SWAP, MONO BASS, and the FM-1 keeps
+  playing if the clock drops out.
 - **Struck sounds** (MODAL, in the ADD engine): marimba, kalimba, steel pan, tubular bell, slit drum and glass, with
   the mallet's hit and velocity.
 - **A clean output**: a look-ahead limiter, an optional soft clipper (SAT), dither.

@@ -3345,6 +3345,11 @@ static __attribute__((noinline)) void mix_block(int32_t *out, uint32_t n)   /* (
         FM1_OPAQUE(f);                                  /* (as tape_block: out of the RAM code's direct reach) */
         f(n);
     }
+    if (cos_lv >> 6) {                                  /* (cursed-os 0.20.0) MONO BASS: the lows of both sides as one */
+        void (*f)(uint32_t) = mono_bass_block;
+        FM1_OPAQUE(f);                                  /* (as tape_block: out of the RAM code's direct reach) */
+        f(n);
+    }
     lev_block(n);                                       /* (JIANT 0.5) the leveler: the loudness held */
     if (perf) {
         perf_master(out, n);

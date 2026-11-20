@@ -12,6 +12,16 @@
  *                 BUILD on the next bar (four bars of KICK KILL, HP RISER, NOISE RISER, a fill in the last), then the
  *                 DROP on the bar after them (pressed during the build: on the next bar) */
 enum { BD_OFF, BD_ARM_BREAK, BD_BREAK, BD_ARM_BUILD, BD_BUILD, BD_ARM_DROP };
+/* (cursed-os 0.20.0, GG: live with a Syntakt and CDJs) the STAGE moves:
+ *   MIX IN / OUT  HOME + black 7 / 8: the tracks in (the muted ones unmuted) or out one by one over MIX BARS, from the
+ *                 next bar (CHANGES PHRASE: the next phrase): in, the pads first and the kick last (the drop); out, the
+ *                 kick first and the pads last. Asked again while it runs: stopped where it is
+ *   BASS SWAP     HOME + black 9: the FM-1's lows out (the isolator's LOW KILL, latched) on the next bar, again: in; for
+ *                 trading the low end with a record in the mixer
+ *   MONO BASS     GLO > STAGE 2: below 80 / 120 / 160 Hz both sides as one (mono_bass_block, from fx.c's master) */
+static volatile uint8_t mx_req, bsw_req, bsw_on;   /* main: MIX 1 IN 2 OUT asked; BASS SWAP asked; ISR: the lows out */
+static uint8_t mx_trk[NTRK], mx_n, mx_i, mx_bar, mx_wait, mx_len;   /* ISR: the tracks in their order, how far, the bars */
+static const uint8_t MX_IN[NTRK] = {4, 5, 0, 2, 3, 1};   /* (T5 T6 pads, T1 drums, T3 acid, T4 bass, T2 the kick last) */
 static volatile uint8_t cos_mq = 2;           /* main: MUTE Q, 0 NOW 1 BEAT 2 BAR (ui_polls: the settings') */
 static volatile uint8_t live_qmute;           /* main: the tracks whose mute turns over next (bit k) */
 static volatile uint8_t live_qback;           /* (0.10.3) main: BACK TO NORMAL asked (the knobs: on the beat / bar, as the
@@ -145,7 +155,37 @@ static __attribute__((noinline)) void live_tick(uint32_t n)
         if (now) bd_step(1);                          /* (stopped: at once) */
     }
     if (bar) bd_step(1);
-    cfx_auto = bd_bits(bd_state);
+    if (mx_req) {                                     /* (0.20.0) MIX IN / OUT asked: the plan (again while one runs: off) */
+        uint32_t k, in = mx_req == 1u;
+        mx_req = 0;
+        if (mx_n) mx_n = 0;
+        else {
+            for (k = 0; k < NTRK; k++) {
+                uint32_t t = in ? MX_IN[k] : MX_IN[NTRK - 1u - k];
+                if (t < trk_live && (trk[t].p[P_MUTE] != 0) == (int)in) mx_trk[mx_n++] = (uint8_t)t;
+            }
+            mx_i = mx_bar = 0;
+            mx_len = (uint8_t)(LV_MIXB(cos_lv) == 3u ? 4u : 8u << LV_MIXB(cos_lv));
+            mx_wait = (uint8_t)((cos_lv & LV_PHQ) != 0u);
+        }
+    }
+    if (mx_n && (bar || now)) {                       /* (each change on a bar: the i-th at round(i * bars / (n - 1))) */
+        if (!now && mx_wait && ((bar_n + 1u) & (lv_phrase() - 1u)))
+            ;                                         /* (CHANGES PHRASE: from the next phrase) */
+        else {
+            mx_wait = 0;
+            while (mx_i < mx_n && (now || mx_n < 2u ||
+                                   ((uint32_t)mx_i * mx_len * 2u + mx_n - 1u) / (2u * (mx_n - 1u)) <= mx_bar)) {
+                track_t *t = &trk[mx_trk[mx_i]];
+                t->p[P_MUTE] = (int16_t)!t->p[P_MUTE];
+                mx_i++;
+            }
+            mx_bar++;
+            if (mx_i >= mx_n) mx_n = 0;
+        }
+    }
+    if (bsw_req && (bar || now)) { bsw_req = 0; bsw_on ^= 1; }   /* (0.20.0) BASS SWAP on the bar */
+    cfx_auto = bd_bits(bd_state) | (bsw_on ? CX_BIT(CX_LOWK) : 0u);
     if (beat && (bd_state == BD_BUILD || bd_state == BD_ARM_DROP))   /* (the build's progress, a beat at a time) */
         vj_cc(20, (4u - bd_bars) * 32u + (beat_n + 1u) * 8u);
     if (live.cur != vj_sect) {                        /* (a section went in) */
@@ -176,4 +216,26 @@ static __attribute__((noinline)) void live_tick(uint32_t n)
         fill_write();
         vj_note(VJ_FILL);
     }
+}
+
+/* (0.20.0) MONO BASS: below the corner both sides as one. The side (L - R) / 2 high-passed, 12 dB an octave (a state
+ * variable filter, Butterworth: well-behaved this low), the mid untouched: L = M + S', R = M - S'. A mono signal comes
+ * out exactly as it went in; a side below the corner goes (at 120 Hz: 50 Hz -15 dB, 30 Hz -24 dB). On the dry mix
+ * before the leveler (the reverb's return is one for both already) */
+static int32_t mb_lp, mb_bp;
+static __attribute__((noinline)) void mono_bass_block(uint32_t n)
+{
+    static const uint16_t F[4] = {0, 747, 1120, 1493};   /* (2 sin(pi f / FS), Q16: 80 120 160 Hz) */
+    uint32_t i;
+    int32_t f = F[LV_MONO(cos_lv)], lp = mb_lp, bp = mb_bp;
+    for (i = 0; i < n; i++) {
+        int32_t m = (mix_l[i] + mix_r[i]) >> 1, sd = (mix_l[i] - mix_r[i]) >> 1, hp;
+        hp = sd - lp - (bp * 362 >> 8);                  /* (1 / Q = sqrt 2, Q8) */
+        bp += (hp >> 6) * f >> 10;
+        lp += (bp >> 6) * f >> 10;
+        mix_l[i] = m + hp;
+        mix_r[i] = m - hp;
+    }
+    mb_lp = lp;
+    mb_bp = bp;
 }

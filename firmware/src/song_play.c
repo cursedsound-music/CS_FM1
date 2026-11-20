@@ -133,12 +133,13 @@ static void srec_stop(void)                           /* SONG REC pressed again,
     live.srec = 0;
 }
 
-static uint32_t chain_nbar;                           /* (cursed-os 0.17.0) bars since PLAY (GLO > SYNTAKT's PAT LEN) */
 /* (0.17.0) a section the Syntakt asked for: due when the bars since PLAY are a multiple of PAT BARS (1 2 4 8 16); one
  * asked for here: at once. Out of line: the bar's hook is in the audio's RAM code (tools/build.py HOT_FNS), kept small */
 static __attribute__((noinline)) int cos_pc_due(void)
 {
     if (cos_pc_wait && cos_pc_bars > 1u && (chain_nbar & (cos_pc_bars - 1u)))
+        return 0;
+    if ((cos_lv & LV_PHQ) && (chain_nbar & (lv_phrase() - 1u)))   /* (0.20.0) CHANGES: PHRASE, the phrase's first bar */
         return 0;
     cos_pc_wait = 0;
     return 1;

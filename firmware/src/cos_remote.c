@@ -14,6 +14,9 @@
  *            less IN (on the beat / bar with MUTE Q, as HOME + white 1..8)
  *   (0.9.7) 80 81 an exact BPM in tenths (400..2400): 80 its high 7 bits first, then 81 its low 7 bits sets it
  *   (0.9.6) 36 37 NUDGE - + (the tempo 3 % slower / faster while 64 or more; 5 s at most)   38 39 BPM - + 1
+ *   (0.20.0, for a Syntakt MIDI track on channel 16 too: its CC locks on trigs) 103 DOWNBEAT  104 MIX IN  105 MIX OUT
+ *            106 BASS SWAP (each as it goes from under 64 to 64 or more: a lock sent again on every trig, once)
+ *            107 the KEY on the Camelot wheel: 0 1A, 1 1B, 2 2A .. 23 12B (as it changes; on the bar or the phrase)
  * Channel 16's PROGRAM CHANGE stays a section / a project (midi_control.c).
  *
  * SysEx frames F0 7D 63 <command> .. F7 (7D: non-commercial; 63 'c'), one at a time (midi_control.c rmt_f):
@@ -75,6 +78,20 @@ static __attribute__((noinline)) void rmt_cc(uint32_t cc, uint32_t v)
         return;
     }
     if (cc == 99u) { if (on) cos_back(0); return; }       /* (0.10.3) BACK TO NORMAL */
+    if (cc >= 103u && cc <= 107u) {                      /* (0.20.0) the STAGE moves, the Camelot key: on a change only */
+        static uint8_t last[5] = {0, 0, 0, 0, 0xFF};
+        uint32_t k = cc - 103u, was = last[k];
+        last[k] = (uint8_t)v;
+        if (k == 4u) {
+            if (v != was && cos_mel()) cos_key_cam(v % 24u);
+            return;
+        }
+        if (!on || was >= 64u) return;
+        if (k == 0u) { if (song.playing) { db_req = 1; cos_say("DOWNBEAT"); } }
+        else if (k <= 2u) { mx_req = (uint8_t)k; cos_say(mx_n ? "MIX STOPPED" : k == 1u ? "MIX IN" : "MIX OUT"); }
+        else { bsw_req = 1; cos_say(bsw_on ? "BASS IN NEXT BAR" : "BASS OUT NEXT BAR"); }
+        return;
+    }
     if (cc >= 70u && cc <= 78u) {
         static const uint8_t ID[9] = {CC_DJF, CC_EQL, CC_EQM, CC_EQH, CC_MAC0, CC_MAC0 + 1u, CC_MAC0 + 2u, CC_MAC3, CC_MOPOS};
         cos_cput(ID[cc - 70u], rmt_scale(ID[cc - 70u], v));

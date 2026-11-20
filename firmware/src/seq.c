@@ -495,6 +495,9 @@ static volatile uint8_t fx_lock_on;              /* (0.6.44) ui_layer.c: the FX 
                                                  * the keys are its effects without FX held */
 static volatile uint32_t beat_pos, beat_n;      /* samples into the beat, the beat of the bar (0..3) */
 static volatile uint32_t bar_n;                 /* (0.6.43) the bars since PLAY (MUTATE: project.c mutate_poll) */
+static uint8_t db_edge;                          /* (0.20.0) a beat began in the block before (the downbeat's) */
+static uint32_t chain_nbar;                      /* (cursed-os 0.17.0) bars since PLAY (GLO > SYNTAKT's PAT LEN; 0.20.0
+                                                  * here: seq_rephase) */
 
 /* the metronome (click.c) and the count-in (1.1, Discussion #131). The click follows the song tempo's quarter notes
  * (BPM, or the external clock's 24 pulses), 4 to the bar, the first accented, whatever a track's DIV or SWING: a beat is
@@ -1311,6 +1314,36 @@ static void fl_reset(uint32_t ti) { memset(fl_cnt[ti % NTRK], 0, NSTEP); }
 /* -------------------------------------------------------- sequencer --- */
 static void fg_reset(void);                         /* (fugue.c) */
 static void gl_reset(void);                         /* (seq2f: the global lane) */
+/* (cursed-os 0.20.0, GG: live next to CDJs) the downbeat: every track from its step 0 now, the bar and the phrase
+ * counted from here (the song, its section, the transport and the clock as they are: HOME + PLAY while playing) */
+static __attribute__((noinline)) void seq_rephase(void)
+{
+    uint32_t i;
+    ms_clock = 0;
+    motion_begin();
+    for (i = 0; i < NTRK; i++) {
+        track_t *t = &trk[i];
+        t->seq_idx = (uint16_t)(t->p[P_SLEN] - 1);
+        t->seq_pos = 0x7FFFFFFF;
+        t->ext = 0;
+        t->rskip_n = t->rh_n = 0;
+        t->rat_left = 0;
+        t->arp_from = 0; t->loops = 0;
+        t->jump_to = t->rev = 0;
+        t->csp_n = t->c_pre = t->c_acc = 0;
+        t->cpos = t->cv_on = 0;
+        fl_reset(i), fl_pass[i] = 0;
+    }
+    fg_reset();
+    lv.act = 0;
+    gl_reset();
+    beat_pos = 0; beat_n = 0;
+    bar_n = 0;
+    chain_nbar = 0;
+    clk_pos = CLK_START;
+    slicer_start();
+    perf_start();
+}
 static void seq_start(void)
 {
     memset(shift_valid, 0, sizeof shift_valid);
@@ -2089,6 +2122,7 @@ static void seq_stop(void)
     if (song.playing && mo_clock_on())             /* (0.6.72) MIDI OUT CLOCK / ALL: STOP */
         mo_send(0xFCu, 0, 0);
     song.playing = 0;
+    clk_free = 0;                                  /* (0.20.0) a clock lost: over with the stop */
     midi_live = 0;                                 /* (cursed-os 0.19.0) FOLLOW, TOUCH: the MIDI's tracks again
                                                      * from its next note */
     cin_left = 0;                                  /* (a count-in: cancelled, nothing recorded) */
@@ -2949,13 +2983,42 @@ static void events_block(uint32_t n)
         seq_n = 0;
         if (song.playing) {
             uint32_t last = midi_clock.have_pulse ? midi_clock.last_ms : midi_clock.start_ms;
-            if (fm1_ms - last > 500u) {
-                seq_stop();                         /* cable loss must not leave a running held note */
+            uint32_t gap = midi_clock.interval_ms * 3u > 60u ? midi_clock.interval_ms * 3u : 60u;
+            if (clk_free || (midi_beat_samples && fm1_ms - last > gap)) {
+                /* (cursed-os 0.20.0, GG: live with a Syntakt and CDJs) the clock lost while playing (a cable knocked,
+                 * USB stalled): on at its last tempo, from where it is, no longer a stop (0.6's "cable loss must not
+                 * leave a held note": the notes keep their gates as they play). Its next pulse: followed again from
+                 * here, in phase as long as the tempo held; a Stop, PLAY: stopped as ever. Never a clock (a Start
+                 * alone): as before, stopped after 500 ms */
+                if (!clk_free) { clk_free = 1; midi_clock.tempo_valid = 0; }
+                seq_n = n;
+                midi_clock.rendered += n;
+                midi_clock.pos = midi_clock.rendered;
+                midi_clock.rem = 0;
+                midi_clock.have_pulse = 0;
+            } else if (!midi_beat_samples && fm1_ms - last > 500u) {
+                seq_stop();
                 midi_clock.tempo_valid = 0;
             } else
                 seq_n = midi_clock_advance(fm1_ms);
         }
     }
+    if (db_req && song.playing) {                     /* (0.20.0) the downbeat: on the nearest beat. Just after one (a
+                                                     * sixteenth): that beat the one, from now, caught up; else the next */
+        uint32_t c = beat_pos, bs = beat_samples();
+        if (db_req == 1u && c >= bs / 4u) db_req = 2;
+        else if (db_req == 1u || db_edge) {
+            if (db_req == 2u) c = beat_pos;
+            db_req = 0;
+            seq_rephase();
+            if (c) {
+                for (i = 0; i < NTRK; i++) seq_tick(&trk[i], c);
+                click_tick(c);
+                beat_pos = c;
+            }
+        }
+    }
+    db_edge = 0;
     chain_tick(seq_n);
     live_q(seq_n);                                  /* (p2) LIVE: what goes in now (seq_live.c; idle: a test) */
     for (i = 0; i < NTRK; i++)
@@ -2974,6 +3037,7 @@ static void events_block(uint32_t n)
         beat_pos -= beat_samples();
         beat_pos = beat_pos < beat_samples() ? beat_pos : 0u;
         beat_n = (beat_n + 1u) & 3u;
+        db_edge = 1;                                  /* (0.20.0) a beat began: a downbeat waiting goes in */
         if (!beat_n && song.playing)
             bar_n++;
     }

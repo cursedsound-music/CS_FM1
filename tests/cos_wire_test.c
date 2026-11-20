@@ -134,6 +134,8 @@ static const char *why_quiet(uint32_t m, const cpg_t *p, uint32_t k)
         if (id == CC_PCCH || id == CC_PCOUT || id == CC_VJCH) return "LINK: program changes and the VJ notes";
         if (id >= CC_STON && id <= CC_STLEN) return "SYNTAKT: the clock and the patterns it follows (syntakt_test)";
         if (id >= CC_STPC && id <= CC_STTCH) return "SYNTAKT 2: what the MIDI notes and program changes do (syntakt_test)";
+        if (id >= CC_LVLOCK && id <= CC_LVMONO) return "STAGE: the lock, the phrase, MIX's length, MONO BASS on stereo lows (stage_test)";
+        if (id == CC_KEYK || id == CC_KEYM) return "KEY: the key on the next bar, by name or Camelot (stage_test)";
         if (id >= CC_QSTY && id <= CC_QBAR && id != CC_LSAT) return "START: chosen, loaded by OCT+ (start_test)";
         if (id == CC_MUTEQ) return "MUTE Q: when a mute lands";
         if (id == CC_MOUT || id == CC_CLOCK || id == CC_BT || id == CC_LOAD) return "MIDI / SYSTEM settings";

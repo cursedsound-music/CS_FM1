@@ -177,6 +177,38 @@ static void idle_ms(uint32_t ms)               /* about ms of audio blocks, no M
     uint32_t i, ms0 = fm1_ms;
     for (i = 0; i < ms * 23u / 16u; i++) { fm1_ms = ms0 + i * 16u / 23u; events_block(CTL); }
 }
+/* (cursed-os 0.20.0, GG: live with a Syntakt and CDJs) the clock lost while playing (two beats of it at 120, then
+ * nothing for 2 s): the FM-1 runs on at 120 by itself (its steps on, about 4 beats in 2 s), CLOCK LOST; its pulses
+ * again: followed from where it is (no jump back), CLOCK BACK; a Stop: stopped */
+static int clock_loss_test(void)
+{
+    int bad = 0;
+    uint32_t ms, i, p0, p1;
+    midi_test_reset(); song.g[G_CLOCK] = 1; events_block(CTL);
+    ms = fm1_ms + 10u;
+    clock_packet(1, 0xFA, ms);
+    for (i = 1; i <= 48u; i++) clock_packet(1, 0xF8, ms + i * 21u);
+    idle_ms(20);
+    {                                                    /* (2 s, the 1/16 steps counted as they turn: clk_step wraps) */
+        uint32_t ms0 = fm1_ms, last = clk_step;
+        p0 = 0;
+        for (i = 0; i < 2u * FS / CTL; i++) {           /* (a block's real time: idle_ms runs fast) */
+            fm1_ms = ms0 + i * CTL * 1000u / FS;
+            events_block(CTL);
+            if (clk_step != last) { p0++; last = clk_step; }
+        }
+        p1 = p0; p0 = 0;
+    }
+    bad += check("clock lost while playing: it runs on by itself, CLOCK LOST", song.playing && clk_free && midi_beat_samples);
+    bad += check("  at the clock's tempo: about 16 steps in 2 s at 120", p1 - p0 >= 14u && p1 - p0 <= 18u);
+    ms = fm1_ms;
+    for (i = 1; i <= 24u; i++) clock_packet(1, 0xF8, ms + i * 21u);
+    bad += check("its pulses again: followed from where it is, CLOCK BACK", song.playing && !clk_free && clk_back);
+    clk_back = 0;
+    clock_packet(1, 0xFC, fm1_ms + 1u); idle_ms(50);
+    bad += check("a Stop: stopped", !song.playing && !clk_free);
+    return bad;
+}
 static int arp_ext_stop_test(void)
 {
     int bad = 0; uint32_t ms, i, off;
@@ -189,7 +221,7 @@ static int arp_ext_stop_test(void)
     for (i = 1; i < 40 && !trk[0].arp_note; i++) clock_packet(1, 0xF8, ms + i * 21u);
     bad += check("Continue plays the latched chord again", trk[0].arp_note != 0);
     arp_latch(1); arp_ext_run(10); idle_ms(2000);
-    bad += check("a lost external clock stops the transport and ends the ARP note", !song.playing && !trk[0].arp_note && !gate_note(&trk[0], 72));
+    bad += check("a lost external clock (never a beat of it) stops the transport and ends the ARP note", !song.playing && !trk[0].arp_note && !gate_note(&trk[0], 72));
     arp_latch(1); queued(0x90, 64, 100, 1); queued(0x80, 64, 0, 1);
     bad += check("a tap while the external transport is stopped sounds", trk[0].arp_note == 64);
     idle_ms(2000);
@@ -359,6 +391,6 @@ static int cc_map_test(void)
 int main(void)
 {
     int bad = controls_test() + sustain_test() + ownership_test() + clock_test(1) + clock_test(2) + clock_arp_and_boundaries() +
-              arp_ext_stop_test() + usb_burst_test() + route_test() + cc_map_test();
+              arp_ext_stop_test() + clock_loss_test() + usb_burst_test() + route_test() + cc_map_test();
     printf("%s\n", bad ? "MIDI CONTROL/CLOCK TEST FAILED" : "MIDI control/clock integration tests passed"); return bad != 0;
 }

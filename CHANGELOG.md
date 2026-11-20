@@ -2,6 +2,24 @@
 
 cursed os versions, newest first. The full detail of each one is in the git history (`git log`).
 
+## 0.20.0
+
+Live performance.
+
+- Keys by name and Camelot together, everywhere: `AMIN/8A` on the KEY page and at the top of every page. KEY's new
+  knobs turn through the keys by NAME or by CAMELOT (1A … 12B, root and minor/major together).
+- If the external clock stops while playing, the FM-1 keeps going at the last tempo (CLOCK LOST) and follows the clock
+  again when it returns (CLOCK BACK). Before, it stopped after half a second.
+- GLO > STAGE: LIVE LOCK (no new project, emptied track or erased slot by accident), PHRASE (16 / 32 bars), CHANGES (on
+  the bar or the phrase), MIX BARS. GLO > STAGE 2: MONO BASS (80 / 120 / 160 Hz).
+- HOME: DOWNBEAT (HOME + PLAY), MIX IN / OUT (HOME + black 7 / 8), BASS SWAP (HOME + black 9), the phrase's bar on the
+  bottom line.
+- Channel 16: CCs 103–107 for DOWNBEAT, MIX IN, MIX OUT, BASS SWAP and the Camelot key, so a Syntakt MIDI track can
+  run them.
+- Fixed: a key change waiting for its bar didn't land while the IDLE screen was up.
+- Settings, projects and sounds from 0.19.x load unchanged; the new settings start as before (lock off, changes on the
+  bar, mono bass off).
+
 ## 0.19.0
 
 The FM-1 as an extra voice for an Elektron Syntakt, with sounds the Syntakt has no machine for.

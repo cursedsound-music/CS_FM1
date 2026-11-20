@@ -55,8 +55,11 @@ enum { CC_OUTCH, CC_MOUT, CC_CLOCK, CC_SLOT, CC_TRKS, CC_LOAD, CC_COMP, CC_CATK,
        CC_STON, CC_STPAT, CC_STLEN,                      /* (0.17.0) GLO > SYNTAKT: ON, PATTERNS, PAT LEN */
        CC_LSAT, CC_QSTY, CC_QDRM,                        /* (0.18.0) GLO > LIMIT's SATURATE; SAVE > START's STYLE, DRUMS */
        CC_QELM, CC_QBAR,                                 /* (0.18.1) START's ELEMENTS, BARS */
-       CC_STPC, CC_STFOL, CC_STHLD, CC_STTCH };          /* (0.19.0) GLO > SYNTAKT 2: PROGRAMS, FOLLOW, HOLD, TOUCH */
-_Static_assert(CC_STTCH < 0xFBu && CC_DCH7 < 0xFBu, "the CK_COS ids fit a page's byte (0xFB..0xFF: BFINE, MUTE Q, BPM, OCTAVE, none)");
+       CC_STPC, CC_STFOL, CC_STHLD, CC_STTCH,
+       CC_KEYK, CC_KEYM,                                 /* (0.20.0) KEY: the key by the knob, by NAME or CAMELOT */
+       CC_LVLOCK, CC_LVPH, CC_LVCHG, CC_LVMIX, CC_LVMONO };   /* (0.20.0) GLO > STAGE: LOCK, PHRASE, CHANGES, MIX BARS;
+                                                         * STAGE 2: MONO BASS */          /* (0.19.0) GLO > SYNTAKT 2: PROGRAMS, FOLLOW, HOLD, TOUCH */
+_Static_assert(CC_LVMONO < 0xFBu && CC_DCH7 < 0xFBu, "the CK_COS ids fit a page's byte (0xFB..0xFF: BFINE, MUTE Q, BPM, OCTAVE, none)");
 _Static_assert(X2_N <= 16u, "CC_X2 .. CC_X2E: room for every trk_x2 field");
 static void cos_syntakt(uint32_t id, int32_t v);    /* (0.17.0) GLO > SYNTAKT's knobs */
 static void cos_syntakt2(uint32_t id, int32_t v);   /* (0.19.0) GLO > SYNTAKT 2's */
@@ -180,7 +183,7 @@ static const cpg_t CZP_AMPA[] = {{"AMP", CK_TRK, {P_ATK, P_DEC, P_SUS, P_REL}},
 static const cpg_t CZP_DRUMS[] = {{"ROLL", CK_COS, {CC_RRATE, CC_RRAMP, CC_RVEL, X}},   /* (0.13.0) LFO: DRUMS (cos_drm.c) */
                                  {"CHANCE", CK_COS, {CC_DCH0, CC_DCH0 + 1u, CC_DCH0 + 2u, CC_DCH0 + 3u}},
                                  {"CHANCE 2", CK_COS, {CC_DCH0 + 4u, CC_DCH0 + 5u, CC_DCH0 + 6u, CC_DCH7}}};
-#define CZ_TABS 18u                                 /* (the most pages a mode may have: cos_tabs's names) */
+#define CZ_TABS 20u                                 /* (the most pages a mode may have: cos_tabs's names) */
 static const cpg_t CZP_FX[] = {{"DJ", CK_COS, {CC_DJF, CC_EQL, CC_EQM, CC_EQH}},   /* (the mixer's: DJ FILTER, the ISOLATOR) */
                               {"SEND", CK_TRK, {P_DIST, P_CHOR, P_DLY, P_REV}}, {"DIST", CK_TRK, {P_DTYPE, P_DTONE, X, X}},
                               {"DELAY", CK_GLO, {G_DTIME, G_DFDBK, G_DCOLOR, G_DPING}},    /* (the buses: every track's) */
@@ -225,12 +228,16 @@ static const cpg_t CZP_MIX[] = {{"MIX", CK_TRK, {P_LEVEL, P_PAN, P_GLIDE, P_MUTE
                                                          * 0.18.0: K4 the leveler, off with it (PC CH on LINK) */
                                {"SYNTAKT 2", CK_COS, {CC_STPC, CC_STFOL, CC_STHLD, CC_STTCH}},   /* (0.19.0) the FM-1 as
                                                          * the Syntakt's MIDI tracks' voice */
+                               {"STAGE", CK_COS, {CC_LVLOCK, CC_LVPH, CC_LVCHG, CC_LVMIX}},   /* (0.20.0) live: the lock, the
+                                                         * phrase, when changes land, MIX IN / OUT's length */
+                               {"STAGE 2", CK_COS, {CC_LVMONO, X, X, X}},   /* (0.20.0) MONO BASS */
                                {"LINK", CK_COS, {CC_PCCH, CC_PCOUT, CC_VJCH, X}},   /* (a Syntakt's patterns: the sections) */
                                {"LINK 2", CK_COS, {CC_MCCH, CC_MCDIR, CC_MCMAP, CC_MOCC}},   /* (the macros and MORPH as CCs, both
                                                          * ways) */
                                {"LINK 3", CK_COS, {CC_MC0, CC_MC0 + 1u, CC_MC0 + 2u, CC_MC3}},   /* (.. each one's CC) */
                                {"SYSTEM", CK_COS, {CC_TRKS, CC_LOAD, CC_BT, CC_IDLE}}};
-static const cpg_t CZP_KEY[] = {{"KEY", CK_COS, {CC_SCALE, CC_QUANT, X, X}}};   /* (the root: the keys; the song's scale,
+static const cpg_t CZP_KEY[] = {{"KEY", CK_COS, {CC_SCALE, CC_QUANT, CC_KEYK, CC_KEYM}}};   /* (0.20.0: K3 the key, K4 by
+                                                         * NAME or CAMELOT) */   /* (the root: the keys; the song's scale,
                                                          * whichever track is picked: cos_mel) */
 static const cpg_t CZP_PERF[] = {{"FX PAD", CK_COS, {CC_PF0, CC_PF0 + 1u, CC_PF0 + 2u, CC_PF3}}};   /* (FX held) */
 static const cpg_t CZP_PROJ[] = {{"PROJECT", CK_COS, {CC_SLOT, CC_NAME, X, X}},
@@ -254,6 +261,7 @@ static struct {
     uint32_t hot_ms, msg_ms, sig[6];
     char msg[24];
     uint8_t key_next, scl_down, scl_used;              /* key_next: 1 + the key asked for (0 C .. 11 B) */
+    uint8_t key_sc_next;                                /* (0.20.0) 1 + the scale to take with it (KEY's CAMELOT), 0 keep */
     uint32_t key_bar;                                   /* (bar_n when it was asked for) */
     uint32_t new_ms;                                    /* (0.9.3) SAVE's REC: when it was pressed (a second within 3 s: NEW) */
     uint8_t lk_mode, lk_tab, lk_used;                   /* LOCK: the sound page used last; a knob turned while steps held */
@@ -295,9 +303,9 @@ static int cos_dead(const track_t *t, uint32_t id);      /* (below: a parameter 
 static void cos_pages(uint32_t m, const cpg_t **p, uint32_t *n)
 {
     static const cpg_t *const P[CM_N] = {CZP_HOME, CZP_TRIG, CZP_SRC, CZP_AMP, CZP_DRUMS, CZP_FX, CZP_GENA, CZP_MIX, CZP_KEY, CZP_PROJ};
-    static const uint8_t N[CM_N] = {7, 5, 9, 9, 3, 9, 4, 17, 1, 4};   /* (each at most CZ_TABS: cos_tabs) */
+    static const uint8_t N[CM_N] = {7, 5, 9, 9, 3, 9, 4, 19, 1, 4};   /* (each at most CZ_TABS: cos_tabs) */
     _Static_assert(NELEM(CZP_HOME) == 7 && NELEM(CZP_TRIG) == 5 && NELEM(CZP_SRC) == 9 && NELEM(CZP_AMP) == 9 &&
-                   NELEM(CZP_DRUMS) == 3 && NELEM(CZP_FX) == 9 && NELEM(CZP_GENA) == 4 && NELEM(CZP_MIX) == 17 &&
+                   NELEM(CZP_DRUMS) == 3 && NELEM(CZP_FX) == 9 && NELEM(CZP_GENA) == 4 && NELEM(CZP_MIX) == 19 &&
                    NELEM(CZP_KEY) == 1 && NELEM(CZP_PROJ) == 4 && NELEM(CZP_SRCD) <= CZ_TABS && NELEM(CZP_GENS) <= CZ_TABS &&
                    NELEM(CZP_SRCV) == 10 && NELEM(CZP_AMPA) == 9 && NELEM(CZP_SRCN) == 9,
                    "N: the pages each mode has (0.9.2: a count past its list read past it)");
@@ -345,7 +353,7 @@ static const char *const CZ_ESS[CM_N] = {
     "AMP|FILTER 1|LFO 1",                               /* ENV */
     "", "SEND|DELAY|REVERB",                            /* LFO: DRUMS (3), FX */
     "ACID|DUB|BLEEP|EUCLID|KICK",                       /* GEN: each generator's first */
-    "MIX|LIMIT|SYNTAKT|SYNTAKT 2", "", "PROJECT|SOUNDS|KITS|START"};   /* GLO (0.17.0: SYNTAKT; 0.19.0: 2); KEY; SAVE (0.18.0: all four) */
+    "MIX|LIMIT|SYNTAKT|SYNTAKT 2|STAGE", "", "PROJECT|SOUNDS|KITS|START"};   /* GLO (0.17.0: SYNTAKT; 0.19.0: 2); KEY; SAVE (0.18.0: all four) */
 static int cos_ess(uint32_t m, const cpg_t *p, uint32_t i, uint32_t n)
 {
     const char *l = CZ_ESS[m % CM_N], *t = p[i].tab;
@@ -473,6 +481,26 @@ static void mph_key(uint32_t x, int store)
 }
 
 static const char *const COS_NN[12] = {"C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"};
+/* (cursed-os 0.20.0, GG: "the key displayed with normal letters ... but also the camelot keys next to it. Amin/8a")
+ * Camelot (the DJ's wheel, as a CDJ or rekordbox shows a record's key): 1A .. 12A minor, 1B .. 12B major, a step
+ * round the wheel a fifth. The song's scale picks the side: the major ones (MAJ MIX LYD PEN) B, every other A (minor,
+ * the modes on it, and no scale at all: the song's root its tonic) */
+static int cos_major(uint32_t sc) { return sc == 1u || sc == 4u || sc == 5u || sc == 9u; }
+static uint32_t cos_cam_n(uint32_t pc, int maj) { uint32_t n = (pc % 12u * 7u + (maj ? 8u : 5u)) % 12u; return n ? n : 12u; }
+static uint32_t cos_cam_pc(uint32_t n, int maj) { return (uint32_t)(((int32_t)(n % 12u) - (maj ? 8 : 5) + 24) * 7 % 12); }
+/* "AMIN/8A", "CMAJ/8B", "DDOR/7A", "A/8A" (no scale): the name, the scale (MIN MAJ or its own), Camelot */
+static void cos_key_label(char *b, uint32_t pc, uint32_t sc)
+{
+    uint32_t n = cos_cam_n(pc, cos_major(sc)), l;
+    str_cpy(b, COS_NN[pc % 12u], 4);
+    if (sc && sc < 16u) str_cpy(b + str_len(b), sc == 1u ? "MAJ" : sc == 2u ? "MIN" : N_SCALE[sc], 6);
+    l = str_len(b);
+    b[l++] = '/';
+    if (n >= 10u) b[l++] = '1';
+    b[l++] = (char)('0' + n % 10u);
+    b[l++] = cos_major(sc) ? 'B' : 'A';
+    b[l] = 0;
+}
 
 /* the song's key and scale live on its melodic tracks (ui_input.c scale_link keeps them alike): the first of them, or
  * the selected one when it is melodic */
@@ -511,6 +539,7 @@ static void cos_words(int up)
 
 /* the song into key pc (0..11): the nearest interval (-6 .. +5), every synth track's notes and root moved by it (the
  * notes as stored: MIDI OUT, ACID and the scale all agree; a kit's lanes stay) */
+static uint32_t cos_song_scale(void);
 static void cos_key_apply(uint32_t pc)
 {
     int32_t d = ((int32_t)pc - (int32_t)cos_key() + 18) % 12 - 6;
@@ -525,24 +554,62 @@ static void cos_key_apply(uint32_t pc)
         }
         t->p[P_ROOT] = (int16_t)((t->p[P_ROOT] + d + 120) % 12);
     }
-    cz.key_next = 0;
-    cos_say(COS_NN[pc % 12u]);
+    if (cz.key_sc_next)                                  /* (0.20.0) a Camelot key: its side's scale with it */
+        for (k = 0; k < NTRK; k++)
+            if (!cos_hits(&trk[k])) trk[k].p[P_SCALE] = (int16_t)(cz.key_sc_next - 1u);
+    cz.key_next = cz.key_sc_next = 0;
+    {
+        char b[16];
+        cos_key_label(b, pc, cos_song_scale());
+        cos_say(b);
+    }
 }
 /* a key asked for: now when stopped, on the next bar while playing */
-static void cos_key_ask(uint32_t key)
+static void cos_key_to(uint32_t pc, uint32_t sc1)     /* (0.20.0) pc, sc1: 1 + a scale with it, 0 keep */
 {
-    uint32_t pc = (5u + key) % 12u;                      /* (key 0 is F) */
+    cz.key_sc_next = (uint8_t)sc1;
     if (!song.playing) { cos_key_apply(pc); return; }
     cz.key_next = (uint8_t)(pc + 1u);
     cz.key_bar = bar_n;
 }
+static void cos_key_ask(uint32_t key)
+{
+    cos_key_to((5u + key) % 12u, 0);                     /* (key 0 is F) */
+}
+/* (0.20.0) the song's scale (the first melodic track's), 0 none */
+static uint32_t cos_song_scale(void)
+{
+    const track_t *m = cos_mel();
+    return m ? (uint32_t)clamp(m->p[P_SCALE], 0, 15) : 0u;
+}
+/* (0.20.0) the key shown and turned: the one waiting for the bar, else the song's; its scale */
+static uint32_t cos_key_shown(uint32_t *sc)
+{
+    *sc = cz.key_sc_next ? cz.key_sc_next - 1u : cos_song_scale();
+    return cz.key_next ? cz.key_next - 1u : cos_key();
+}
+/* (0.20.0) LIVE LOCK: what throws music away (a new project, a track emptied, a saved sound or kit erased) not done */
+static int cos_locked(void)
+{
+    if (!(cos_lv & LV_LOCK)) return 0;
+    cos_say("LIVE LOCK: GLO > STAGE");
+    return 1;
+}
+/* (0.20.0) the key by the Camelot wheel, c 0 1A, 1 1B .. 23 12B (KEY's K3, the remote's CC 107): the scale kept when
+ * it is on that side already (DOR stays DOR on an A), else MIN or MAJ */
+static void cos_key_cam(uint32_t c)
+{
+    uint32_t maj = c & 1u, cur = cos_song_scale();
+    cos_key_to(cos_cam_pc(c / 2u % 12u + 1u, (int)maj), (uint32_t)cos_major(cur) == maj ? 0u : 1u + (maj ? 1u : 2u));
+}
+static int cos_by_cam(void) { return favorites.factory[8][19] & 1u; }   /* (KEY's K4: CAMELOT, kept: row 8 byte 19) */
 static int cos_dsrc_get(uint32_t i, dx_lane_t *L, uint8_t *lay);
 static void cos_k0_poll(void);
 static void cos_key_poll(void)
 {
     cos_k0_poll();                                      /* (0.14.1) the PERC */
-    if (cz.key_next && (!song.playing || bar_n != cz.key_bar))
-        cos_key_apply(cz.key_next - 1u);
+    if (cz.key_next && (!song.playing || (bar_n != cz.key_bar && (!(cos_lv & LV_PHQ) || !(bar_n & (lv_phrase() - 1u))))))
+        cos_key_apply(cz.key_next - 1u);                 /* (0.20.0: CHANGES PHRASE, the phrase's first bar) */
 }
 
 /* GLO > MIDI's knobs: the selected track's MIDI OUT channel (the settings: bytes 8 .. 13 of engine 15's, 0 its own),
@@ -926,6 +993,33 @@ static const param_desc_t *cos_cdesc(uint32_t id, int16_t **vp)
         *vp = &cz.cc_v[13];
         return &D[id - CC_SCT];
     }
+    if (id >= CC_LVLOCK && id <= CC_LVMONO) {            /* (0.20.0) GLO > STAGE, STAGE 2 */
+        static const char *const OO[] = {"OFF", "ON", 0}, *const PH[] = {"16", "32", 0},   /* (the values: 5 letters) */
+                                 *const CH[] = {"BAR", "PHR", 0}, *const MB[] = {"8", "16", "32", "4", 0},
+                                 *const MO[] = {"OFF", "80", "120", "160", 0};
+        static const param_desc_t DS[5] = {{"LOCK", F_ENUM, 0, 1, 0, OO, 0}, {"PHRASE", F_ENUM, 0, 1, 0, PH, 0},
+                                           {"CHANGES", F_ENUM, 0, 1, 0, CH, 0}, {"MIX BARS", F_ENUM, 0, 3, 0, MB, 0},
+                                           {"MONO HZ", F_ENUM, 0, 3, 0, MO, 0}};
+        uint32_t b = cos_lv;
+        cz.cc_v[4] = (int16_t)(id == CC_LVLOCK ? b & 1u : id == CC_LVPH ? b >> 1 & 1u : id == CC_LVCHG ? b >> 2 & 1u
+                               : id == CC_LVMIX ? LV_MIXB(b) : LV_MONO(b));
+        *vp = &cz.cc_v[4];
+        return &DS[id - CC_LVLOCK];
+    }
+    if (id == CC_KEYK || id == CC_KEYM) {               /* (0.20.0) KEY: K3 the key (by name: the root, the scale
+                                                         * kept; by Camelot: 1A 1B .. 12B, root and side), K4 how */
+        static const char *const CAM[25] = {"1A", "1B", "2A", "2B", "3A", "3B", "4A", "4B", "5A", "5B", "6A", "6B", "7A",
+                                            "7B", "8A", "8B", "9A", "9B", "10A", "10B", "11A", "11B", "12A", "12B", 0};
+        static const char *const NM[13] = {"C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B", 0};
+        static const char *const BY[3] = {"NAME", "CAMELOT", 0};
+        static const param_desc_t DN = {"KEY", F_ENUM, 0, 11, 0, NM, 0}, DC = {"KEY", F_ENUM, 0, 23, 0, CAM, 0},
+                                  DM = {"PICK BY", F_ENUM, 0, 1, 0, BY, 0};
+        uint32_t sc, pc = cos_key_shown(&sc);
+        if (id == CC_KEYM) { cz.cc_v[2] = (int16_t)cos_by_cam(); *vp = &cz.cc_v[2]; return &DM; }
+        cz.cc_v[1] = (int16_t)(cos_by_cam() ? (cos_cam_n(pc, cos_major(sc)) - 1u) * 2u + (uint32_t)cos_major(sc) : pc);
+        *vp = &cz.cc_v[1];
+        return cos_by_cam() ? &DC : &DN;
+    }
     if (id == CC_SCALE || id == CC_QUANT) {               /* (SEL: the song's scale and how the keys keep to it) */
         track_t *m = cos_mel();
         uint32_t pi = id == CC_SCALE ? P_SCALE : P_QUANT;
@@ -1234,6 +1328,25 @@ static void cos_cput(uint32_t id, int32_t v)
                                  &lu_tgt, &lu_rst};
         if (id == CC_LUR) { lu_rst = (uint8_t)(v != 0); cos_lu_reset(); return; }   /* (any turn: from now) */
         *pv[id - CC_SCT] = (uint8_t)clamp(v, 0, MX[id - CC_SCT]);
+    } else if (id >= CC_LVLOCK && id <= CC_LVMONO) {     /* (0.20.0) GLO > STAGE: kept (row 8 byte 18) */
+        uint32_t b = cos_lv;
+        if (id == CC_LVLOCK) b = v ? b | LV_LOCK : b & ~LV_LOCK;
+        else if (id == CC_LVPH) b = v ? b | LV_PH32 : b & ~LV_PH32;
+        else if (id == CC_LVCHG) b = v ? b | LV_PHQ : b & ~LV_PHQ;
+        else if (id == CC_LVMIX) b = (b & ~0x30u) | (uint32_t)clamp(v, 0, 3) << 4;
+        else b = (b & ~0xC0u) | (uint32_t)clamp(v, 0, 3) << 6;
+        favorites.factory[8][18] = cos_lv = (uint8_t)b;
+        cz.set_ms = fm1_ms;
+        if (id == CC_LVLOCK) cos_say(v ? "LIVE LOCK ON" : "LIVE LOCK OFF");
+    } else if (id == CC_KEYM) {                          /* (0.20.0) KEY: by NAME / CAMELOT, kept */
+        favorites.factory[8][19] = (uint8_t)((favorites.factory[8][19] & ~1u) | (uint32_t)clamp(v, 0, 1));
+        cz.set_ms = fm1_ms;
+    } else if (id == CC_KEYK) {                          /* (0.20.0) the key: on the next bar (now when stopped) */
+        if (!cos_mel()) return;
+        if (cos_by_cam())
+            cos_key_cam((uint32_t)clamp(v, 0, 23));
+        else
+            cos_key_to((uint32_t)clamp(v, 0, 11), 0);
     } else if (id == CC_SCALE || id == CC_QUANT) {
         track_t *m = cos_mel();
         uint32_t pi = id == CC_SCALE ? P_SCALE : P_QUANT, k;
@@ -2031,6 +2144,7 @@ static __attribute__((noinline)) void cos_snd_oct(int up)
 static __attribute__((noinline)) void cos_snd_erase(void)
 {
     uint32_t k = cz.uslot % (UP_SLOTS - 1u);
+    if (cos_locked()) return;
     if (!up_used(k)) { cos_say("EMPTY SLOT"); return; }
     if (!cz.snd_ms || fm1_ms - cz.snd_ms > 3000u) { cz.snd_ms = fm1_ms ? fm1_ms : 1u; cos_say("REC AGAIN: ERASE"); return; }
     cz.snd_ms = 0;
@@ -2066,6 +2180,7 @@ static __attribute__((noinline)) void cos_kit_oct(int up)
 static __attribute__((noinline)) void cos_kit_erase(void)
 {
     uint32_t k = cz.kslot % 16u;
+    if (cos_locked()) return;
     if (!kit_is_used(k)) { cos_say("EMPTY SLOT"); return; }
     if (song.playing) { cos_say("STOP TO ERASE"); return; }
     if (!cz.snd_ms || fm1_ms - cz.snd_ms > 3000u) { cz.snd_ms = fm1_ms ? fm1_ms : 1u; cos_say("REC AGAIN: ERASE"); return; }
@@ -2096,6 +2211,7 @@ static int undo_gen(void);
 static int undo_do(void);
 static __attribute__((noinline)) void cos_proj_new(void)
 {
+    if (cos_locked()) return;
     if (chain_busy()) { cos_say("STOP THE SONG FIRST"); return; }
     if (!cz.new_ms || fm1_ms - cz.new_ms > 3000u) { cz.new_ms = fm1_ms ? fm1_ms : 1u; cos_say("REC AGAIN: NEW PROJECT"); return; }
     cz.new_ms = 0;
@@ -2327,6 +2443,7 @@ static __attribute__((noinline)) void cos_qs_tick(void)
     if (!song.playing) { qs_pend = 0; return; }
     bs = beat_samples();
     pb = (favorites.factory[8][31] & 1u) && song.g[G_CLOCK] == 2 ? cos_pc_bars : 1u;
+    if ((cos_lv & LV_PHQ) && lv_phrase() > pb) pb = lv_phrase();   /* (0.20.0) CHANGES PHRASE: at the phrase's end */
     if (beat_n != 3u || beat_pos < bs * 3u / 4u + bs / 16u || (pb > 1u && ((bar_n + 1u) % pb))) return;
     qs_pend = 0;
     cos_qs_load();
@@ -2481,6 +2598,7 @@ static __attribute__((noinline)) void cos_clear(void)
 {
     uint32_t k = song.sel % NTRK, i;
     track_t *t = TSEL;
+    if (cos_locked()) return;
     if (cz.clr_k != k + 1u || fm1_ms - cz.clr_t > 3000u) {
         cz.clr_k = (uint8_t)(k + 1u);
         cz.clr_t = fm1_ms;
@@ -2527,6 +2645,8 @@ static __attribute__((noinline)) void cos_input(void)
 {
     cos_remote_poll();                                   /* (0.9.5: the phone's, the IDLE screen up or not) */
     cos_drm_poll();                                      /* (0.13.0) DRUMS: the rolls and the REPEAT held */
+    cos_key_poll();                                      /* (0.20.0: before the IDLE screen's gate: a key from the
+                                                         * Syntakt's CC 107 lands on its bar with the FM-1 untouched) */
     mo_ext = (uint8_t)(favorites.factory[15][3] & ((1u << NTRK) - 1u));   /* (0.13.0) GLO > MIDI 2 SOUND EXT */
     if (cos_idle_gate()) return;                         /* (the IDLE screen: shown, or its waking touch) */
     uint32_t released = 0, pressed = fm1_input_edges(&released), notes = fm1_input_note_edges(), k, b;
@@ -2565,7 +2685,12 @@ static __attribute__((noinline)) void cos_input(void)
         if (!((pressed >> k) & 1u)) continue;
         pressed &= ~(1u << k);
         b = panel_btn_of(k);
-        if (b == B_PLAY) transport_req = song.playing || seq_counting() ? 2u : 1u;
+        if (b == B_PLAY && cos_home_held() && song.playing) {   /* (0.20.0) HOME + PLAY playing: the DOWNBEAT, the bar
+                                                         * from the nearest beat (seq.c) */
+            cz.home_used = 1;
+            db_req = 1;
+            cos_say("DOWNBEAT");
+        } else if (b == B_PLAY) transport_req = song.playing || seq_counting() ? 2u : 1u;
         else if (b == B_REC && ((fm1_in.buttons >> panel.btn[B_SEQ]) & 1u)) { cz.sq_used = 1; cos_clear(); }   /* SEQ held +
                                                          * REC, twice */
         else if (b == B_REC && cz.mode == CM_PROJ && cz.tab[CM_PROJ] == 1u) cos_snd_erase();   /* (0.10.2) SOUNDS: x2 erase */
@@ -2823,6 +2948,14 @@ static __attribute__((noinline)) void cos_input(void)
             }
             else if (j < trk_live) { cos_snap(); fm1_irq_off(); live_qmute ^= (uint8_t)(1u << j); fm1_irq_on(); }   /* (on the next
                                                          * beat / bar; the ISR takes it whole) */
+            else if ((j == 6u || j == 7u) && cos_home_held()) {   /* (0.20.0) HOME + black 7 / 8: MIX IN / OUT */
+                mx_req = (uint8_t)(j == 6u ? 1u : 2u);
+                cos_say(mx_n ? "MIX STOPPED" : j == 6u ? "MIX IN" : "MIX OUT");
+            }
+            else if (j == 8u && cos_home_held()) {       /* (0.20.0) HOME + black 9: BASS SWAP on the bar */
+                bsw_req = 1;
+                cos_say(bsw_on ? "BASS IN NEXT BAR" : "BASS OUT NEXT BAR");
+            }
             else if (j == 6u) { fill_req = 1; cos_say(song.playing ? "FILL" : "FILL: PLAY FIRST"); }
             else if (j == 7u) {
                 static const char *const BS[6] = {"BREAK NEXT BAR", "BREAK", "BUILD NEXT BAR", "BUILD", "DROP NEXT BAR", ""};
@@ -2843,7 +2976,8 @@ static __attribute__((noinline)) void cos_input(void)
     }
     if (cz.mode == CM_HOME && ((fm1_in.notes >> BK[6]) & 1u) && song.playing) fill_req = 1;   /* (FILL held: every bar) */
     cfx_rec = (uint8_t)(cz.fx_down && song.rec && song.playing);   /* (REC armed, FX held: the FX lane recorded) */
-    cfx_home = cz.mode == CM_HOME && !cz.fx_down ?      /* (HOME's black 9 10 11 held: LOW MID HIGH KILL, the isolator's) */
+    cfx_home = cz.mode == CM_HOME && !cz.fx_down && !cos_home_held() ?   /* (HOME's black 9 10 11 held: LOW MID HIGH KILL,
+                                                         * the isolator's; 0.20.0: not with HOME, black 9 the BASS SWAP) */
         (((fm1_in.notes >> BK[8]) & 1u) ? CX_BIT(CX_LOWK) : 0u) | (((fm1_in.notes >> BK[9]) & 1u) ? CX_BIT(CX_MIDK) : 0u) |
         (((fm1_in.notes >> BK[10]) & 1u) ? CX_BIT(CX_HIK) : 0u) : 0u;
     {                                                    /* TRIG: a white key let go: its trig, unless a lock was set */
@@ -2859,7 +2993,6 @@ static __attribute__((noinline)) void cos_input(void)
     if (cz.hot && fm1_ms - cz.hot_ms > 1500u) cz.hot = 0;
     if (ui.msg_t && ui.msg[0]) { cos_say(ui.msg); ui.msg_t = 0; }   /* (what JIANT's code says: on our top line) */
     if (cz.set_ms && fm1_ms - cz.set_ms > 2000u) { cz.set_ms = 0; settings_save(); }
-    cos_key_poll();
     if (cz.mode == CM_SRC && cos_kit()) dx_follow();     /* (a drum's key struck on a kit's EDIT: that drum picked) */
     cos_pg_follow();                                     /* (the page now, by name, for the next track picked) */
     ui_polls();                                          /* (what JIANT's frame keeps doing: ui_input.c) */
@@ -3324,6 +3457,7 @@ static int cos_idle_gate(void)
         cz.ready = 0;
     }
     if (cz.idle_up) { song.grid = 2; return 1; }
+    if (clk_back) { clk_back = 0; cos_say("CLOCK BACK"); }   /* (0.20.0) the clock again after a loss */
     {                                                    /* the battery low: said once (again under 5 %) */
         int32_t p = cos_batt_pct();
         if (p >= 0 && p <= 100) {
@@ -3343,33 +3477,41 @@ static void cos_head(void)
     b[0] = 'T'; b[1] = (char)('1' + song.sel % NTRK); b[2] = 0;
     cos_tx(5, 3, b, C_BG);
     cos_tx(32, 3, CM_NAME[cz.mode], C_FG);
-    if (cz.msg[0] && fm1_ms - cz.msg_ms < 1800u) {
-        str_cpy(b, cz.msg, 19);                           /* (a long one over the key and the tempo: 18 at most) */
-        cos_up(b);
-        cos_tx(32 + 8 * 6, 3, b, C_RED);
-        if (str_len(b) > 11u) goto tri;
-    } else {
-        str_cpy(b, trk_engp(t)->name, 9);
-        cos_up(b);
-        cos_tx(32 + 8 * 6, 3, b, C_DIM);
-    }
-    b[0] = 0;
-    if (cos_follows()) cos_bpm_text(b, (int32_t)cos_ext10());   /* (following a clock: its tempo, steady, in tenths) */
-    else cos_bpm100_text(b, song.g[G_BPM] * 100 + bpm_frac % 100u);   /* (0.10.1: 130.16) */
-    if (bpm_nudge) str_cpy(b + str_len(b), bpm_nudge > 0 ? "+" : "-", 2);   /* (nudged: 3 %, red) */
-    {                                                     /* (0.10.1) the key and the battery left of the tempo, however long
-                                                         * (130.16+ is wider than 120) */
-        int32_t kx = 226 - cos_w(b) - 6, bx;
-        const char *kn = COS_NN[cz.key_next ? cz.key_next - 1u : cos_key()];
-        cos_txr(226, 3, b, bpm_nudge ? C_RED : C_FG);
+    {                                                    /* (0.20.0) right to left: the tempo, the key (AMIN/8A), the
+                                                         * battery; the engine's name (or a short message) fitted into
+                                                         * what is left, a long message over all of it */
+        char kn[16], bt[16];
+        uint32_t ksc, kpc = cos_key_shown(&ksc);
+        int32_t kx, bx, room, msg = cz.msg[0] && fm1_ms - cz.msg_ms < 1800u, lo;
+        if (clk_free && song.playing) { str_cpy(cz.msg, "CLOCK LOST", sizeof cz.msg); cz.msg_ms = fm1_ms; msg = 1; }   /* (0.20.0:
+                                                         * as long as it runs on by itself) */
+        b[0] = 0;
+        if (cos_follows()) cos_bpm_text(b, (int32_t)cos_ext10());   /* (following a clock: its tempo, steady, in tenths) */
+        else cos_bpm100_text(b, song.g[G_BPM] * 100 + bpm_frac % 100u);   /* (0.10.1: 130.16) */
+        if (bpm_nudge) str_cpy(b + str_len(b), bpm_nudge > 0 ? "+" : "-", 2);   /* (nudged: 3 %, red) */
+        if (msg) {
+            char m[20];
+            str_cpy(m, cz.msg, 19);                      /* (a long one over the key and the tempo: 18 at most) */
+            cos_up(m);
+            if (str_len(m) > 11u) { cos_tx(32 + 8 * 6, 3, m, C_RED); goto tri; }
+        }
+        cos_key_label(kn, kpc, ksc);
+        kx = 226 - cos_w(b) - 6;
         if (kx > 194) kx = 194;
+        cos_txr(226, 3, b, bpm_nudge ? C_RED : C_FG);
         cos_txr(kx, 3, kn, cz.key_next ? C_RED : C_MID);
-        bx = kx - cos_w(kn) - 8;
-        if (bx > 176) bx = 176;
-        cos_batt_text(b);                                /* (the battery: between the engine and the key) */
-        if (b[0] && (bx >= 164 || cos_batt_pct() <= 15))   /* (a long tempo, 130.16: the battery left out unless
-                                                         * it runs low, the engine's name has the room) */
-            cos_txr(bx, 3, b, cos_batt_pct() <= 15 ? C_RED : C_DIM);
+        lo = kx - cos_w(kn) - 8;
+        cos_batt_text(bt);                               /* (the battery: when it runs low, or the room is there) */
+        bx = lo;
+        if (bt[0] && (cos_batt_pct() <= 15 || lo - cos_w(bt) - 8 >= 80 + 8 * 6)) {
+            cos_txr(bx, 3, bt, cos_batt_pct() <= 15 ? C_RED : C_DIM);
+            lo = bx - cos_w(bt) - 8;
+        }
+        room = lo - (32 + 8 * 6);
+        if (msg) { str_cpy(b, cz.msg, 19); cos_up(b); }
+        else { str_cpy(b, trk_engp(t)->name, 9); cos_up(b); }
+        while (b[0] && cos_w(b) > room) b[str_len(b) - 1u] = 0;
+        cos_tx(32 + 8 * 6, 3, b, msg ? C_RED : C_DIM);
     }
 tri:
     {                                                     /* the play triangle, red while it runs */
@@ -3630,6 +3772,15 @@ static void cos_body_home(void)
             cos_tx(4, 144, "W15 BACK  HOME+W15 ALL BACK", C_DIM);
         else if (cz.tab[CM_HOME] == 5u)                  /* (MORPH: the keys; A and B lit when stored) */
             cos_tx(4, 144, (mph.set & 3u) == 3u ? "W13 A  W14 B  HOME+ STORES" : "W13 / W14: STORE A / B", C_DIM);
+        else if (song.playing) {                         /* (0.20.0) the phrase: its bar, MIX IN / OUT on its way */
+            str_cpy(b, "BAR ", sizeof b);
+            fmt_int(b + 4, (int32_t)(bar_n % lv_phrase()) + 1);
+            str_cpy(b + str_len(b), "/", 2);
+            fmt_int(b + str_len(b), (int32_t)lv_phrase());
+            cos_tx(4, 144, b, (bar_n % lv_phrase()) + 1u == lv_phrase() ? C_RED : C_FG);
+            cos_tx(84, 144, mx_n ? "MIX ON ITS WAY" : bsw_on ? "BASS OUT" : "B7 FILL B8 DROP", mx_n || bsw_on ? C_RED : C_DIM);
+            b[0] = 0;
+        }
         else cos_tx(4, 144, trk_live > 5u ? "B7 FILL B8 DROP B9-11 KILL" : "B7 FILL B8 BREAK B9-11 KILL", C_DIM);
         if (live.cur >= 0 && !b[0]) { char c[2] = {(char)('A' + live.cur), 0}; cos_txr(236, 144, c, C_MID); }
     }
@@ -3912,11 +4063,16 @@ static void cos_body_key(void)
     uint32_t mask = 0;
     for (i = 0; i < NTRK && cos_hits(t); i++) t = &trk[i];   /* (the first melodic track's scale: all share it) */
     if (!cos_hits(t) && t->p[P_SCALE]) mask = scale_mask(t);
-    str_cpy(b, COS_NN[cur], sizeof b);
-    if (!cos_hits(t)) { str_cpy(b + str_len(b), " ", 2); str_cpy(b + str_len(b), N_SCALE[clamp(t->p[P_SCALE], 0, 15)], 7); }
+    cos_key_label(b, cur, cos_hits(t) ? 0u : (uint32_t)clamp(t->p[P_SCALE], 0, 15));   /* (0.20.0) AMIN/8A */
     cos_px(20, 46, b, C_FG, CZ_TALL);
-    cos_tx(20, 74, mask ? "KEY AND SCALE: THE KEYS LIT" : "THE SONG'S KEY", C_DIM);
-    if (nx < 12u) { str_cpy(b, "NEXT BAR: ", sizeof b); str_cpy(b + str_len(b), COS_NN[nx], 4); cos_tx(110, 52, b, C_RED); }
+    cos_tx(20, 74, cos_by_cam() ? "K3 TURNS THE CAMELOT WHEEL" : mask ? "KEY AND SCALE: THE KEYS LIT" : "THE SONG'S KEY", C_DIM);
+    if (nx < 12u) {
+        uint32_t nsc;
+        cos_key_shown(&nsc);
+        str_cpy(b, "NEXT BAR ", sizeof b);
+        cos_key_label(b + str_len(b), nx, nsc);
+        cos_txr(236, 52, b, C_RED);
+    }
     for (i = 0; i < 12u; i++) {                         /* white keys a row, black keys above between them */
         uint32_t pc = (5u + i) % 12u, wi = 0, j;
         int on = pc == cur, nxt = pc == nx, in = mask && ((mask >> ((pc + 12u - cur) % 12u)) & 1u);
@@ -4411,6 +4567,32 @@ static void cos_body_syntakt2(void)
     cos_tx(8, 128, "MIDI TRACK: CHAN 1-6, PROG", C_DIM);
 }
 
+/* (0.20.0) GLO > STAGE: the phrase now (large), the lock, the moves on HOME; STAGE 2: MONO BASS */
+static void cos_body_stage(void)
+{
+    char b[32];
+    uint32_t ph = lv_phrase();
+    if (cos_page()->id[0] == CC_LVMONO) {
+        cos_tx(8, 40, LV_MONO(cos_lv) ? "MONO BASS ON" : "MONO BASS OFF", LV_MONO(cos_lv) ? C_FG : C_DIM);
+        cos_tx(8, 56, "BELOW IT: LEFT AND RIGHT AS ONE", C_DIM);
+        cos_tx(8, 68, "THE LOW END SOLID IN A CLUB", C_DIM);
+        return;
+    }
+    if (song.playing) {
+        str_cpy(b, "BAR ", sizeof b);
+        fmt_int(b + 4, (int32_t)(bar_n % ph) + 1);
+        str_cpy(b + str_len(b), " OF ", 5);
+        fmt_int(b + str_len(b), (int32_t)ph);
+    } else
+        str_cpy(b, "STOPPED", sizeof b);
+    cos_px(8, 36, b, (bar_n % ph) + 1u == ph && song.playing ? C_RED : C_FG, CZ_TALL);
+    cos_tx(8, 62, cos_lv & LV_LOCK ? "LIVE LOCK ON" : "LIVE LOCK OFF", cos_lv & LV_LOCK ? C_RED : C_DIM);
+    cos_tx(8, 76, cos_lv & LV_PHQ ? "CHANGES ON THE PHRASE" : "CHANGES ON THE BAR", C_DIM);
+    cos_tx(8, 94, "HOME+PLAY  DOWNBEAT", C_MID);
+    cos_tx(8, 106, "HOME+B7/B8 MIX IN / OUT", C_MID);
+    cos_tx(8, 118, "HOME+B9    BASS SWAP", C_MID);
+}
+
 /* GLO > LINK: what the PROGRAM CHANGEs do */
 static void cos_body_link(void)
 {
@@ -4498,6 +4680,7 @@ static void cos_scene(void)
         else if (pg->kind == CK_COS && pg->id[0] == CC_PCCH) cos_body_link();
         else if (pg->kind == CK_COS && pg->id[0] == CC_STON) cos_body_syntakt();   /* (0.17.0) */
         else if (pg->kind == CK_COS && pg->id[0] == CC_STPC) cos_body_syntakt2();  /* (0.19.0) */
+        else if (pg->kind == CK_COS && (pg->id[0] == CC_LVLOCK || pg->id[0] == CC_LVMONO)) cos_body_stage();   /* (0.20.0) */
         else if (pg->kind == CK_COS && pg->id[0] == CC_QSTY) cos_body_start();     /* (0.18.0) */
         else if (pg->kind == CK_COS && (pg->id[0] == CC_MCCH || pg->id[0] == CC_MC0)) cos_body_link2();
         else if (pg->kind == CK_COS && pg->id[0] == CC_CTLM) cos_body_ctl();   /* (0.13.0) */
@@ -4525,7 +4708,7 @@ dials:
 /* the splash (ui_draw.c draw_splash / splash_write under COS_SLIM; main.c's boot loop calls it every ~4 ms for
  * SPL_WRITE + SPL_HOLD ms): black, a few still stars, the name 2x, the version, a 16-block bar filling like a pattern
  * (the block being filled red), READY. Drawn whole once, then only the bar's strip when a block fills */
-#define COS_VERSION "0.19.0"
+#define COS_VERSION "0.20.0"
 static void cos_px2(int32_t x, int32_t y, const char *s, uint16_t c)      /* (the face 2 x 2) */
 {
     int32_t r, b, b0;

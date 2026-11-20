@@ -62,8 +62,7 @@ static int has_note(const track_t *t, uint32_t note)
 static void blk(void)                                   /* a block: the events, then the sound (the voices start) */
 {
     static int32_t o[2u * CTL];
-    events_block(CTL);
-    song.master_q12 = 4096;
+    song.master_q12 = 4096;                             /* (mix_block runs events_block itself) */
     mix_block(o, CTL);
 }
 static void play_r(uint32_t samples)
